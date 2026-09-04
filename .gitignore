@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Credentials — never commit
+.env
+*.pem
+*.key
+*.crt
+service-account*.json
+
+# Extracted data + run artifacts never belong in git.
+# The case corpus contains PHI; nothing derived from it is committable.
+out/
+artifacts/
+logs/
+data/
+*.csv
+
+# Local tooling
+.DS_Store
+.pytest_cache/
