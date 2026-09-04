@@ -1,0 +1,29 @@
+#!/bin/sh
+# Refuse a commit that stages live corpus data — see tests/corpus_guard.py.
+#
+# The same check runs as a test, which is the real gate: a hook is a local
+# setting that does not survive a clone and that `--no-verify` turns off. This
+# is here because finding it before the commit is worth a great deal more than
+# finding it after, and because a rewritten history is not a deleted one — the
+# old objects stay reachable by SHA on the remote until somebody purges them.
+#
+# Install once:  git config core.hooksPath .githooks
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+
+# The venv if there is one, otherwise whatever python is on PATH. A missing
+# interpreter must not silently wave the commit through, so the last branch
+# fails loudly rather than exiting 0.
+if [ -x "$root/.venv/bin/python" ]; then
+    python="$root/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    python=python3
+else
+    echo "pre-commit: no python found; cannot check for corpus data." >&2
+    echo "Run the check by hand or commit with --no-verify if you are sure." >&2
+    exit 1
+fi
+
+exec "$python" "$root/tests/corpus_guard.py" --staged

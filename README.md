@@ -183,9 +183,10 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 377 tests, no credentials needed, ~2 s
+uv run pytest              # 393 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
+git config core.hooksPath .githooks   # once, per clone — see below
 ```
 
 The default test run touches no network. Fixtures fail loudly if a test reaches
@@ -210,11 +211,37 @@ uv run pytest -m warehouse   # 30 tests, ~45 s
 | `test_ui_actions.py` | The lean-UI acceptance tests UX-T1 through UX-T7 |
 | `test_pagination.py` | Paging on lists and search: offsets, tiebreaks, and when the offset resets |
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
+| `test_no_corpus_data.py` | No live case data is committed — this repo is public and the corpus is not |
 | `test_warehouse.py` | Semantics only real data can prove — opt-in, marked `warehouse` |
 
 UI tests render real NiceGUI pages into an isolated client and assert against
 the element tree — no browser, no async, no screenshot baselines. See the
 docstrings in `tests/conftest.py` and `tests/test_visual.py` for why.
+
+### Never commit live case data
+
+This repository is public. The corpus it queries is not: case bodies are pasted
+email carrying requesters' names, personal and institutional addresses, study
+titles, IRB numbers, and the names of the staff who worked the case.
+
+The leak has a predictable shape. Diagnosing a rendering bug means looking at a
+real row, and the natural next step is to paste that row into the comment
+explaining the fix or the fixture reproducing it. Carry over the *shape*
+instead — same length, same punctuation, same awkwardness — and take names from
+`tests/synthetic.py` rather than inventing them at the call site.
+
+`test_no_corpus_data.py` fails the build on an address outside the
+documentation domains or an absolute home directory. The same check runs as a
+pre-commit hook, which is worth installing because a rewritten history is not a
+deleted one — old objects stay reachable by SHA on the remote until somebody
+purges them:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Names are the part no regular expression can settle, which is exactly why the
+roster exists: one place to look, and no reason to reach for a real one.
 
 ### Layout
 

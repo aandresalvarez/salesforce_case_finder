@@ -17,6 +17,7 @@ and an offset that outlives the filter it was taken under.
 from __future__ import annotations
 
 import pytest
+import synthetic
 
 from casefinder import config, data, models, queries
 from casefinder.models import SearchHit
@@ -389,6 +390,23 @@ def test_a_pasted_email_thread_becomes_one_line():
     )
 
 
+# The attribution lines these tests are about, built once from the roster in
+# `tests/synthetic.py`. Written out here rather than inline because an
+# attribution is the single most tempting thing in this file to paste from a
+# real case body — it is fiddly to get right, and there is always one on screen
+# while you are working on the description column. One definition, one place to
+# be careful, and `synthetic.attribution` gets the shape right.
+_FROM_REQUESTER = synthetic.attribution(
+    synthetic.REQUESTER, synthetic.REQUESTER_EMAIL, "Apr 23, 2026 at 4:57 PM"
+)
+_FROM_RESEARCHER = synthetic.attribution(
+    synthetic.RESEARCHER, synthetic.RESEARCHER_EMAIL, "Aug 4, 2026 at 10:39 AM"
+)
+_FROM_SUPPORT = synthetic.attribution(
+    synthetic.SUPPORT_ALIAS, synthetic.SUPPORT_EMAIL, "Aug 1, 2026 at 9:00 AM"
+)
+
+
 def test_the_quoted_reply_header_is_not_the_preview():
     """What the description column showed on every row before this existed.
 
@@ -398,8 +416,8 @@ def test_the_quoted_reply_header_is_not_the_preview():
     down the page and saying nothing about any case.
     """
     body = (
-        "On Apr 23, 2026 at 4:57 PM Dana Whitfield (dana.whitfield@example.com) wrote:\n\n"
-        "Summary: Linkage of a cancer registry extract to identified OMOP records"
+        _FROM_REQUESTER
+        + "\n\nSummary: Linkage of a cancer registry extract to identified OMOP records"
     )
 
     out = models.preview(body)
@@ -412,9 +430,10 @@ def test_a_forwarded_request_is_unwrapped_to_the_request():
     """A reply to a forward carries two attributions, and the second one is in
     front of the text that says what was asked for."""
     body = (
-        "On Aug 4, 2026 at 10:39 AM Priya Raman (praman@example.edu) wrote: "
-        "On Aug 1, 2026 at 9:00 AM RIT Support (support@example.edu) wrote: "
-        "Summary: Bilirubin thresholds in late preterm infants"
+        _FROM_RESEARCHER
+        + " "
+        + _FROM_SUPPORT
+        + " Summary: Bilirubin thresholds in late preterm infants"
     )
 
     assert models.preview(body).startswith("Summary: Bilirubin thresholds")
@@ -423,7 +442,7 @@ def test_a_forwarded_request_is_unwrapped_to_the_request():
 @pytest.mark.parametrize(
     "body",
     [
-        "On Apr 23, 2026 at 4:57 PM Dana Whitfield (dana.whitfield@example.com) wrote:",
+        _FROM_REQUESTER,
         (
             "On intake the requester listed three separate cohorts, a timeline, and "
             "an IRB that had not been approved yet, and the analyst who picked the "

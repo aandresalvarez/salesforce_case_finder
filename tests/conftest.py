@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+import synthetic
 
 from casefinder.config import ERAS
 
@@ -246,9 +247,9 @@ def _triage_row(number: str, **over):
     row = {
         "case_number": number,
         "subject": "Cohort extract request",
-        "owner": "Alex Rivera",
+        "owner": synthetic.OWNER,
         "status": "Open",
-        "pi": "Dr Example",
+        "pi": synthetic.PI,
         "department": "Medicine",
         "irb": "IRB-1234",
         "funding": "Funded",
@@ -269,8 +270,8 @@ def _header(number="CASE-056576", **over):
         "case_number": number,
         "subject": "Cohort extract request",
         "status": "Open",
-        "owner": "Alex Rivera",
-        "pi": "Dr Example",
+        "owner": synthetic.OWNER,
+        "pi": synthetic.PI,
         "department": "Medicine",
         "irb": "IRB-1234",
         "funding": "Funded",
@@ -378,7 +379,7 @@ class FakeWarehouse:
                 statuses=["Open", "Closed"],
                 types=["Data"],
                 departments=["Medicine"],
-                pis=["Dr Example"],
+                pis=[synthetic.PI],
                 irbs=["IRB-1234"],
             )
         monkeypatch.setattr(data, "facets", record("facets", lambda: self.facets))

@@ -96,7 +96,7 @@ The delivered v1 Streamlit application is the normative reference for the data c
 **Location:**
 
 ```text
-/Users/alvaro1/Documents/Astra/Workspaces/salesforce-cases/.astra/tasks/4DD4B29F/casefinder
+~/Documents/Astra/Workspaces/salesforce-cases/.astra/tasks/4DD4B29F/casefinder
 ```
 
 | v1 file | Contents | v2.1 disposition |

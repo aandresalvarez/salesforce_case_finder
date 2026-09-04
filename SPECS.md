@@ -4,7 +4,10 @@
 
 The normative specification is
 [`CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md`](CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md),
-which is unchanged from the version the build was commissioned against. This
+which is unchanged from the version the build was commissioned against in every
+respect that bears on a requirement. The one edit is redaction: §1.6 quoted the
+v1 working copy by absolute path, and the leading `/Users/<name>` was replaced
+with `~` when this repository was made public. This
 document is the other half of that pair: what was actually built, where each
 requirement lives in the source, how it was verified, and — in the register at
 the end — every place the implementation departs from the specification, with
@@ -19,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **377 passing**, ~1.6 s, no network access required |
+| Automated tests | **393 passing**, ~1.6 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -161,6 +164,17 @@ process.
 | Escape-then-highlight (§9.5) | snippets are HTML-escaped, then marked; tested with markup in the search term |
 | Loopback only (§9.6) | `127.0.0.1` on a free port; no `0.0.0.0`, no on-air, no tunnel in launch code |
 | Bounded spend (§8, §12) | 4 GiB scanned and 120 s of runtime per job, both enforced by BigQuery rather than by the app |
+
+One control is not in §9 because the specification did not anticipate the
+repository being public: no live corpus data may be committed. It is enforced by
+`tests/corpus_guard.py`, which fails the suite on an email address outside the
+documentation domains or an absolute home directory, and which also runs as a
+pre-commit hook (`git config core.hooksPath .githooks`). Names are the part no
+pattern can settle, so invented people are kept in `tests/synthetic.py` and
+taken from there rather than made up at each call site. The rule this encodes is
+that diagnosing a rendering bug means looking at a real row, and the natural
+next step — pasting that row into the comment explaining the fix — is the leak.
+Carry over the shape, never the string.
 
 ---
 
@@ -488,7 +502,7 @@ deliberately not vendored; they are replaced by `ui/` and `main.py`.
 The working copy they came from:
 
 ```text
-/Users/alvaro1/Documents/Astra/Workspaces/salesforce-cases/.astra/tasks/4DD4B29F/casefinder
+~/Documents/Astra/Workspaces/salesforce-cases/.astra/tasks/4DD4B29F/casefinder
 ```
 
 That is a machine-local Astra task directory — provenance, not a dependency.
