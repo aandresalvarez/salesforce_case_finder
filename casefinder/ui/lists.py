@@ -135,6 +135,7 @@ def _apply_view(view: views.SavedView) -> None:
     state.lists.offset = 0
     state.lists.filters = TriageFilters(
         open_only=view.filters.open_only,
+        owners=list(view.filters.owners),
         statuses=list(view.filters.statuses),
         departments=list(view.filters.departments),
         pis=list(view.filters.pis),
@@ -144,6 +145,28 @@ def _apply_view(view: views.SavedView) -> None:
     state.lists.sort = view.sort if view.sort in TRIAGE_SORTS else "last_activity"
     state.lists.descending = view.descending
     state.lists.columns = view.columns
+
+
+def focus_on_owner(owner: str) -> None:
+    """Open the list as one person's queue. The jump from a case page (D22).
+
+    Built as a view rather than by writing to `state.lists.filters` directly,
+    because `render` re-applies the default view whenever the column list is
+    empty — which it is until Lists has been visited once. Setting the filters
+    by hand would work on the second visit of a session and silently do nothing
+    on the first.
+
+    `open_only` stays on for the same reason it is the default: the question is
+    what this person is carrying, not everything they have ever touched. The
+    toggle is on screen for anyone who meant the second thing.
+    """
+    _apply_view(
+        views.SavedView(
+            name=f"Cases owned by {owner}",
+            filters=TriageFilters(open_only=True, owners=[owner]),
+        )
+    )
+    ui.navigate.to("/lists")
 
 
 def _current_columns() -> list[table_ui.Column]:
@@ -396,7 +419,7 @@ def _on_page(offset: int) -> None:
 
 
 def _filter_controls() -> None:
-    """The five priority filters — FR-LIST-6. Rendered twice; see filters.py."""
+    """The priority filters — FR-LIST-6 plus Owner (D22). Twice; see filters.py."""
     facets = _facets()
     current = state.lists.filters
 
@@ -419,6 +442,10 @@ def _filter_controls() -> None:
         return apply
 
     filter_ui.open_only_toggle(current.open_only, set_open)
+    # Owner sits first among the dimensions, next to the Open only toggle. The
+    # two together are "what is on my plate", which is the question this page
+    # exists for; everything after them narrows an answer that already exists.
+    filter_ui.multi_select("Owner", facets.owners, current.owners, setter("owners"))
     filter_ui.multi_select("Status", facets.statuses, current.statuses, setter("statuses"))
     filter_ui.multi_select(
         "Department", facets.departments, current.departments, setter("departments"), width=190

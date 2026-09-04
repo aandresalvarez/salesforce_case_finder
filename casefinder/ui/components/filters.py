@@ -23,7 +23,15 @@ from nicegui import ui
 from ..shell import LINE, MUTED, register_css
 
 # The breakpoint below which the row gives up and becomes a disclosure.
-NARROW_PX = 1180
+#
+# Measured rather than chosen. With Owner added (D22) the six controls occupy
+# 958px plus five 10px gaps, and the pane a page gets is the viewport less 240
+# — the rail and the main pane's own padding. So the row needs a 1248px window
+# and wraps onto a second line below that: at 1260 it is one line of 1020, at
+# 1220 it is two lines of 980. A wrapped row is worse than the disclosure it
+# was meant to avoid, so the breakpoint moved up with the control that caused
+# it. The default window is 1280, which clears it by 32px.
+NARROW_PX = 1260
 
 _CSS = f"""
 .cf-filters-inline {{ display:flex; }}

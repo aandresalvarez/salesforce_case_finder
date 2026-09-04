@@ -13,7 +13,10 @@ exists on a screen, not about how it looks.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
+import synthetic
 
 from casefinder import ask, config
 from casefinder.ui import ask_page, case_detail, lists, search, settings, shell, sql_page
@@ -332,26 +335,122 @@ def test_column_choice_export_and_save_are_not_all_on_screen_at_once(list_page):
         assert text not in list_page.button_labels()
 
 
-def test_only_the_five_priority_filters_are_inline(list_page):
-    """FR-LIST-6. Anything past five turns the row into a control panel."""
-    inline = [
-        e
-        for e in list_page.elements
-        if "cf-filters-inline" in e._classes
-    ]
+def _inline_filter_controls(tree) -> list:
+    inline = [e for e in tree.elements if "cf-filters-inline" in e._classes]
     assert inline, "the inline filter row is missing"
-    controls = [
+    return [
         e
-        for e in list_page.elements
+        for e in tree.elements
         if type(e).__name__ in {"Select", "Switch"}
-        and any("cf-filters-inline" in a._classes for a in list_page.ancestors(e))
+        and any("cf-filters-inline" in a._classes for a in tree.ancestors(e))
     ]
-    assert len(controls) == 5
+
+
+def test_only_the_priority_filters_are_inline(list_page):
+    """FR-LIST-6 plus Owner — six, and not a seventh (D22).
+
+    The spec says five. Owner was added because it was the one dimension with a
+    column and a sort key but no way to filter on it, and because "whose is it"
+    is the question a queue gets asked first. That is the argued exception, not
+    an opening: past six the row stops being a row and becomes a control panel,
+    which is what FR-LIST-7's disclosure exists to avoid.
+    """
+    assert len(_inline_filter_controls(list_page)) == 6
+
+
+def test_the_owner_filter_is_the_first_dimension_in_the_row(list_page):
+    """Next to `Open only`, because together they are "what is on my plate"."""
+    controls = _inline_filter_controls(list_page)
+    assert type(controls[0]).__name__ == "Switch"
+    assert controls[1]._props.get("label") == "Owner"
+
+
+def test_the_owner_filter_offers_the_owners_the_warehouse_reported(list_page, warehouse):
+    owner_select = next(
+        e for e in list_page.of_type("Select") if e._props.get("label") == "Owner"
+    )
+    # Quasar wants `{value, label}` pairs; the labels are what a user picks from.
+    offered = [option["label"] for option in owner_select._props["options"]]
+    assert offered == warehouse.facets.owners
 
 
 def test_a_narrow_window_gets_one_disclosure_instead(list_page):
     collapsed = [e for e in list_page.elements if "cf-filters-collapsed" in e._classes]
     assert len(collapsed) == 1
+
+
+def test_the_disclosure_carries_the_same_filters_as_the_row(list_page):
+    """FR-LIST-7. The two copies are built by one function; prove they agree.
+
+    A narrow window is not a reduced feature set — it is the same six controls
+    behind a button. Owner in the row but not in the menu would mean the filter
+    silently disappears when the window is resized.
+    """
+    inline = {
+        e._props.get("label")
+        for e in _inline_filter_controls(list_page)
+        if type(e).__name__ == "Select"
+    }
+    behind = {
+        e._props.get("label")
+        for e in list_page.of_type("Select")
+        if any("cf-filters-collapsed" in a._classes for a in list_page.ancestors(e))
+    }
+    assert "Owner" in inline
+    assert inline == behind
+
+
+# --------------------------------------------------------------------------
+# D22 — the jump from a case to its owner's queue
+# --------------------------------------------------------------------------
+
+
+def test_a_case_page_offers_its_owner_as_a_queue(case_page, warehouse):
+    """Standing on a case, "show me everything else this person has"."""
+    assert f"Cases owned by {warehouse.header.owner}" in _menu_texts(case_page)
+
+
+def test_the_owner_jump_is_a_filter_and_not_a_text_search(case_page, warehouse):
+    """A text search for a name also finds cases that merely mention them.
+
+    Owner is a field with a filter of its own, so the menu item says `Cases
+    owned by`, not the `Search for` the PI and IRB items run.
+    """
+    behind_a_menu = _menu_texts(case_page)
+    assert f"Search for {warehouse.header.owner}" not in behind_a_menu
+    # The other two are still text searches — this is not a claim about them.
+    assert f"Search for {warehouse.header.pi}" in behind_a_menu
+
+
+def test_a_case_with_no_owner_offers_no_jump(render, warehouse):
+    """An unassigned case would otherwise offer `Cases owned by `."""
+    warehouse.header = dataclasses.replace(warehouse.header, owner="")
+    tree = render(case_detail.render, "CASE-056576")
+    assert not [t for t in _menu_texts(tree) if t.startswith("Cases owned by")]
+
+
+def test_the_owner_jump_opens_that_persons_open_queue(monkeypatch):
+    """Sets the filters through a view, and leaves for the list.
+
+    Going through `_apply_view` rather than writing to `state.lists.filters` is
+    the whole point: `lists.render` re-applies the default view whenever the
+    column list is empty, which it is until Lists has been visited once. Hence
+    the empty columns here — this is the cold-start case that a direct write
+    would silently lose.
+    """
+    shell.state.lists.columns = ()
+    shell.state.lists.offset = 300
+    gone_to: list[str] = []
+    monkeypatch.setattr(lists.ui.navigate, "to", lambda target: gone_to.append(target))
+    lists.focus_on_owner(synthetic.OWNER)
+
+    assert gone_to == ["/lists"]
+    assert shell.state.lists.view_name == f"Cases owned by {synthetic.OWNER}"
+    assert shell.state.lists.filters.owners == [synthetic.OWNER]
+    assert shell.state.lists.filters.open_only is True
+    assert shell.state.lists.filters.statuses == []
+    assert shell.state.lists.offset == 0, "the old page number outlived its filter"
+    assert shell.state.lists.columns, "a cold start would render no columns"
 
 
 def test_the_schema_reference_on_the_sql_page_is_behind_a_disclosure(render, warehouse):

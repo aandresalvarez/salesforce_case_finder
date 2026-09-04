@@ -9,9 +9,11 @@ current code avoid writing bodies" but "can a body reach the file at all".
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
+import synthetic
 from google.cloud.bigquery import ArrayQueryParameter
 
 from casefinder import config, queries, views
@@ -38,6 +40,7 @@ def test_open_only_off_stops_narrowing():
 @pytest.mark.parametrize(
     "field,param,column",
     [
+        ("owners", "f_owner", queries.OWNER),
         ("statuses", "f_status", "c.status"),
         ("departments", "f_dept", queries.DEPARTMENT),
         ("pis", "f_pi", queries.PI),
@@ -91,10 +94,16 @@ def test_active_count_ignores_open_only():
 
 
 def test_active_count_covers_every_dimension():
+    """Every list field, so a new dimension that forgets the count is caught.
+
+    The count is what the collapsed `Filters (n)` disclosure shows, and a
+    dimension missing from it is a filter the user cannot see is on.
+    """
     every = TriageFilters(
-        statuses=["a"], departments=["b"], pis=["c"], irbs=["d"], funding=["e"]
+        owners=["z"], statuses=["a"], departments=["b"], pis=["c"], irbs=["d"], funding=["e"]
     )
-    assert every.active_count == 5
+    dimensions = [f for f in dataclasses.fields(TriageFilters) if f.name != "open_only"]
+    assert every.active_count == len(dimensions) == 6
 
 
 # --------------------------------------------------------------------------
@@ -141,6 +150,7 @@ def test_a_view_survives_a_round_trip():
         description="Open cardiology work",
         filters=TriageFilters(
             open_only=True,
+            owners=[synthetic.OWNER, synthetic.OWNER_2],
             statuses=["Open", "On Hold"],
             departments=["Cardiology"],
             pis=["Dr X"],
@@ -242,9 +252,28 @@ def test_a_withdrawn_filter_dimension_stops_being_honoured(monkeypatch):
     applying it, not merely stop writing new ones.
     """
     monkeypatch.setattr(views, "_PERSISTABLE_FILTERS", ("statuses",))
-    view = views.SavedView.from_json({"statuses": ["Open"], "pis": ["Dr X"]})
+    view = views.SavedView.from_json(
+        {"statuses": ["Open"], "pis": ["Dr X"], "owners": [synthetic.OWNER]}
+    )
     assert view.filters.statuses == ["Open"]
     assert view.filters.pis == []
+    assert view.filters.owners == []
+
+
+def test_every_filter_dimension_is_decided_about_rather_than_defaulted():
+    """A new dimension is either persistable or it is not, on purpose.
+
+    `_PERSISTABLE_FILTERS` is an allowlist, so a dimension left out of it fails
+    silently — saved views quietly stop carrying it. This is the test that turns
+    that silence into a failure: adding a field to `TriageFilters` breaks here
+    until someone has looked at the "could this be text a requester typed?"
+    question in `views._PERSISTABLE` and answered it either way.
+    """
+    dimensions = {f.name for f in dataclasses.fields(TriageFilters)} - {"open_only"}
+    assert set(views._PERSISTABLE_FILTERS) == dimensions
+    # And each is spelled the same in both allowlists, so `to_json` and
+    # `from_json` cannot disagree about what a saved file contains.
+    assert set(views._PERSISTABLE_FILTERS) <= set(views._PERSISTABLE)
 
 
 def test_the_written_file_says_what_it_may_not_contain(tmp_path, monkeypatch):

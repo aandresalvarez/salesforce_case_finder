@@ -31,10 +31,14 @@ REQUESTER_EMAIL = "dana.whitfield@example.com"
 RESEARCHER = "Priya Raman"
 RESEARCHER_EMAIL = "praman@example.edu"
 
-# The support side: a team alias, and a named analyst who owns cases.
+# The support side: a team alias, and two named analysts who own cases. Two,
+# because the owner filter takes a list and a list of one proves nothing about
+# it. They differ in shape on purpose — a hyphenated surname is longer than the
+# fixed-width control that has to show it.
 SUPPORT_ALIAS = "RIT Support"
 SUPPORT_EMAIL = "support@example.edu"
 OWNER = "Alex Rivera"
+OWNER_2 = "Kwame Osei-Bonsu"
 
 # A principal investigator, kept obviously generic — it appears in fixtures
 # where the value is only ever passed through to a cell.

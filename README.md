@@ -16,7 +16,7 @@ number and you land on the case; type anything else and you get results.
 | | |
 |---|---|
 | **Search** | Full-text across case fields *and* the conversation bodies — the part that is actually hard to reach in SQL. Matches are shown in context. |
-| **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter, sort, save a view, export the metadata. |
+| **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter by owner, status, department, PI or IRB; sort, save a view, export the metadata. From a case, the `…` menu opens its owner's queue. |
 | **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as — with the original always one click away. |
 | **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
 | **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
@@ -213,7 +213,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 512 tests, no credentials needed, ~2 s
+uv run pytest              # 522 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -227,7 +227,7 @@ Tests that do hit the warehouse are opt-in. They need ADC and cost roughly two
 cents a run. Run them before a release and after any change to `queries.py`:
 
 ```bash
-uv run pytest -m warehouse   # 30 tests, ~45 s
+uv run pytest -m warehouse   # 31 tests, ~55 s
 ```
 
 | File | Covers |

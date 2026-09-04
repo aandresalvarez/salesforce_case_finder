@@ -37,8 +37,15 @@ from .queries import TriageFilters
 # clinician typed? A status is a picklist value. A department is an org unit. A
 # case description is free text written about a research subject's data, and so
 # is anything derived from one — a snippet, a summary, a result row.
+#
+# `owners` passes that test the same way `pis` does. A case owner is a
+# Salesforce User — a member of the support team, picked from a list, and
+# already on screen in a column and in the metadata-only CSV. It is a person's
+# name, which is why it is called out here rather than waved through, but it is
+# not a research subject and not text anyone typed into a case.
 _PERSISTABLE = (
     "open_only",
+    "owners",
     "statuses",
     "departments",
     "pis",
@@ -52,7 +59,7 @@ _PERSISTABLE = (
 # Filter dimensions that may be persisted at all. Spec section 9.3 requires a
 # way to withdraw one if it is later judged too sensitive for local disk: drop
 # it from this tuple and existing files stop honouring it on load.
-_PERSISTABLE_FILTERS = ("statuses", "departments", "pis", "irbs", "funding")
+_PERSISTABLE_FILTERS = ("owners", "statuses", "departments", "pis", "irbs", "funding")
 
 ALL_COLUMNS = (
     "case_number",
@@ -88,6 +95,7 @@ class SavedView:
         """Definition only. Built by walking the allowlist, not the dataclass."""
         source: dict[str, Any] = {
             "open_only": self.filters.open_only,
+            "owners": list(self.filters.owners),
             "statuses": list(self.filters.statuses),
             "departments": list(self.filters.departments),
             "pis": list(self.filters.pis),
@@ -132,6 +140,7 @@ class SavedView:
             description=str(raw.get("description") or ""),
             filters=TriageFilters(
                 open_only=bool(raw.get("open_only", True)),
+                owners=strings("owners"),
                 statuses=strings("statuses"),
                 departments=strings("departments"),
                 pis=strings("pis"),
@@ -154,6 +163,7 @@ class SavedView:
         """One line describing what this view narrows to."""
         parts: list[str] = ["Open only" if self.filters.open_only else "All statuses"]
         for label, values in (
+            ("owner", self.filters.owners),
             ("status", self.filters.statuses),
             ("dept", self.filters.departments),
             ("PI", self.filters.pis),

@@ -22,8 +22,8 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **512 passing**, ~1.8 s, no network access required |
-| Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
+| Automated tests | **522 passing**, ~1.8 s, no network access required |
+| Warehouse tests | **31 passing** against live BigQuery, ~54 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
 | Native window | `python -m casefinder.main` opens a pywebview window on `127.0.0.1` with an OS-assigned port |
@@ -45,27 +45,27 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-7,331 lines across 27 modules.
+7,417 lines across 27 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
-| `queries.py` | 759 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
-| `models.py` | 588 | Typed rows; the single place that decides how a missing value is displayed. |
-| `ui/lists.py` | 574 | §6.2 — triage lists, filters, saved views, paging, CSV. |
-| `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
-| `ui/case_detail.py` | 490 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `queries.py` | 784 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
+| `ui/lists.py` | 601 | §6.2 — triage lists, filters, saved views, paging, CSV. |
+| `models.py` | 590 | Typed rows; the single place that decides how a missing value is displayed. |
 | `ui/reconnect.py` | 566 | What the window says, and offers, when the program behind it stops answering (D20, D21). |
-| `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
-| `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
+| `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
+| `ui/case_detail.py` | 499 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
+| `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `data.py` | 320 | The UI↔query seam: builder + cache + model, one function per page need. |
+| `views.py` | 297 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
 | `ask.py` | 231 | §6.5 — question in, SQL out; nothing else in the prompt. |
 | `intake.py` | 225 | Reads the serialised intake form out of a case body (D15). Pure. |
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
 | `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
+| `ui/components/filters.py` | 203 | The compact filter row and its disclosure. |
 | `config.py` | 202 | Every environment variable and its default. |
 | `window.py` | 192 | What the native window can still do once the server behind it has gone (D21). |
-| `ui/components/filters.py` | 195 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
 | `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
 | `main.py` | 161 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
@@ -120,6 +120,7 @@ added without invariant coverage cannot pass silently.
 |---|---|---|---|
 | Startup, access probe, no setup dashboard | FR-START-1..3 (landing page is D17) | `main.py`, `ui/shell.py` | `test_ui_actions.py`, `test_visual.py` |
 | Lists, columns, sorting, filters, presets, saved views, paging, CSV | FR-LIST-1..12 (paging is D11) | `ui/lists.py`, `views.py`, `ui/components/pager.py` | `test_triage.py`, `test_ui_actions.py`, `test_pagination.py` |
+| Filtering a queue by who owns it | D22 | `queries.py`, `ui/lists.py`, `ui/components/filters.py`, `ui/case_detail.py` | `test_triage.py`, `test_ui_actions.py`, `test_pagination.py` |
 | Search: idle, execute, shortcut, parsing, scope, results, limits, paging, empty | FR-SEARCH-1..12 | `ui/search.py`, `queries.search`, `ui/components/pager.py` | `test_search_semantics.py`, `test_pagination.py` |
 | Case: comments-first, header, metadata, copy summary, tabs, related, unknown | FR-CASE-1..11 | `ui/case_detail.py` | `test_ui_actions.py`, `test_visual.py` |
 | Case body rendering, and the wait before one appears | FR-CASE-4, FR-CASE-5 (D15) | `intake.py`, `ui/components/intake_form.py`, `ui/components/loading.py` | `test_intake.py`, `test_reading.py` |
@@ -779,6 +780,55 @@ nothing from the corpus passes through this path. §9.6 is unaffected: the bridg
 is process-local, exposes exactly three verbs that take no arguments, and opens
 no port. A browser has no second process, gets no buttons, and still gets the
 sentence telling it what to do by hand.
+
+### D22 — a sixth filter, and it is Owner
+
+**Spec:** FR-LIST-6 says "Exactly five primary filters" and lists them — Open
+only, Status, Department, PI, IRB — then allows funding status as "#6 only if
+[the stakeholder] confirms it as minimum scope". Owner is not on the list, and
+the allowance was written for a different candidate.
+
+**Built:** `owners` as a filter dimension end to end — a `TriageFilters` field,
+a bound array clause, an entry in the facet query, a control in the row and in
+its disclosure, a key in the saved-view allowlist — plus
+`lists.focus_on_owner`, a **Cases owned by …** item in the case page's overflow
+that opens the list as that person's open queue.
+
+**Why:** asked for directly, from a case page, next to the OWNER cell. But it is
+worth saying why the answer was a filter and not a search. Owner was already a
+column in FR-LIST-4's list and a sort key in FR-LIST-5. It was the only
+dimension the app would show you a value for and then refuse to act on: you
+could sort a queue by owner and read whose it was, and there was no way to ask
+for one person's. That is a gap in the five rather than a sixth idea, which is
+the argument for making the exception here and not generally.
+
+Three things it touched that the other five did not:
+
+- Owner is not a field on the case. `dim_case` carries an `owner_id` into the
+  Salesforce `User` table, so the filter expression is only valid where that
+  join is in scope, and the facet query had to grow the join to offer the list.
+- The row stopped fitting. Measured in the real shell rather than estimated:
+  six controls occupy 958px plus five 10px gaps, and a page is given the
+  viewport less 240 for the rail and its own padding — so the row needs a
+  1248px window, and at 1220 it silently wrapped onto a second line. A wrapped
+  row is worse than the disclosure FR-LIST-7 provides for exactly this, so
+  `NARROW_PX` moved from 1180 to 1260 with the control that caused it.
+- The jump goes through `_apply_view` rather than writing the filters directly,
+  because `lists.render` re-applies the default view whenever the column list is
+  empty — which it is until Lists has been visited once in a session. Setting
+  the filters by hand would have worked on every visit but the first.
+
+**Effect on requirements:** FR-LIST-6's count is now six; nothing else in it
+changes, and funding is still a dimension without a control, still pending the
+confirmation SR-13 routes elsewhere. §9.3 is the one that deserved an argument
+rather than a nod, because a saved view now writes a person's name to a file in
+the user's home directory. It is the same name `pis` already writes and the same
+one the metadata-only CSV already exports: a Salesforce User, a member of the
+support team, picked from a facet, not a research subject and not text anyone
+typed into a case. It is called out in `views._PERSISTABLE` rather than waved
+through, and if that judgement is ever revisited, dropping `"owners"` from
+`_PERSISTABLE_FILTERS` makes existing files stop honouring it on load — which is
+the withdrawal path §9.3 asks for, and which has a test.
 
 ---
 

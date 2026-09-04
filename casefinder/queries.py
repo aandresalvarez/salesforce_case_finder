@@ -120,6 +120,12 @@ def _term_params(terms: list[str]) -> list[ScalarQueryParameter]:
 
 _RAW_JOIN = f"LEFT JOIN `{config.CASE_TABLE}` rc ON rc.Id = c.case_id"
 
+# The one triage attribute that does not come from the raw Case object. A case
+# points at its owner by id, so the name lives in the User table and arrives
+# through the join the operational queries already make — which is why this
+# expression is only valid where `u` is in scope.
+OWNER = "NULLIF(TRIM(u.Name), '')"
+
 PI = "NULLIF(TRIM(rc.PI_Name__c), '')"
 DEPARTMENT = "NULLIF(TRIM(rc.Project_Department__c), '')"
 IRB = "NULLIF(TRIM(rc.IRB_Protocol__c), '')"
@@ -336,10 +342,11 @@ FACET_LIMIT = 500
 def facets(era: Era, *, extended: bool = False) -> tuple[str, list[Any]]:
     """Distinct values for the filter dropdowns, in one pass over dim_case.
 
-    `extended=True` also returns the triage dimensions (department, PI, IRB),
-    which requires the raw-Case join. Search only needs the cheap set, so it
-    stays the default — spec section 7.3 lists this builder as reading
-    `dim_case`, and that remains true unless a list view asks for more.
+    `extended=True` also returns the triage dimensions (owner, department, PI,
+    IRB), which requires the raw-Case join and, for the owner, the User join.
+    Search only needs the cheap set, so it stays the default — spec section 7.3
+    lists this builder as reading `dim_case`, and that remains true unless a
+    list view asks for more.
     """
     cases = era.table("dim_case")
     if not extended:
@@ -360,16 +367,19 @@ FROM {cases}""",
     c.origin_class,
     c.type,
     c.created_at,
+    {OWNER} AS owner,
     {DEPARTMENT} AS department,
     {PI} AS pi,
     {IRB} AS irb
   FROM {cases} c
+  LEFT JOIN `{config.USER_TABLE}` u ON u.Id = c.owner_id
   {_RAW_JOIN}
 )
 SELECT
   ARRAY_AGG(DISTINCT status IGNORE NULLS ORDER BY status) AS statuses,
   ARRAY_AGG(DISTINCT origin_class IGNORE NULLS ORDER BY origin_class) AS origin_classes,
   ARRAY_AGG(DISTINCT type IGNORE NULLS ORDER BY type) AS types,
+  ARRAY_AGG(DISTINCT owner IGNORE NULLS ORDER BY owner LIMIT {FACET_LIMIT}) AS owners,
   ARRAY_AGG(DISTINCT department IGNORE NULLS ORDER BY department
             LIMIT {FACET_LIMIT}) AS departments,
   ARRAY_AGG(DISTINCT pi IGNORE NULLS ORDER BY pi LIMIT {FACET_LIMIT}) AS pis,
@@ -421,7 +431,7 @@ def case_header(era: Era, case_number: str) -> tuple[str, list[Any]]:
   c.type,
   c.reason,
   c.priority,
-  u.Name AS owner,
+  {OWNER} AS owner,
   {PI} AS pi,
   {DEPARTMENT} AS department,
   {IRB} AS irb,
@@ -662,13 +672,18 @@ DEFAULT_TRIAGE_SORT = "last_activity"
 
 @dataclass
 class TriageFilters:
-    """The five priority filters from spec FR-LIST-6, plus funding.
+    """The five priority filters from spec FR-LIST-6, plus funding and owner.
 
     `open_only` defaults on because the landing view is a triage queue, not an
     archive browse.
+
+    `owners` is the one dimension the spec does not name — D22. It is listed
+    first among them, here and in the filter row, because "whose is it" is the
+    question a queue gets asked before "what state is it in".
     """
 
     open_only: bool = True
+    owners: list[str] = field(default_factory=list)
     statuses: list[str] = field(default_factory=list)
     departments: list[str] = field(default_factory=list)
     pis: list[str] = field(default_factory=list)
@@ -680,6 +695,9 @@ class TriageFilters:
         params: list[Any] = []
         if self.open_only:
             sql.append("NOT c.is_closed")
+        if self.owners:
+            sql.append(f"{OWNER} IN UNNEST(@f_owner)")
+            params.append(ArrayQueryParameter("f_owner", "STRING", self.owners))
         if self.statuses:
             sql.append("c.status IN UNNEST(@f_status)")
             params.append(ArrayQueryParameter("f_status", "STRING", self.statuses))
@@ -702,7 +720,14 @@ class TriageFilters:
         """How many filters are narrowing the list, for the collapsed chip label."""
         return sum(
             1
-            for value in (self.statuses, self.departments, self.pis, self.irbs, self.funding)
+            for value in (
+                self.owners,
+                self.statuses,
+                self.departments,
+                self.pis,
+                self.irbs,
+                self.funding,
+            )
             if value
         )
 
@@ -740,7 +765,7 @@ def triage_list(
     sql = f"""SELECT
   c.case_number,
   c.subject,
-  u.Name AS owner,
+  {OWNER} AS owner,
   c.status,
   c.is_closed,
   {PI} AS pi,

@@ -378,6 +378,10 @@ class FakeWarehouse:
             self.facets = Facets(
                 statuses=["Open", "Closed"],
                 types=["Data"],
+                # Two owners, because `multi_select` renders nothing at all for
+                # an empty facet: a one-value list would still exercise the
+                # control, but it would not exercise choosing between them.
+                owners=[synthetic.OWNER, synthetic.OWNER_2],
                 departments=["Medicine"],
                 pis=[synthetic.PI],
                 irbs=["IRB-1234"],

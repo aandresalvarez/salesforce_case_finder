@@ -16,6 +16,8 @@ and an offset that outlives the filter it was taken under.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 import synthetic
 
@@ -94,6 +96,57 @@ def test_each_page_is_cached_under_its_own_key(monkeypatch):
         data.triage(ERA, TriageFilters(), sort="last_activity", descending=True, offset=offset)
 
     assert asked == [0, 50, 100]
+
+
+def test_every_filter_dimension_reaches_the_cache_key(monkeypatch):
+    """A dimension left out of the key serves one owner another one's rows.
+
+    `data.triage` spells its key out field by field, which is right — a key
+    built from the whole object would change whenever an unrelated attribute
+    did — but it means a new dimension can be added to `TriageFilters` and
+    silently not reach it. The failure is not a stale list, it is the wrong
+    list under the right title, and nothing on screen says so.
+
+    So this walks the dataclass rather than naming the fields: change one field
+    at a time from the default and require the key to move.
+    """
+    from casefinder import bq, cache
+
+    cache.clear_all()
+    asked: list[str] = []
+
+    def fake_run(sql, params):
+        asked.append(sql)
+        return bq.QueryResult(rows=[], bytes_processed=0, cache_hit=False)
+
+    monkeypatch.setattr(bq, "run", fake_run)
+
+    # One value per field type, chosen so it differs from the default.
+    changed = {
+        "open_only": False,
+        "owners": [synthetic.OWNER],
+        "statuses": ["Open"],
+        "departments": ["Medicine"],
+        "pis": [synthetic.PI],
+        "irbs": ["IRB-1234"],
+        "funding": ["Funded"],
+    }
+    fields = [f.name for f in dataclasses.fields(TriageFilters)]
+    assert set(fields) == set(changed), "a new filter field needs a value here"
+
+    def fetch(filters: TriageFilters) -> None:
+        data.triage(ERA, filters, sort="last_activity", descending=True)
+
+    fetch(TriageFilters())
+    for name in fields:
+        before = len(asked)
+        fetch(TriageFilters(**{name: changed[name]}))
+        assert len(asked) == before + 1, f"{name} does not reach the cache key"
+        # And asking again for the same thing still uses the cache, so the
+        # test is proving the key discriminates rather than that it is unique
+        # per call.
+        fetch(TriageFilters(**{name: changed[name]}))
+        assert len(asked) == before + 1, f"{name} makes the key unstable"
 
 
 # --------------------------------------------------------------------------

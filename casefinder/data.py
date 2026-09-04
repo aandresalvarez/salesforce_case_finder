@@ -144,10 +144,15 @@ def triage(
     limit: int = queries.TRIAGE_LIMIT,
     offset: int = 0,
 ) -> Page:
+    # Every filter dimension, spelled out. A dimension missing from this list
+    # is not a stale entry, it is the wrong list under the right title: two
+    # different owners would share one key and the second would be served the
+    # first one's rows. `test_pagination` pins the set against the dataclass.
     key = cache.key(
         "triage",
         era.key,
         filters.open_only,
+        filters.owners,
         filters.statuses,
         filters.departments,
         filters.pis,

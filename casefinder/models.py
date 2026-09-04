@@ -565,6 +565,7 @@ class Facets:
     statuses: list[str] = field(default_factory=list)
     origin_classes: list[str] = field(default_factory=list)
     types: list[str] = field(default_factory=list)
+    owners: list[str] = field(default_factory=list)
     departments: list[str] = field(default_factory=list)
     pis: list[str] = field(default_factory=list)
     irbs: list[str] = field(default_factory=list)
@@ -580,6 +581,7 @@ class Facets:
             statuses=strings("statuses"),
             origin_classes=strings("origin_classes"),
             types=strings("types"),
+            owners=strings("owners"),
             departments=strings("departments"),
             pis=strings("pis"),
             irbs=strings("irbs"),

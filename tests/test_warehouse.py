@@ -115,9 +115,20 @@ def test_facets_come_back_populated_and_are_plain_strings():
     assert all(isinstance(s, str) and s.strip() for s in facets.statuses)
     # Section 5.5: Salesforce stores unset text as '' and every use is
     # NULLIF(TRIM())-ed, so a blank must never reach a dropdown.
-    for values in (facets.statuses, facets.departments, facets.pis, facets.irbs):
+    for values in (
+        facets.statuses,
+        facets.owners,
+        facets.departments,
+        facets.pis,
+        facets.irbs,
+    ):
         assert "" not in values
         assert not [v for v in values if v != v.strip()]
+    # D22. The owner facet is the only one that comes through the User join, so
+    # an empty list here means the join matched nothing rather than that the
+    # column is sparse — and the UI would answer by drawing no Owner control at
+    # all, which reads as "this app has five filters" and not as a fault.
+    assert facets.owners, "no owner values — the Owner filter would not render"
 
 
 def test_the_snapshot_reports_an_age_that_makes_sense():
@@ -436,6 +447,30 @@ def test_a_page_costs_what_the_whole_list_costs():
     whole_bytes = bq.estimate_bytes(whole, queries.triage_list(CURRENT, TriageFilters())[1])
     page_bytes = bq.estimate_bytes(page, page_params)
     assert page_bytes == whole_bytes
+
+
+def test_an_owner_filter_actually_filters(triage_page):
+    """D22, against real data rather than a fake.
+
+    The owner filter is the only one whose column is not on the case: it
+    compares against `u.Name` through the User join, so a mismatch between the
+    expression the facet aggregates and the expression the WHERE clause tests
+    would show up as a filter that quietly returns nothing. A fake cannot see
+    that, because a fake answers whatever the filter says.
+
+    Taken from a row rather than from the facet, so the name is known to belong
+    to a case in this era and the assertion is about the filter, not about
+    whether the two lists happen to overlap.
+    """
+    owner = next(row.owner for row in triage_page.rows if row.owner)
+    page = data.triage(
+        CURRENT,
+        TriageFilters(open_only=False, owners=[owner]),
+        sort="last_activity",
+        descending=True,
+    )
+    assert page.rows, "the owner filter matched nothing"
+    assert {row.owner for row in page.rows} == {owner}
 
 
 def test_an_open_only_list_contains_no_closed_cases():

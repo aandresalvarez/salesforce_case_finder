@@ -30,7 +30,7 @@ from ..models import (
     show,
     when,
 )
-from . import shell
+from . import lists, shell
 from .components import intake_form, loading
 from .components import metadata as metadata_ui
 from .components.empty_state import empty, unknown_case
@@ -100,6 +100,15 @@ def _actions(header: CaseHeader) -> None:
         quiet("Copy summary", lambda: _copy_summary(header), icon="content_copy")
         with overflow():
             ui.menu_item("Copy case number", on_click=lambda: _copy(header.case_number))
+            if header.owner:
+                # Not "Search for", which is the free-text search the other two
+                # run: an owner is a field with a filter of its own, and a text
+                # search for a name would also return every case that merely
+                # mentions them in a message.
+                ui.menu_item(
+                    f"Cases owned by {header.owner}",
+                    on_click=lambda: lists.focus_on_owner(header.owner),
+                )
             if header.pi:
                 ui.menu_item(
                     f"Search for {header.pi}", on_click=lambda: _search_for(header.pi)
