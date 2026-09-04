@@ -24,8 +24,8 @@ from ..models import SearchHit, Snippet, show
 from ..queries import SORTS, Filters, parse_terms
 from . import shell
 from .components import filters as filter_ui
+from .components import pager as pager_ui
 from .components.empty_state import empty
-from .components.table import result_count
 from .shell import MUTED, muted, state
 
 CASE_NUMBER = re.compile(r"^\s*(CASE-\d+)\s*$", re.IGNORECASE)
@@ -39,8 +39,11 @@ SORT_LABELS = {
 
 ROWS_PER_PAGE = (25, 50, 100)
 
-# Spec FR-SEARCH-11: never retrieve more than this from the warehouse, however
-# the page size is set.
+# Spec FR-SEARCH-11: never retrieve more than this in one fetch, however the
+# page size is set. It caps the fetch and not the result — paging past row 500
+# is allowed, and is the point of paging. The cap is there so a single request
+# cannot turn into a 41,526-row response; a reader walking to result 501 has
+# asked for it a page at a time.
 MAX_RETRIEVAL = 500
 
 
@@ -50,6 +53,21 @@ def render() -> None:
         _idle()
     else:
         _executed()
+
+
+def _rerun() -> None:
+    """Re-ask the question after something changed what the answer is.
+
+    Everything that touches the terms, the scope, the filters, the sort or the
+    era comes through here, and all of it clears the offset first. An offset is
+    a position in one particular result: change the question and row 51 is a
+    different row, so keeping it drops the reader into the middle of a result
+    they have not seen the start of — or past the end of a shorter one, which
+    reads as "no cases match". Paging is the one thing that moves the offset
+    rather than clearing it.
+    """
+    state.search.offset = 0
+    results.refresh()
 
 
 def _input_box(centered: bool) -> None:
@@ -63,7 +81,7 @@ def _input_box(centered: bool) -> None:
         state.search.text = raw
         state.search.dismissed_boilerplate = False
         state.search.executed = True
-        results.refresh()
+        _rerun()
         if not centered:
             return
         ui.navigate.to("/search")
@@ -83,24 +101,24 @@ def _scope_and_filters() -> None:
         search.in_fields = fields
         search.in_conversation = conversation
         if search.executed:
-            results.refresh()
+            _rerun()
         else:
             idle_controls.refresh()
 
     def set_era(key: str) -> None:
         state.era_key = key
         if search.executed:
-            results.refresh()
+            _rerun()
         else:
             idle_controls.refresh()
 
     def set_status(values: list[str]) -> None:
         search.statuses = values
-        results.refresh()
+        _rerun()
 
     def set_type(values: list[str]) -> None:
         search.types = values
-        results.refresh()
+        _rerun()
 
     filter_ui.scope_control(search.in_fields, search.in_conversation, set_scope)
 
@@ -175,7 +193,21 @@ def results() -> None:
             in_fields=search.in_fields,
             sort=search.sort,
             limit=min(search.rows_per_page, MAX_RETRIEVAL),
+            offset=search.offset,
         )
+        if not page.rows and search.offset:
+            # Same fallback the lists page makes: a page past the end of a
+            # result that moved is a first page, not an empty search.
+            search.offset = 0
+            page = data.search(
+                state.era,
+                terms,
+                _filters(),
+                in_conversation=search.in_conversation,
+                in_fields=search.in_fields,
+                sort=search.sort,
+                limit=min(search.rows_per_page, MAX_RETRIEVAL),
+            )
     except Exception as exc:  # noqa: BLE001
         shell.error_region(exc)
         return
@@ -196,7 +228,11 @@ def results() -> None:
 
     with ui.row().classes("w-full items-center justify-between").style("margin:14px 0 4px 0"):
         with ui.row().classes("items-center").style("gap:10px"):
-            muted(result_count(len(page.rows), page.total_matches))
+            muted(
+                pager_ui.range_label(
+                    state.search.offset, len(page.rows), page.total_matches, noun="result"
+                )
+            )
             if not page.is_trivial_cost:
                 muted("· " + page.cost_note)
         _sort_control()
@@ -235,7 +271,7 @@ def _boilerplate_warning(terms: list[str], page) -> None:
 def _sort_control() -> None:
     def set_sort(value: str) -> None:
         state.search.sort = value
-        results.refresh()
+        _rerun()
 
     ui.select(
         {key: SORT_LABELS[key] for key in SORTS},
@@ -245,23 +281,47 @@ def _sort_control() -> None:
 
 
 def _rows_per_page(page) -> None:
-    """FR-SEARCH-11: a compact control at the bottom, not a large slider."""
+    """FR-SEARCH-11: compact controls at the bottom, not a large slider.
+
+    The spec offers pagination *or* a rows-per-page control; this has both,
+    because on their own each one leaves a question unanswerable. Rows per page
+    alone caps you at 100 of 334 with no way to reach 101. Paging alone makes
+    someone scanning a long result turn six pages that could have been two.
+    They are two different questions — how much at a time, and which part — so
+    they are two controls, sitting together where the answer to both is needed.
+    """
     if page.total_matches <= min(ROWS_PER_PAGE):
         return
 
     def set_size(value: int) -> None:
         state.search.rows_per_page = value
+        # Row 30 is on a different page at 25 a page than at 100. Rather than
+        # guess which one the reader meant, go back to the top, which is the
+        # one place the answer is the same either way.
+        _rerun()
+
+    def set_offset(value: int) -> None:
+        state.search.offset = value
         results.refresh()
 
     with ui.row().classes("w-full items-center justify-end").style(
-        "gap:8px; margin-top:18px"
+        "gap:14px; margin-top:18px"
     ):
-        muted("Rows")
-        ui.select(
-            list(ROWS_PER_PAGE),
-            value=state.search.rows_per_page,
-            on_change=lambda e: set_size(int(e.value)),
-        ).props("dense borderless options-dense").style("font-size:12.5px")
+        pager_ui.pager(
+            offset=state.search.offset,
+            shown=len(page.rows),
+            total=page.total_matches,
+            page_size=state.search.rows_per_page,
+            on_change=set_offset,
+            noun="result",
+        )
+        with ui.row().classes("items-center").style("gap:6px"):
+            muted("Rows")
+            ui.select(
+                list(ROWS_PER_PAGE),
+                value=state.search.rows_per_page,
+                on_change=lambda e: set_size(int(e.value)),
+            ).props("dense borderless options-dense").style("font-size:12.5px")
 
 
 def _result_card(hit: SearchHit) -> None:
@@ -306,15 +366,15 @@ def _snippet(snippet: Snippet, terms: list[str]) -> None:
 
 def _enable_conversation() -> None:
     state.search.in_conversation = True
-    results.refresh()
+    _rerun()
 
 
 def _clear_filters() -> None:
     state.search.statuses = []
     state.search.types = []
-    results.refresh()
+    _rerun()
 
 
 def _switch_era() -> None:
     state.era_key = "archive" if state.era_key == "current" else "current"
-    results.refresh()
+    _rerun()

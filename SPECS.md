@@ -19,8 +19,8 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **310 passing**, ~1.1 s, no network access required |
-| Warehouse tests | **26 passing** against live BigQuery, ~30 s, ~2¢ (opt-in: `pytest -m warehouse`) |
+| Automated tests | **377 passing**, ~1.6 s, no network access required |
+| Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
 | Native window | `python -m casefinder.main` opens a pywebview window on `127.0.0.1` with an OS-assigned port |
@@ -42,31 +42,32 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-5,212 lines across 21 modules.
+5,747 lines across 22 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
-| `queries.py` | 733 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
-| `models.py` | 498 | Typed rows; the single place that decides how a missing value is displayed. |
+| `queries.py` | 759 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
+| `models.py` | 576 | Typed rows; the single place that decides how a missing value is displayed. |
+| `ui/lists.py` | 519 | §6.2 — triage lists, filters, saved views, paging, CSV. |
 | `ui/case_detail.py` | 442 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/lists.py` | 423 | §6.2 — triage lists, filters, saved views, CSV. |
-| `ui/shell.py` | 341 | §3.1 — rail, content region, era indicator, error surfaces. |
-| `ui/search.py` | 320 | §6.3 — idle state, results, snippets, case-number shortcut. |
-| `data.py` | 310 | The UI↔query seam: builder + cache + model, one function per page need. |
+| `ui/shell.py` | 414 | §3.1 — rail, content region, era indicator, error surfaces. |
+| `ui/search.py` | 380 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
+| `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
 | `ask.py` | 231 | §6.5 — question in, SQL out; nothing else in the prompt. |
-| `bq.py` | 226 | One client, byte caps, cost estimates, the read-only guard. |
 | `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
+| `ui/components/filters.py` | 194 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
-| `config.py` | 177 | Every environment variable and its default. |
-| `ui/components/filters.py` | 172 | The compact filter row and its disclosure. |
+| `config.py` | 190 | Every environment variable and its default. |
+| `ui/components/table.py` | 169 | The list table; clickable rows, no Open button. |
 | `ui/settings.py` | 156 | §6.7 — era, connection, Ask availability, about. |
-| `ui/components/table.py` | 129 | The list table; clickable rows, no Open button. |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
 | `main.py` | 96 | Routes, and the loopback-only native window. |
+| `ui/components/pager.py` | 88 | The range line and its two arrows; one pager for every paged screen. |
 | `ui/components/metadata.py` | 62 | The flat metadata strip that replaced five metric cards. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
-| `ui/components/freshness.py` | 30 | The stale-snapshot banner. |
+| `ui/components/freshness.py` | 38 | The stale-snapshot banner. |
 
 ### The layering rule
 
@@ -110,8 +111,8 @@ added without invariant coverage cannot pass silently.
 | Area | Spec | Where | Tests |
 |---|---|---|---|
 | Startup, access probe, no setup dashboard | FR-START-1..3 | `main.py`, `ui/shell.py` | `test_ui_actions.py`, `test_visual.py` |
-| Lists, columns, sorting, filters, presets, saved views, CSV | FR-LIST-1..12 | `ui/lists.py`, `views.py` | `test_triage.py`, `test_ui_actions.py` |
-| Search: idle, execute, shortcut, parsing, scope, results, limits, empty | FR-SEARCH-1..12 | `ui/search.py`, `queries.search` | `test_search_semantics.py` |
+| Lists, columns, sorting, filters, presets, saved views, paging, CSV | FR-LIST-1..12 (paging is D11) | `ui/lists.py`, `views.py`, `ui/components/pager.py` | `test_triage.py`, `test_ui_actions.py`, `test_pagination.py` |
+| Search: idle, execute, shortcut, parsing, scope, results, limits, paging, empty | FR-SEARCH-1..12 | `ui/search.py`, `queries.search`, `ui/components/pager.py` | `test_search_semantics.py`, `test_pagination.py` |
 | Case: comments-first, header, metadata, copy summary, tabs, related, unknown | FR-CASE-1..11 | `ui/case_detail.py` | `test_ui_actions.py`, `test_visual.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
@@ -165,8 +166,8 @@ process.
 
 ## 4. Deviations register
 
-Ten departures from the specification. Each names what the spec says, what was
-built, and why.
+Thirteen departures from the specification. Each names what the spec says, what
+was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
 
@@ -368,6 +369,73 @@ ran them in sequence would pass every other test in the file while doing nothing
 
 `get_client()` acquired a double-checked lock for the same reason: the first
 request of the app's life can now arrive on two threads at once.
+
+### D11 — Lists is paged, which §6.2 does not ask for
+
+**Spec:** FR-SEARCH-11 requires pagination on Search. Nothing in §6.2 mentions
+paging a list, a row cap, or a `Rows per page` control; FR-LIST-1 sketches a
+list and a count and stops there.
+
+**Built:** `triage_list` takes an offset, Lists draws 50 rows at a time, and the
+pager is repeated under the table as well as above it.
+
+**Why:** Open Cases returns 334 rows and the archive era returns more. Without
+paging the page rendered every row it retrieved, up to the 500-row cap, and the
+rows beyond the cap were unreachable by any means the interface offered — there
+was no next page, and no sort that would bring row 501 into the first 500 except
+by luck. The count line said `334 cases` while the table held a silent prefix of
+them. A capped list with no pager is a list that lies about what it contains.
+
+It also made the page enormous: 334 rows of nine columns is ~993 KB of DOM on
+open. Fifty rows is 204 KB.
+
+**Effect on requirements:** none removed. FR-LIST-1's count is now a range —
+`1–50 of 334 cases` — which says strictly more than `334` did. FR-LIST-5's
+sorting still re-queries server-side, and paging resets to the first page
+whenever the sort, a filter or the era changes, because an offset is a position
+in one particular result.
+
+**Cost:** unchanged per page, and that is worth being explicit about. `LIMIT`
+and `OFFSET` bound what BigQuery returns, not what it scans, so page 7 bills the
+same bytes as page 1 and the same bytes the unpaged list billed. This buys
+reachability and payload size, not money. A live dry-run test in
+`test_warehouse.py` asserts it rather than assuming it.
+
+### D12 — every search sort carries a case-number tiebreak
+
+**Spec:** FR-SEARCH-10 names four sorts — mentions, newest, oldest, longest
+thread — and says nothing about ties.
+
+**Built:** every one of them orders by `c.case_number DESC` as a final key.
+
+**Why:** none of the four sort keys is unique. Hundreds of cases share a mention
+count; a day's cases share a date. Without a total order BigQuery may return
+tied rows in a different order on each request, and paging over an unstable sort
+is not a partition: the same case can appear on two consecutive pages while
+another appears on neither, silently. This is not a preference about tie
+ordering — any deterministic tiebreak would do. It is what makes the pages of a
+result add up to the result. `test_warehouse.py` fetches three consecutive pages
+against live data and asserts their union equals a single fetch of the same
+span, in the same order.
+
+### D13 — Search pages past row 500; the 500 caps one fetch
+
+**Spec:** FR-SEARCH-11 — "Use pagination … Cap server-side result retrieval at
+500."
+
+**Built:** `MAX_RETRIEVAL = 500` caps a single request. Offsets are not capped,
+so a reader can page to result 501 and beyond, one page at a time.
+
+**Why:** the two halves of that sentence pull against each other — pagination
+whose offsets stop at 500 is pagination that hides the tail of any result larger
+than 500, which is the problem pagination exists to solve. Read as "no single
+response may be unbounded", both halves hold: the largest page offered is 100,
+no request can turn into a 41,526-row response, and reaching result 501 takes a
+deliberate act per page rather than one accidental query.
+
+**Effect on requirements:** FR-SEARCH-9's truncation state is gone, because
+there is no longer truncation to state. Where the page used to read
+`334 results · showing first 100` it now reads `1–100 of 334 results`.
 
 ---
 

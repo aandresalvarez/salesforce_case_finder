@@ -32,8 +32,8 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 310 automated
-tests, plus 26 more that run against live BigQuery to check the things a test
+**Status: complete and verified against the live warehouse.** 377 automated
+tests, plus 30 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path.
 

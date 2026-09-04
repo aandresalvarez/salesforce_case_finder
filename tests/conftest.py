@@ -105,6 +105,50 @@ class Tree:
     def clickable(self, element) -> bool:
         return any(h.split(".")[0] == "click" for h in self.handlers(element))
 
+    def _listeners(self, element, event: str) -> list[Any]:
+        found = [
+            listener
+            for listener in element._event_listeners.values()
+            if listener.type.split(".")[0] == event
+        ]
+        assert found, f"{type(element).__name__} has no {event} handler"
+        return found
+
+    def press(self, element) -> None:
+        """Fire an element's click handlers as the browser would.
+
+        Calling the page's callback directly is the usual style here and it is
+        fine for testing what the callback does. It is not fine for testing
+        that a control is *wired to* it — a button rendered with no handler at
+        all passes that test. This runs the listeners the element actually
+        carries, inside its own client, so the wiring is part of what is
+        asserted.
+        """
+        from nicegui.events import ClickEventArguments, handle_event
+
+        with self.client:
+            for listener in self._listeners(element, "click"):
+                handle_event(
+                    listener.handler,
+                    ClickEventArguments(sender=element, client=self.client),
+                )
+
+    def fire(self, element, event: str) -> None:
+        """`press` for the events that are not clicks — `keydown` for Enter.
+
+        Kept separate rather than folded into `press` because the two hand the
+        handler a different arguments object, and a handler that takes the
+        event would silently get the wrong shape.
+        """
+        from nicegui.events import GenericEventArguments, handle_event
+
+        with self.client:
+            for listener in self._listeners(element, event):
+                handle_event(
+                    listener.handler,
+                    GenericEventArguments(sender=element, client=self.client, args={}),
+                )
+
 
 @pytest.fixture
 def render(no_warehouse, no_vertex) -> Callable[..., Tree]:
@@ -244,7 +288,18 @@ class FakeWarehouse:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        # The last keyword arguments each method was called with, so a test can
+        # ask what the page requested rather than only what it did with the
+        # answer — which is the whole question for paging.
+        self.kwargs: dict[str, dict[str, Any]] = {}
         self.rows = [_triage_row("CASE-056576"), _triage_row("CASE-056577")]
+        # Deliberately larger than `rows`: a list page is a window onto a
+        # result, and a fake where the two are equal cannot tell the range line
+        # from a plain count.
+        self.total = 119
+        # Set to an offset past which the fake returns nothing, the way
+        # BigQuery answers a page past the end of a result.
+        self.stranded_past: int | None = None
         self.header: Any = _header()
         self.comments: list[Any] = []
         self.messages: list[Any] = []
@@ -252,6 +307,13 @@ class FakeWarehouse:
         self.attachments: list[Any] = []
         self.related: list[Any] = []
         self.hits: list[Any] = []
+        # Search's equivalent of `total`. Left small enough that the default
+        # fake is a result which fits on one page, because most of the search
+        # tests are about a result card and not about paging; the paging tests
+        # raise it. `stranded_past` is shared with `triage` — no test needs the
+        # two to strand at different offsets, and one knob is one less thing to
+        # get wrong.
+        self.hit_total = 2
         self.stale_days = 2
         # Filled with a default in `install`, where `Facets` is importable. A
         # test that wants empty filter values replaces it afterwards; the stub
@@ -265,7 +327,28 @@ class FakeWarehouse:
         def record(name, value):
             def call(*args, **kwargs):
                 self.calls.append(name)
+                self.kwargs[name] = kwargs
                 return value() if callable(value) else value
+
+            return call
+
+        def paged(name, rows, total):
+            """A stub that answers like a warehouse being paged through.
+
+            The generic `record` stub returns the same page whatever it is
+            asked for, which cannot distinguish a page that respects the offset
+            from one that ignores it — and ignoring it is the bug. This one at
+            least answers an offset past the end the way BigQuery does, with no
+            rows rather than an error.
+            """
+
+            def call(*args, **kwargs):
+                self.calls.append(name)
+                self.kwargs[name] = kwargs
+                offset = kwargs.get("offset", 0)
+                if self.stranded_past is not None and offset >= self.stranded_past:
+                    return _page([], total())
+                return _page(rows(), total())
 
             return call
 
@@ -287,7 +370,9 @@ class FakeWarehouse:
                 ),
             ),
         )
-        monkeypatch.setattr(data, "triage", record("triage", lambda: _page(self.rows, 119)))
+        monkeypatch.setattr(
+            data, "triage", paged("triage", lambda: self.rows, lambda: self.total)
+        )
         if self.facets is None:
             self.facets = Facets(
                 statuses=["Open", "Closed"],
@@ -297,7 +382,9 @@ class FakeWarehouse:
                 irbs=["IRB-1234"],
             )
         monkeypatch.setattr(data, "facets", record("facets", lambda: self.facets))
-        monkeypatch.setattr(data, "search", record("search", lambda: _page(self.hits, 2)))
+        monkeypatch.setattr(
+            data, "search", paged("search", lambda: self.hits, lambda: self.hit_total)
+        )
         monkeypatch.setattr(data, "corpus_size", record("corpus_size", 1714))
         monkeypatch.setattr(data, "case_header", record("case_header", lambda: self.header))
         monkeypatch.setattr(data, "comments", record("comments", lambda: self.comments))

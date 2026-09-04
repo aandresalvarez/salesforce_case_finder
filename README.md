@@ -183,7 +183,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 310 tests, no credentials needed, ~1 s
+uv run pytest              # 377 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 ```
@@ -196,7 +196,7 @@ Tests that do hit the warehouse are opt-in. They need ADC and cost roughly two
 cents a run. Run them before a release and after any change to `queries.py`:
 
 ```bash
-uv run pytest -m warehouse   # 26 tests, ~30 s
+uv run pytest -m warehouse   # 30 tests, ~45 s
 ```
 
 | File | Covers |
@@ -208,6 +208,7 @@ uv run pytest -m warehouse   # 26 tests, ~30 s
 | `test_read_only.py` | The mutation guard, including keywords hidden in comments |
 | `test_ask.py` | What is in a Gemini prompt, and what comes back |
 | `test_ui_actions.py` | The lean-UI acceptance tests UX-T1 through UX-T7 |
+| `test_pagination.py` | Paging on lists and search: offsets, tiebreaks, and when the offset resets |
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
 | `test_warehouse.py` | Semantics only real data can prove — opt-in, marked `warehouse` |
 

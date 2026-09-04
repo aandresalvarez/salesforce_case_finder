@@ -44,6 +44,11 @@ _CSS = f"""
   --cf-line: {LINE};
   --cf-surface: {SURFACE};
   --cf-canvas: {CANVAS};
+  /* The scrolling pane's own top padding. A variable rather than a number
+     because the sticky table header has to cancel it exactly — see
+     `.cf-table thead tr th`. Change it in one place or the header stops
+     covering the strip it is supposed to cover. */
+  --cf-pad-top: 26px;
 }}
 body {{
   background: var(--cf-canvas);
@@ -71,7 +76,7 @@ body {{
 .cf-nav-active {{ background: rgba(37,99,235,.10); color: var(--cf-accent); font-weight: 550; }}
 .cf-content {{
   flex: 1; min-width: 0; height: 100vh; overflow-y: auto;
-  background: var(--cf-surface); padding: 26px 30px 60px 30px;
+  background: var(--cf-surface); padding: var(--cf-pad-top) 30px 60px 30px;
 }}
 .cf-reading {{ max-width: 1060px; }}
 .cf-h1 {{ font-size: 21px; font-weight: 600; letter-spacing: -.01em; }}
@@ -81,11 +86,22 @@ body {{
 .cf-row {{ cursor: pointer; }}
 .cf-row:hover {{ background: rgba(37,99,235,.045); }}
 .cf-casenum {{ color: var(--cf-accent); font-variant-numeric: tabular-nums; font-weight: 550; }}
+/* `overflow-wrap:anywhere` on both of these is a correctness fix, not a
+   nicety. Case bodies are pasted email: REDCap URLs, and — because the
+   requester's form was serialised into the message — unbroken runs of JSON
+   with no space in them for hundreds of characters. A run like that is one
+   word to the browser, so without this it overflows the column and the tail
+   is clipped at the edge of the page. The user is not told; the text is just
+   gone. */
 .cf-snippet {{
   font-size: 12.5px; color: #374151; line-height: 1.55;
   border-left: 2px solid var(--cf-line); padding-left: 10px;
+  overflow-wrap: anywhere;
 }}
-.cf-body {{ white-space: pre-wrap; line-height: 1.6; font-size: 13.5px; }}
+.cf-body {{
+  white-space: pre-wrap; line-height: 1.6; font-size: 13.5px;
+  overflow-wrap: anywhere;
+}}
 .cf-banner {{
   background: #fff8e6; border: 1px solid #f2dfae; color: #6b5312;
   border-radius: 5px; padding: 8px 12px; font-size: 12.5px;
@@ -110,8 +126,29 @@ body {{
 }}
 .cf-metric-value {{ font-size: 13.5px; }}
 /* Compact tables — no zebra, 1px dividers, tabular figures. */
+/* The header pins to the top of `.cf-content`, and the negative offset is what
+   makes it pin to the top the reader can *see*. `top: 0` pins to the top of the
+   pane's content box, which is `--cf-pad-top` below the top of the pane itself,
+   so it left a 26px strip of open scrollport above the header: rows slid up
+   through it in full view, and because a description is clamped to two lines,
+   one line of a row would show above the header while its second line showed
+   below. That reads as a rendering fault rather than as scrolling. Pulling the
+   pin up by exactly the padding closes the strip.
+
+   The padding is still wanted — it is the gap above the first row when the pane
+   is scrolled to the top, and the header only rises into it once there is
+   something to scroll under. */
+/* The rule under the header is a shadow and not the `border-bottom` the cell
+   already declares, because `border-collapse: collapse` hands its borders to
+   the table to draw: the border stays with the table while the cell floats
+   above it, so a pinned header lost its underline and the half-scrolled row
+   beneath it was cut off against nothing. A shadow is painted by the cell and
+   travels with it. At rest it lands on the same pixel as the border, in the
+   same colour, so nothing about the resting header changes. */
 .cf-table thead tr th {{
-  position: sticky; top: 0; z-index: 1; background: var(--cf-surface);
+  position: sticky; top: calc(var(--cf-pad-top) * -1);
+  z-index: 1; background: var(--cf-surface);
+  box-shadow: 0 1px 0 var(--cf-line);
   font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
   color: var(--cf-muted); font-weight: 600;
 }}
@@ -122,6 +159,34 @@ body {{
 def theme() -> None:
     ui.add_head_html(f"<style>{_CSS}</style>")
     ui.query("body").style(f"background:{CANVAS}")
+
+
+_registered_css: set[str] = set()
+
+
+def register_css(name: str, css: str) -> None:
+    """Install a component's stylesheet once, for every client.
+
+    `ui.add_head_html` writes into the head of the *current* client, so the
+    obvious way to write this — a module-level `_added` flag guarding a call to
+    it — is wrong in a way that only shows up on the second page load. The first
+    client in the process sets the flag and gets the rules; every client after
+    it gets the class names with no rules behind them.
+
+    That is not hypothetical. It is why list descriptions rendered as full,
+    untruncated case bodies: `.cf-truncate` was on the element and its
+    `-webkit-line-clamp` was in a stylesheet exactly one page load had ever
+    seen.
+
+    `shared=True` puts the stylesheet in the head served to every client, which
+    is what a component stylesheet is. The name is the dedupe key, because
+    shared head HTML accumulates and a component's CSS is registered on every
+    render.
+    """
+    if name in _registered_css:
+        return
+    _registered_css.add(name)
+    ui.add_head_html(f"<style>{css}</style>", shared=True)
 
 
 # --------------------------------------------------------------------------
@@ -182,6 +247,9 @@ class SearchState:
     in_conversation: bool = True
     sort: str = "relevance"
     rows_per_page: int = 25
+    # Where in the result the reader is. Reset by anything that changes what
+    # the result *is* — see `search._rerun`.
+    offset: int = 0
     statuses: list[str] = field(default_factory=list)
     types: list[str] = field(default_factory=list)
     dismissed_boilerplate: bool = False
@@ -195,6 +263,9 @@ class ListState:
     sort: str = "last_activity"
     descending: bool = True
     columns: tuple[str, ...] = ()
+    # Which page of the result the table is showing. Not persisted in a saved
+    # view: a view is a question, and page 4 is not part of one.
+    offset: int = 0
 
 
 @dataclass

@@ -16,50 +16,89 @@ from collections.abc import Callable
 from nicegui import ui
 
 from .. import config, data, views
-from ..models import TriageRow, show
-from ..queries import TRIAGE_LIMIT, TRIAGE_SORTS, TriageFilters
+from ..models import TriageRow, preview, show
+from ..queries import TRIAGE_LIMIT, TRIAGE_PAGE_SIZE, TRIAGE_SORTS, TriageFilters
 from . import shell
 from .components import filters as filter_ui
 from .components import freshness as freshness_ui
+from .components import pager as pager_ui
 from .components import table as table_ui
 from .components.empty_state import empty
 from .shell import MUTED, muted, overflow, primary, quiet, state
 
 # Spec FR-LIST-4, in order. Description and funding are the two that give way
 # when the window is narrow.
+#
+# The widths add up to about 975px, which leaves the description whatever the
+# window has spare past the 1180px breakpoint at which it is dropped entirely.
+# They are honoured exactly rather than treated as hints, because the table
+# sets `table-layout:fixed` — see the note there for what that is protecting
+# against. Every column but the description is one line: these are identifiers
+# and short labels, and a row that grows because one owner has a long name is
+# the density problem in miniature.
 COLUMNS = {
     "case_number": table_ui.Column(
-        "case_number", "Case", lambda r: r.case_number, width="118px"
+        "case_number", "Case", lambda r: r.case_number, width="112px", one_line=True
     ),
-    "owner": table_ui.Column("owner", "Owner", lambda r: show(r.owner), width="140px"),
-    "status": table_ui.Column("status", "Status", lambda r: show(r.status), width="110px"),
-    "pi": table_ui.Column("pi", "PI", lambda r: show(r.pi), width="140px"),
+    "owner": table_ui.Column(
+        "owner", "Owner", lambda r: show(r.owner), width="128px", one_line=True
+    ),
+    "status": table_ui.Column(
+        "status", "Status", lambda r: show(r.status), width="104px", one_line=True
+    ),
+    "pi": table_ui.Column("pi", "PI", lambda r: show(r.pi), width="128px", one_line=True),
     "department": table_ui.Column(
-        "department", "Department", lambda r: show(r.department), width="150px"
+        "department", "Department", lambda r: show(r.department), width="140px", one_line=True
     ),
-    "irb": table_ui.Column("irb", "IRB / protocol", lambda r: show(r.irb), width="120px"),
+    "irb": table_ui.Column(
+        # IRB values are five-digit protocol numbers, or `NA`, `QI`, `unknown`.
+        # The header is the widest thing in the column, so it sets the width.
+        "irb", "IRB / protocol", lambda r: show(r.irb), width="116px", one_line=True
+    ),
     "description": table_ui.Column(
         "description",
         "Description",
-        lambda r: r.description or "",
+        lambda r: preview(r.description),
         sortable=False,
         droppable=True,
+        clamp=True,
+        subdued=True,
     ),
     "last_activity": table_ui.Column(
         "last_activity",
         "Last activity",
         lambda r: show(r.last_activity),
-        width="120px",
+        width="116px",
         numeric=True,
+        one_line=True,
     ),
     "funding": table_ui.Column(
-        "funding", "Funded", lambda r: show(r.funding), width="110px", droppable=True
+        "funding",
+        "Funded",
+        lambda r: _funding(r.funding),
+        width="132px",
+        droppable=True,
+        one_line=True,
     ),
 }
+
+# Salesforce spells the funded values `Funded - Grant`, `Funded - Industry`,
+# `Funded - Departmental/Gift`. Under a column headed `Funded`, the first two
+# words are the header again, and at any width that leaves room for the
+# description they are all that fits: the column read `Funded - …` four times
+# over and distinguished nothing. `Unfunded`, `Seeking Funding` and the
+# free-text answers people typed instead are left exactly as they are.
+_FUNDED_PREFIX = "Funded - "
+
+
+def _funding(value: str | None) -> str:
+    text = show(value)
+    return text[len(_FUNDED_PREFIX) :] if text.startswith(_FUNDED_PREFIX) else text
 
 
 def _apply_view(view: views.SavedView) -> None:
     state.lists.view_name = view.name
+    state.lists.offset = 0
     state.lists.filters = TriageFilters(
         open_only=view.filters.open_only,
         statuses=list(view.filters.statuses),
@@ -235,7 +274,7 @@ def _export_csv() -> None:
     import io
 
     try:
-        page = _query()
+        page = _whole_list()
     except Exception as exc:  # noqa: BLE001
         ui.notify(f"Could not export: {exc}", type="negative")
         return
@@ -254,10 +293,30 @@ def _export_csv() -> None:
 
     name = state.lists.view_name.lower().replace(" ", "-").replace("/", "-")
     ui.download(buffer.getvalue().encode("utf-8"), f"{name}.csv")
-    ui.notify(f"Exported {len(page.rows):,} rows (metadata only)", type="positive")
+    note = f"Exported {len(page.rows):,} rows (metadata only)"
+    if page.total_matches > len(page.rows):
+        note += f" — the first {TRIAGE_LIMIT:,} of {page.total_matches:,} matches"
+    ui.notify(note, type="positive")
 
 
 def _query():
+    """The page the table is showing."""
+    return data.triage(
+        state.era,
+        state.lists.filters,
+        sort=state.lists.sort,
+        descending=state.lists.descending,
+        limit=TRIAGE_PAGE_SIZE,
+        offset=state.lists.offset,
+    )
+
+
+def _whole_list():
+    """Every matching row up to the fetch ceiling, for the export.
+
+    An export of what happens to be on screen is a footgun: the user asked for
+    the view, not for rows 51 to 100 of it.
+    """
     return data.triage(
         state.era,
         state.lists.filters,
@@ -273,6 +332,13 @@ def _on_sort(key: str) -> None:
     else:
         state.lists.sort = key
         state.lists.descending = True
+    # A different order is a different first page.
+    state.lists.offset = 0
+    body.refresh()
+
+
+def _on_page(offset: int) -> None:
+    state.lists.offset = offset
     body.refresh()
 
 
@@ -282,6 +348,9 @@ def _filter_controls() -> None:
     current = state.lists.filters
 
     def rerun() -> None:
+        # Narrowing the list invalidates where you were in it — staying on
+        # page 4 of a result that now has two pages shows nothing at all.
+        state.lists.offset = 0
         body.refresh()
         header_meta.refresh()
 
@@ -326,6 +395,13 @@ def body() -> None:
 
     try:
         page = _query()
+        if not page.rows and state.lists.offset:
+            # The result shrank out from under a page we were already past —
+            # a fresh snapshot or an expired cache entry, since every filter
+            # change resets the offset itself. Fall back to the top rather
+            # than reporting that nothing matches, which would be false.
+            state.lists.offset = 0
+            page = _query()
     except Exception as exc:  # noqa: BLE001
         shell.error_region(exc)
         return
@@ -339,7 +415,7 @@ def body() -> None:
         return
 
     with ui.row().classes("w-full items-center justify-between").style("margin:4px 0 8px 0"):
-        muted(table_ui.result_count(len(page.rows), page.total_matches, noun="case"))
+        _pager(page)
         if not page.is_trivial_cost:
             muted(page.cost_note)
 
@@ -352,9 +428,29 @@ def body() -> None:
         on_sort=_on_sort,
     )
 
+    if page.total_matches > TRIAGE_PAGE_SIZE:
+        # Repeated under the table. Fifty rows is about three screens, so a
+        # pager only at the top is one the reader has to scroll back up to
+        # reach — at the exact moment they have finished the page and know they
+        # want the next one. Drawn only when there is a next page to want, so a
+        # short list still ends at its last row.
+        with ui.row().classes("w-full justify-end").style("margin-top:12px"):
+            _pager(page)
+
+
+def _pager(page) -> None:
+    pager_ui.pager(
+        offset=state.lists.offset,
+        shown=len(page.rows),
+        total=page.total_matches,
+        page_size=TRIAGE_PAGE_SIZE,
+        on_change=_on_page,
+    )
+
 
 def _clear_filters() -> None:
     state.lists.filters = TriageFilters(open_only=state.lists.filters.open_only)
+    state.lists.offset = 0
     body.refresh()
     header_meta.refresh()
 

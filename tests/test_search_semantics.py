@@ -133,8 +133,8 @@ def test_scope_switches_actually_change_the_query(era):
 
 
 def test_total_is_counted_before_the_limit(era):
-    """FR-SEARCH-9 shows "N results · showing first 50", so N cannot be the
-    number of rows returned."""
+    """FR-SEARCH-9 shows "1–50 of 334 results", so N cannot be the number of
+    rows returned — it is the size of the result the page is a window onto."""
     sql, _ = queries.search(era, ["omop"], Filters(), limit=50)
     assert "COUNT(*) OVER ()" in sql
     assert sql.index("COUNT(*) OVER ()") < sql.upper().rindex("LIMIT")

@@ -48,6 +48,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "BLE", "RUF"]
 # Collapsing `with row(): with column():` into one statement would flatten
 # something that is not flat.
 ignore = ["SIM117"]
+# RUF001 reads an en dash as a typo for a hyphen. In a range like `51–100 of
+# 334` it is the correct character and a hyphen is the wrong one, so the rule
+# is told about this one rather than suppressed at each site — the em dash and
+# the ellipsis this app also uses are not flagged, and should not start being
+# waved through as a side effect.
+allowed-confusables = ["–"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

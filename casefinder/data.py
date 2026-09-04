@@ -142,6 +142,7 @@ def triage(
     sort: str,
     descending: bool,
     limit: int = queries.TRIAGE_LIMIT,
+    offset: int = 0,
 ) -> Page:
     key = cache.key(
         "triage",
@@ -155,11 +156,12 @@ def triage(
         sort,
         descending,
         limit,
+        offset,
     )
     return _run(
         key,
         lambda: queries.triage_list(
-            era, filters, sort=sort, descending=descending, limit=limit
+            era, filters, sort=sort, descending=descending, limit=limit, offset=offset
         ),
         TriageRow.from_row,
     )
@@ -188,6 +190,7 @@ def search(
     in_fields: bool,
     sort: str,
     limit: int,
+    offset: int = 0,
 ) -> Page:
     key = cache.key(
         "search",
@@ -202,6 +205,7 @@ def search(
         in_fields,
         sort,
         limit,
+        offset,
     )
     return _run(
         key,
@@ -213,6 +217,7 @@ def search(
             in_fields=in_fields,
             sort=sort,
             limit=limit,
+            offset=offset,
         ),
         SearchHit.from_row,
     )

@@ -151,6 +151,49 @@ def test_the_true_match_count_survives_the_limit(one_term):
     assert one_term.total_matches >= len(one_term.rows)
 
 
+def test_consecutive_search_pages_partition_the_result():
+    """The same total-order argument as the list, against the sort that needs
+    it most.
+
+    `relevance` is `matching_turns DESC, created_at DESC` before the tiebreak,
+    and mention counts are small integers — a great many cases match a common
+    term exactly twice, so the ties here are wide rather than incidental. This
+    is what the shipped `Rows per page` control was already exposed to before
+    anything paged.
+    """
+    size = 25
+    pages = [
+        data.search(
+            CURRENT,
+            ["omop"],
+            Filters(),
+            in_conversation=True,
+            in_fields=True,
+            sort="relevance",
+            limit=size,
+            offset=n * size,
+        )
+        for n in range(3)
+    ]
+
+    assert all(len(page.rows) == size for page in pages), "not enough matches to page"
+    assert {page.total_matches for page in pages} == {pages[0].total_matches}
+
+    seen = [hit.case_number for page in pages for hit in page.rows]
+    assert len(seen) == len(set(seen)), "a case appeared on two pages of results"
+
+    whole = data.search(
+        CURRENT,
+        ["omop"],
+        Filters(),
+        in_conversation=True,
+        in_fields=True,
+        sort="relevance",
+        limit=3 * size,
+    )
+    assert [hit.case_number for hit in whole.rows] == seen
+
+
 def test_a_second_term_narrows_rather_than_widens(one_term, two_terms):
     """AND semantics. The failure this catches is a builder that ORs terms,
     which looks like better recall and is the opposite of what the spec asks
@@ -328,6 +371,71 @@ def test_the_triage_list_stays_inside_its_documented_budget():
     """Section 8 budgets ~31 MB. This is the app's landing query."""
     sql, params = queries.triage_list(CURRENT, TriageFilters())
     assert bq.estimate_bytes(sql, params) < 100 * 1024 * 1024
+
+
+def test_consecutive_pages_partition_the_result_without_gaps_or_repeats():
+    """What paging has to be true for, and what a fake cannot show.
+
+    `ORDER BY … NULLS LAST, c.case_number DESC` is only a total order if the
+    tiebreak actually breaks every tie. `last_activity` is the default sort and
+    a great many cases share a timestamp to the second, so without the tiebreak
+    BigQuery is free to return them in a different order for each of the two
+    jobs a page turn issues — and a case then appears on both pages, or on
+    neither. Neither shows up against a two-row test double.
+    """
+    size = queries.TRIAGE_PAGE_SIZE
+    filters = TriageFilters(open_only=True)
+    pages = [
+        data.triage(
+            CURRENT, filters, sort="last_activity", descending=True, limit=size, offset=n * size
+        )
+        for n in range(3)
+    ]
+
+    assert all(len(page.rows) == size for page in pages), "not enough open cases to page"
+    # Every page reports the size of the result, not the size of the page.
+    assert {page.total_matches for page in pages} == {pages[0].total_matches}
+    assert pages[0].total_matches > 3 * size
+
+    seen = [row.case_number for page in pages for row in page.rows]
+    assert len(seen) == len(set(seen)), "a case appeared on two pages"
+
+    # And the union really is the head of the list: asking for all of it at
+    # once must give the same cases in the same order.
+    whole = data.triage(
+        CURRENT, filters, sort="last_activity", descending=True, limit=3 * size
+    )
+    assert [row.case_number for row in whole.rows] == seen
+
+
+def test_an_offset_past_the_end_is_empty_rather_than_an_error():
+    """The fallback in the list page is built on this being how BigQuery
+    answers, rather than a failure it would have to catch."""
+    page = data.triage(
+        CURRENT,
+        TriageFilters(open_only=True),
+        sort="last_activity",
+        descending=True,
+        limit=10,
+        offset=1_000_000,
+    )
+    assert page.rows == []
+
+
+def test_a_page_costs_what_the_whole_list_costs():
+    """LIMIT and OFFSET bound what comes back, not what is scanned.
+
+    Worth stating because it is the reason paging is a latency and rendering
+    win rather than a cost one, and the reason the page size is 50 rather than
+    5 — a smaller page would buy nothing and charge for a job per turn.
+    """
+    whole, _ = queries.triage_list(CURRENT, TriageFilters(), limit=queries.TRIAGE_LIMIT)
+    page, page_params = queries.triage_list(
+        CURRENT, TriageFilters(), limit=queries.TRIAGE_PAGE_SIZE, offset=200
+    )
+    whole_bytes = bq.estimate_bytes(whole, queries.triage_list(CURRENT, TriageFilters())[1])
+    page_bytes = bq.estimate_bytes(page, page_params)
+    assert page_bytes == whole_bytes
 
 
 def test_an_open_only_list_contains_no_closed_cases():

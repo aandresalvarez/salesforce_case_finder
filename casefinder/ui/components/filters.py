@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 
 from nicegui import ui
 
-from ..shell import LINE, MUTED
+from ..shell import LINE, MUTED, register_css
 
 # The breakpoint below which the row gives up and becomes a disclosure.
 NARROW_PX = 1180
@@ -36,18 +36,17 @@ _CSS = f"""
   min-height:30px; height:30px; border-radius:999px;
   background:#fff; border:1px solid {LINE};
 }}
-.cf-select .q-field__native {{ font-size:12.5px; padding:0; }}
+.cf-select .q-field__native {{
+  font-size:12.5px; padding:0; flex-wrap:nowrap;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}}
 .cf-select .q-field__marginal {{ height:30px; }}
+.cf-select .q-field__append {{ padding-left:2px; }}
 """
-
-_css_added = False
 
 
 def _ensure_css() -> None:
-    global _css_added
-    if not _css_added:
-        ui.add_head_html(f"<style>{_CSS}</style>")
-        _css_added = True
+    register_css("filters", _CSS)
 
 
 class Debounce:
@@ -95,11 +94,34 @@ def multi_select(
             label=label,
             on_change=lambda e: on_change(list(e.value or [])),
         )
-        .props("dense outlined use-chips options-dense clearable")
+        .props("dense outlined options-dense clearable")
         .classes("cf-select")
         .style(f"width:{width}px")
     )
-    element.tooltip(f"Filter by {label.lower()}")
+    if selected:
+        element.props(f'display-value="{summarise(label, selected)}"')
+    element.tooltip(_tooltip(label, selected))
+
+
+def summarise(label: str, selected: Sequence[str]) -> str:
+    """What a filter control says about itself once something is chosen.
+
+    Quasar's default is every value, comma-joined, inside a 170px control — so
+    picking `Data Queue` showed `Data Q…` and picking two things showed neither
+    of them. One value is worth spelling out; past that a count is honest about
+    the fact that the control cannot show them, and the tooltip has the list.
+    """
+    if len(selected) == 1:
+        # Quotes would terminate the Quasar prop; a value containing one is not
+        # worth a quoting scheme when dropping it changes nothing that matters.
+        return selected[0].replace('"', "")
+    return f"{label} · {len(selected)}"
+
+
+def _tooltip(label: str, selected: Sequence[str]) -> str:
+    if not selected:
+        return f"Filter by {label.lower()}"
+    return f"{label}: " + ", ".join(selected)
 
 
 def open_only_toggle(value: bool, on_change: Callable[[bool], None]) -> None:

@@ -20,11 +20,19 @@ def line(fresh: Freshness) -> None:
 
 
 def banner(fresh: Freshness) -> None:
-    """Shown only past the staleness threshold. One per screen."""
+    """Shown only past the staleness threshold. One per screen.
+
+    Sized to its text rather than stretched across the window. A full-bleed
+    amber bar is the loudest thing on a triage screen, and it is permanent —
+    the snapshot is either stale or it is not, so it would be shouting on every
+    page load for as long as the load schedule slips. Quiet status, stated
+    once, is the rule this is under (UX-INV-5); the point is that the reader
+    can find it when the dates look wrong, not that they cannot avoid it.
+    """
     if not fresh.is_stale:
         return
-    with ui.row().classes("cf-banner w-full items-center").style(
-        "gap:8px; margin:10px 0 2px 0"
+    with ui.row().classes("cf-banner items-center").style(
+        "gap:7px; margin:10px 0 2px 0; width:fit-content; max-width:100%"
     ):
-        ui.icon("schedule").style("font-size:15px")
+        ui.icon("schedule").style("font-size:14px")
         ui.label(fresh.warning)

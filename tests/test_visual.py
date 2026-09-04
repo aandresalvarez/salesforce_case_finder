@@ -160,6 +160,114 @@ def test_a_snippet_is_the_only_html_on_the_results_screen(render, warehouse):
 
 
 # --------------------------------------------------------------------------
+# Stylesheet delivery
+# --------------------------------------------------------------------------
+
+
+def _head_seen_by(tree) -> str:
+    from nicegui import Client
+
+    return Client.shared_head_html + tree.client._head_html
+
+
+@pytest.mark.parametrize(
+    ("component", "rule"),
+    [("table", "-webkit-line-clamp"), ("filters", ".cf-select .q-field__control")],
+)
+def test_a_component_stylesheet_reaches_every_page_and_not_just_the_first(
+    component, rule, render, warehouse, monkeypatch
+):
+    """The regression that made list descriptions render as whole case bodies.
+
+    `ui.add_head_html` writes into the head of the *current* client, so the
+    obvious way to install a component's CSS once — a module-level flag
+    guarding the call — serves the rules to the first page load in the process
+    and the class names to every one after it. The page then has `.cf-truncate`
+    on an element and no `-webkit-line-clamp` anywhere, which looks exactly like
+    a component that has no CSS at all.
+
+    Rendering twice is the smallest thing that tells a shared stylesheet from a
+    per-client one. Asserting only on the second load would pass against a
+    stylesheet that reached nobody, so both are checked.
+    """
+    from casefinder.ui import shell as shell_module
+
+    # A fresh registry, so this asserts that the mechanism installs the CSS
+    # rather than that some earlier test in the session already did.
+    monkeypatch.setattr(shell_module, "_registered_css", set())
+
+    first = render(lists.render)
+    second = render(lists.render)
+
+    assert rule in _head_seen_by(first), f"{component} CSS missing on the first load"
+    assert rule in _head_seen_by(second), f"{component} CSS missing on the second load"
+
+
+@pytest.mark.parametrize("cls", [".cf-body", ".cf-snippet"])
+def test_free_text_wraps_instead_of_running_off_the_page(cls, render, warehouse):
+    """A case body is pasted email, and the requester's web form was serialised
+    into it — hundreds of characters of JSON with no space anywhere in them,
+    and REDCap URLs beside it. That is one word as far as the browser is
+    concerned, so without `overflow-wrap` it overflows its column and the tail
+    is clipped at the edge of the page with nothing to say it happened.
+
+    Asserted on the stylesheet rather than on a rendered width because there is
+    no layout engine here; what a browser test would add is a check that the
+    rule is the right one, and what this catches is the rule going missing.
+    """
+    tree = render(shell.theme)
+
+    head = _head_seen_by(tree)
+    assert cls in head, f"{cls} is not in the theme the page is served"
+    block = head[head.index(cls) : head.index(cls) + 260]
+    assert "overflow-wrap: anywhere" in block, f"{cls} can clip its text"
+
+
+def _sticky_header_rule(tree) -> str:
+    # The opening brace is part of the needle because the comment on
+    # `--cf-pad-top` names this selector too, and a bare `index` finds the prose
+    # rather than the rule.
+    head = _head_seen_by(tree)
+    start = head.index(".cf-table thead tr th {")
+    return head[start : head.index("}", start)]
+
+
+def test_the_pinned_header_covers_the_pane_it_is_pinned_to(render, warehouse):
+    """A fifty-row list is scrolled, so the header has to stay put — and it has
+    to stay put flush against the top of what the reader can see.
+
+    `top: 0` pins to the top of the scrolling pane's *content* box, which sits
+    one `--cf-pad-top` below the top of the pane itself. That left a strip of
+    open scrollport above the header with rows sliding up through it in full
+    view; because a description is clamped to two lines, one line of a row
+    appeared above the header while its second line appeared below, which reads
+    as a rendering fault rather than as scrolling.
+
+    Both halves are asserted together because the fix is that they cancel: a
+    padding changed without the offset re-opens the strip, and an offset changed
+    without the padding drags the header off the top of the pane.
+    """
+    tree = render(shell.theme)
+    head = _head_seen_by(tree)
+
+    assert "padding: var(--cf-pad-top)" in head, "the pane no longer pads from the variable"
+    assert "calc(var(--cf-pad-top) * -1)" in _sticky_header_rule(tree), (
+        "the pinned header does not cancel the pane's top padding"
+    )
+
+
+def test_the_pinned_header_keeps_its_rule(render, warehouse):
+    """`border-collapse: collapse` hands a cell's borders to the table to draw,
+    so the `border-bottom` of a sticky `th` stays behind while the cell floats
+    above it. The pinned header lost its underline and the half-scrolled row
+    beneath it was cut off against nothing. A shadow is painted by the cell and
+    travels with it.
+    """
+    rule = _sticky_header_rule(render(shell.theme))
+    assert "box-shadow" in rule, "a pinned header has no rule under it"
+
+
+# --------------------------------------------------------------------------
 # Empty and error states — spec section 12
 # --------------------------------------------------------------------------
 

@@ -135,11 +135,19 @@ LAST_ACTIVITY = "COALESCE(c.last_turn_at, c.last_modified_at)"
 # Search
 # --------------------------------------------------------------------------
 
+# Every one of these ends in the case number, and none of them is a total order
+# without it. `created_at DESC` alone leaves every case created in the same
+# second free to come back in any order, which BigQuery is entitled to vary
+# between two runs of the same query — so a case can sit on two pages at once,
+# or on none, and raising Rows per page from 25 to 50 can lose one that was
+# visible before. A LIMIT over a partial order is a lottery whether or not
+# anybody is paging through it.
+_TIEBREAK = "c.case_number DESC"
 SORTS = {
-    "relevance": "matching_turns DESC, created_at DESC",
-    "newest": "created_at DESC",
-    "oldest": "created_at ASC",
-    "longest": "turn_count DESC, created_at DESC",
+    "relevance": f"matching_turns DESC, created_at DESC, {_TIEBREAK}",
+    "newest": f"created_at DESC, {_TIEBREAK}",
+    "oldest": f"created_at ASC, {_TIEBREAK}",
+    "longest": f"turn_count DESC, created_at DESC, {_TIEBREAK}",
 }
 
 
@@ -152,6 +160,7 @@ def search(
     in_fields: bool = True,
     sort: str = "relevance",
     limit: int = 100,
+    offset: int = 0,
 ) -> tuple[str, list[Any]]:
     """Find cases whose conversation and/or case fields contain every term.
 
@@ -164,7 +173,7 @@ def search(
     once per matching turn, and a 16-turn case would look like 16 cases.
     """
     if not terms:
-        return browse(era, filters, sort=sort, limit=limit)
+        return browse(era, filters, sort=sort, limit=limit, offset=offset)
 
     turns = era.table("fct_conversation_turn")
     cases = era.table("dim_case")
@@ -245,6 +254,7 @@ turn_hits AS (
     where.extend(fclauses)
     params.extend(fparams)
     params.append(ScalarQueryParameter("row_limit", "INT64", limit))
+    params.append(ScalarQueryParameter("row_offset", "INT64", max(0, offset)))
 
     order = SORTS.get(sort, SORTS["relevance"])
 
@@ -275,12 +285,12 @@ LEFT JOIN turn_hits  t ON t.case_id = c.case_id
 LEFT JOIN field_hits f ON f.case_id = c.case_id
 WHERE {' AND '.join(where)}
 ORDER BY {order}
-LIMIT @row_limit"""
+LIMIT @row_limit OFFSET @row_offset"""
     return sql, params
 
 
 def browse(
-    era: Era, filters: Filters, *, sort: str = "newest", limit: int = 100
+    era: Era, filters: Filters, *, sort: str = "newest", limit: int = 100, offset: int = 0
 ) -> tuple[str, list[Any]]:
     """No search term: just list cases matching the filters.
 
@@ -289,6 +299,7 @@ def browse(
     cases = era.table("dim_case")
     where, params = filters.clauses("c")
     params.append(ScalarQueryParameter("row_limit", "INT64", limit))
+    params.append(ScalarQueryParameter("row_offset", "INT64", max(0, offset)))
     order = SORTS.get(sort if sort != "relevance" else "newest", SORTS["newest"])
     sql = f"""SELECT
   c.case_number,
@@ -308,7 +319,7 @@ def browse(
 FROM {cases} c
 {('WHERE ' + ' AND '.join(where)) if where else ''}
 ORDER BY {order}
-LIMIT @row_limit"""
+LIMIT @row_limit OFFSET @row_offset"""
     return sql, params
 
 
@@ -623,7 +634,14 @@ LIMIT @row_limit"""
 # Operational lists (v2.1)
 # --------------------------------------------------------------------------
 
+# The ceiling on a single fetch. Only the CSV export asks for this many now;
+# the screen asks a page at a time.
 TRIAGE_LIMIT = 500
+
+# One screen of rows. A triage list is read top-down, so the cost of a page
+# turn (one ~31 MB job, cached for the TTL) buys a page that renders in a
+# webview instead of 500 rows of DOM the user scrolls past once.
+TRIAGE_PAGE_SIZE = 50
 
 # Sort keys are an allowlist mapped to SQL, never the clicked column name
 # interpolated into the query. A header click is user input like any other.
@@ -696,17 +714,25 @@ def triage_list(
     sort: str = DEFAULT_TRIAGE_SORT,
     descending: bool = True,
     limit: int = TRIAGE_LIMIT,
+    offset: int = 0,
 ) -> tuple[str, list[Any]]:
     """One row per case for the operational lists.
 
     Reads only the case dimension and the raw Case/User objects — no body
     scan — so a triage list costs roughly 31 MB rather than the 245 MB a
     conversation search does.
+
+    Paging is done here rather than by slicing a fetched window, for the same
+    reason sorting is: a window is not the result set. `total_matches` comes
+    from `COUNT(*) OVER ()`, which is evaluated before `LIMIT` and `OFFSET`, so
+    it counts every matching case and not the page — which is what makes
+    "page 3 of 7" mean anything.
     """
     filters = filters or TriageFilters()
     cases = era.table("dim_case")
     where, params = filters.clauses()
     params.append(ScalarQueryParameter("row_limit", "INT64", limit))
+    params.append(ScalarQueryParameter("row_offset", "INT64", max(0, offset)))
 
     column = TRIAGE_SORTS.get(sort, TRIAGE_SORTS[DEFAULT_TRIAGE_SORT])
     direction = "DESC" if descending else "ASC"
@@ -729,5 +755,5 @@ LEFT JOIN `{config.USER_TABLE}` u ON u.Id = c.owner_id
 {_RAW_JOIN}
 {('WHERE ' + ' AND '.join(where)) if where else ''}
 ORDER BY {column} {direction} NULLS LAST, c.case_number DESC
-LIMIT @row_limit"""
+LIMIT @row_limit OFFSET @row_offset"""
     return sql, params

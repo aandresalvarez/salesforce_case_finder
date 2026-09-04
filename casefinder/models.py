@@ -15,6 +15,8 @@ rendering bug, and would put an empty entry at the top of every filter dropdown.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
@@ -67,6 +69,60 @@ def when(ts: datetime | None) -> str:
     return f"{_day(ts)} at {_clock(ts)}"
 
 
+# Roughly four lines of the widest the description column ever gets. The CSS
+# clamp decides where the text visually stops; this decides how much of it is
+# worth sending, and keeps a list of case bodies from being a megabyte of
+# markup the user never sees.
+PREVIEW_CHARS = 260
+
+# The mail client's attribution line for the message being quoted:
+# `On Apr 23, 2026 at 4:57 PM Dana Whitfield (dana.whitfield@example.com) wrote:`
+# — the shape, with a synthetic requester; this file is public and the corpus
+# it describes is not.
+# Nearly every case description in the corpus opens with one, which is why the
+# first version of the description column showed a requester's email address on
+# every row and told the reader nothing about any case. The length bound is
+# what keeps this from eating a paragraph: a real attribution is a date, a
+# name, and an address, and prose that happens to start with "On" and contain
+# "wrote:" further along is left alone.
+_ATTRIBUTION = re.compile(r"^On\b.{0,110}?\bwrote:\s*", re.IGNORECASE)
+
+
+def preview(text: Any, limit: int = PREVIEW_CHARS) -> str:
+    """Flatten a free-text field into one line for a table cell.
+
+    Case descriptions are pasted email: an attribution line, header blocks,
+    blank lines, quoted replies, a signature. Rendered verbatim in a table they
+    are the whole row — and a two-line clamp on the raw text is no help either,
+    because the two lines it keeps are `From:` and an empty one. Collapsing the
+    whitespace and dropping the attribution is what makes the clamp show two
+    lines about the case.
+
+    The quote is only stripped when there is something behind it. A description
+    that is *nothing but* an attribution line is a strange case, but showing an
+    empty cell for it would be a worse answer than showing what is there.
+
+    Deliberately not `show()`: an em dash for a missing description is noise in
+    a column that is a preview rather than a fact.
+    """
+    cleaned = clean(text)
+    if cleaned is None:
+        return ""
+    flattened = " ".join(str(cleaned).split())
+    # Twice, because a forwarded request arrives quoted inside a reply and the
+    # second attribution is the one in front of the actual request. Bounded
+    # rather than looped: three of these deep and the text is a mail thread
+    # nobody is going to read two lines of anyway.
+    for _ in range(2):
+        stripped = _ATTRIBUTION.sub("", flattened, count=1)
+        if not stripped:
+            break
+        flattened = stripped
+    if len(flattened) <= limit:
+        return flattened
+    return flattened[:limit].rstrip() + "…"
+
+
 @dataclass(frozen=True)
 class Snippet:
     turn_seq: int
@@ -80,6 +136,30 @@ class Snippet:
             actor_role=clean(row.get("actor_role")),
             text=(row.get("text") or "").strip(),
         )
+
+
+def _distinct(snippets: Iterable[Snippet]) -> list[Snippet]:
+    """Drop snippets whose text repeats one already kept.
+
+    Email quotes the message it replies to, so consecutive turns of a thread
+    contain the same paragraph and the window cut around a match in it is
+    byte-identical. The search page showed two snippets per hit and, for very
+    nearly every hit in the corpus, they were the same two hundred characters
+    printed twice — which reads as a rendering bug and costs a result card half
+    its height for nothing.
+
+    Deduplicated here rather than in SQL because `matching_turns` is a count of
+    the turns that matched and must stay one: thirty-five messages did mention
+    the term, even if they were quoting each other while doing it.
+    """
+    seen: set[str] = set()
+    out: list[Snippet] = []
+    for snippet in snippets:
+        if snippet.text in seen:
+            continue
+        seen.add(snippet.text)
+        out.append(snippet)
+    return out
 
 
 @dataclass(frozen=True)
@@ -112,7 +192,7 @@ class SearchHit:
             turn_count=row.get("turn_count") or 0,
             matching_turns=row.get("matching_turns") or 0,
             matched_case_fields=bool(row.get("matched_case_fields")),
-            snippets=[Snippet.from_row(s) for s in (row.get("snippets") or [])],
+            snippets=_distinct(Snippet.from_row(s) for s in (row.get("snippets") or [])),
             total_matches=row.get("total_matches") or 0,
         )
 
