@@ -294,13 +294,22 @@ state = State()
 # Navigation rail
 # --------------------------------------------------------------------------
 
-# Exactly four primary destinations — nav rule 1. Settings is separate and
+# At most four primary destinations — nav rule 1. Settings is separate and
 # anchored at the bottom; About lives inside it rather than beside it.
-DESTINATIONS = (
+#
+# Ask is conditional, which is the one place the rail is not a constant. The
+# filter runs at import, so a destination is either in the rail for the life of
+# the process or absent from it — the rail never changes shape under a reader
+# mid-session, which is what nav rule 1 is really protecting.
+_ALL_DESTINATIONS = (
     ("lists", "Lists", "list_alt", "/"),
     ("search", "Search", "search", "/search"),
     ("ask", "Ask", "chat_bubble_outline", "/ask"),
     ("sql", "SQL", "code", "/sql"),
+)
+
+DESTINATIONS = tuple(
+    item for item in _ALL_DESTINATIONS if item[0] != "ask" or config.ASK_ENABLED
 )
 
 

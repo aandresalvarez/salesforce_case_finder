@@ -131,14 +131,18 @@ def _saved_views() -> None:
 def _about() -> None:
     """About lives inside Settings, not beside it — nav rule 1."""
     _section("About")
-    model = ask.model_name() or ("available" if ask.available() else "unavailable")
-    _rows(
-        [
-            ("Version", f"{config.APP_NAME} {config.VERSION}"),
-            ("Window", "native desktop" if config.NATIVE else "browser"),
-            ("Natural language", f"Vertex AI in {config.VERTEX_LOCATION} · {model}"),
-        ]
-    )
+    rows = [
+        ("Version", f"{config.APP_NAME} {config.VERSION}"),
+        ("Window", "native desktop" if config.NATIVE else "browser"),
+    ]
+    # Named only when the feature is on. Reporting "Vertex AI · unavailable" to
+    # someone who has no Ask destination reads as a broken dependency rather
+    # than as a switch nobody threw, and it advertises a model to a reader who
+    # was never offered one.
+    if config.ASK_ENABLED:
+        model = ask.model_name() or ("available" if ask.available() else "unavailable")
+        rows.append(("Natural language", f"Vertex AI in {config.VERTEX_LOCATION} · {model}"))
+    _rows(rows)
     muted(
         "Case data is read from BigQuery into memory and never written to disk. "
         "Exports contain case metadata only."

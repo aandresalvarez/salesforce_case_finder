@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **393 passing**, ~1.6 s, no network access required |
+| Automated tests | **396 passing**, ~1.6 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -180,7 +180,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirteen departures from the specification. Each names what the spec says, what
+Fourteen departures from the specification. Each names what the spec says, what
 was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -346,17 +346,18 @@ enforced by BigQuery, so the job is genuinely cancelled.
 to 120 seconds; the ceiling only ever fires on free-form or generated SQL, which
 is where the spec already expects guardrails to be visible.
 
-### D9 — three environment variables beyond the §10 table
+### D9 — four environment variables beyond the §10 table
 
 **Spec:** §10 tabulates the configuration surface.
 
-**Built:** three additions.
+**Built:** four additions.
 
 | Variable | Default | Why |
 |---|---|---|
 | `CASEFINDER_QUERY_TIMEOUT` | 120 s | The wall-clock ceiling described in D8. |
 | `CASEFINDER_FACET_CACHE_TTL` | 3600 | Filter values change on the warehouse's load cadence, not on the 15-minute result cadence. Re-querying them every 15 minutes buys nothing and costs a visible pause on the filter row. |
 | `CASEFINDER_PERSONAL_VIEWS_PATH` | per-OS app data dir | §11.5 requires the personal saved-view file to be documented and separable for uninstall. Overriding its location is what makes that testable without writing to a real user profile. |
+| `CASEFINDER_ASK` | false | Whether the natural-language mode is offered at all — see D14. |
 
 Both have working defaults; neither needs to be set.
 
@@ -450,6 +451,38 @@ deliberate act per page rather than one accidental query.
 **Effect on requirements:** FR-SEARCH-9's truncation state is gone, because
 there is no longer truncation to state. Where the page used to read
 `334 results · showing first 100` it now reads `1–100 of 334 results`.
+
+---
+
+### D14 — the natural-language mode is off by default and hidden when off
+
+**Spec:** §6.5 and FR-ASK-1..8 specify Ask as one of the four primary
+destinations, always present, degrading to an explanatory message when Vertex
+is unreachable.
+
+**Built:** `config.ASK_ENABLED` (`CASEFINDER_ASK`, default off). With it off
+there is no Ask destination in the rail, `/ask` redirects to Lists, and the
+About panel does not name Vertex or a model. With it on, everything is exactly
+as specified.
+
+**Why:** the spec assumed the only question was whether Vertex was *reachable*.
+The real question a site asks first is whether it wants questions about a PHI
+corpus going to a model at all, and that is a decision to make deliberately
+rather than to discover already made. §6.5's degraded state answers "why isn't
+this working"; it has no way to say "this was not switched on", and a permanent
+`Vertex AI · unavailable` in Settings reads as a broken dependency rather than
+as an unthrown switch.
+
+Hiding rather than disabling is the point. A greyed-out Ask still invites the
+question, and the honest answer would have to describe a capability the site
+has chosen not to offer.
+
+**Effect on requirements:** FR-ASK-1..8 are unchanged and still tested — the
+suite exercises the page in both states. Nav rule 1's "exactly four" becomes "at
+most four"; the rail is filtered once at import, so it never changes shape
+mid-session. The gate is on the surface, not the safety: `ask.py` still sends
+only the question and a static schema, never case data, because a flag someone
+can flip must not be what stands between a corpus and a third party.
 
 ---
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from casefinder import ask, config
 from casefinder.ui import ask_page, case_detail, lists, search, settings, shell, sql_page
 
 # Words that must never appear on a filled button anywhere in the app.
@@ -391,16 +392,71 @@ def test_the_metric_strip_is_a_strip_not_five_cards(case_page):
 # --------------------------------------------------------------------------
 
 
-def test_there_are_exactly_four_destinations_plus_settings(render, warehouse):
-    tree = render(shell.rail, "lists")
-    items = [e for e in tree.elements if "cf-nav" in e._classes]
-    labels = [
+def _rail_labels(tree) -> list[str]:
+    return [
         label.text
         for label in tree.of_type("Label")
         if any("cf-nav" in a._classes for a in tree.ancestors(label))
     ]
-    assert len(items) == 5
-    assert labels == ["Lists", "Search", "Ask", "SQL", "Settings"]
+
+
+def test_the_rail_holds_the_destinations_and_settings(render, warehouse):
+    """Nav rule 1 caps the rail at four destinations plus Settings. Ask is
+    conditional, so the assertion is against the destination list rather than
+    against a hardcoded five — but the ceiling is still asserted, because the
+    rule the rail is protecting is "no more than four", not "however many".
+    """
+    tree = render(shell.rail, "lists")
+    items = [e for e in tree.elements if "cf-nav" in e._classes]
+    expected = [label for _, label, _, _ in shell.DESTINATIONS] + ["Settings"]
+
+    assert len(shell.DESTINATIONS) <= 4
+    assert len(items) == len(expected)
+    assert _rail_labels(tree) == expected
+
+
+def test_ask_is_not_offered_unless_it_is_switched_on(render, warehouse):
+    """The natural-language mode is off by default, and off means invisible:
+    no destination, nothing in Settings naming a model. A feature that is
+    merely disabled still invites the question of why it does not work.
+    """
+    assert config.ASK_ENABLED is False, "the default changed; the rest of this is moot"
+    assert "Ask" not in _rail_labels(render(shell.rail, "lists"))
+    assert "Vertex" not in render(settings.render).text
+
+
+def test_the_ask_route_sends_you_home_rather_than_breaking(monkeypatch):
+    """The route stays registered when the feature is off, because it outlives
+    the setting: a bookmark, or a link copied while Ask was on, should land on
+    Lists instead of a 404 that reads as a broken app. Asserting on the
+    navigation rather than on a rendered page, since there is no page.
+    """
+    from casefinder import main
+
+    went_to: list[str] = []
+    monkeypatch.setattr(main.ui.navigate, "to", lambda target: went_to.append(target))
+    monkeypatch.setattr(main.config, "ASK_ENABLED", False)
+    monkeypatch.setattr(
+        main, "gated", lambda *a, **k: pytest.fail("the ask page rendered while switched off")
+    )
+
+    main.ask_route()
+    assert went_to == ["/"]
+
+
+def test_ask_is_offered_when_it_is_switched_on(render, warehouse, monkeypatch):
+    monkeypatch.setattr(shell, "DESTINATIONS", shell._ALL_DESTINATIONS)
+    monkeypatch.setattr(config, "ASK_ENABLED", True)
+    monkeypatch.setattr(ask, "model_name", lambda: "gemini-2.5-flash")
+
+    assert _rail_labels(render(shell.rail, "lists")) == [
+        "Lists",
+        "Search",
+        "Ask",
+        "SQL",
+        "Settings",
+    ]
+    assert "Vertex AI" in render(settings.render).text
 
 
 def test_about_is_not_a_destination(render, warehouse):

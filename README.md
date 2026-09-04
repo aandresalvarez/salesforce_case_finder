@@ -15,7 +15,7 @@ data to disk.
 | **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter, sort, save a view, export the metadata. |
 | **Search** | Full-text across case fields *and* the conversation bodies — the part that is actually hard to reach in SQL. Matches are shown in context. |
 | **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. |
-| **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. |
+| **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
 | **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
 
 Two slices of the archive are available, switchable in Settings:
@@ -94,7 +94,7 @@ The corpus contains PHI, and the design assumes it.
 |---|---|
 | **Nothing at rest** | Results live in a 15-minute in-memory cache with no disk backend. Quitting the app is the whole retention policy. |
 | **Nothing on the network** | The local server binds to loopback on a random port. There is no on-air, tunnel, or share mode in the code. |
-| **Nothing to Gemini** | Ask sends your question and a static table layout. No case row, body, subject, or search result is ever part of a prompt. |
+| **Nothing to Gemini** | Ask is off unless a site switches it on, and even then it sends your question and a static table layout. No case row, body, subject, or search result is ever part of a prompt. |
 | **Nothing in an export** | The CSV is metadata only — case number, owner, status, PI, department, IRB, funding, last activity. Descriptions and message bodies are excluded on purpose. |
 | **Nothing in a saved view** | Saved views persist filter definitions: field names, selected values, sort order, visible columns. Never rows, bodies, snippets, descriptions, or summaries. |
 | **Nothing written, anywhere** | Every query is checked for read-only-ness before it is submitted, including the ones Gemini writes. |
@@ -148,6 +148,7 @@ Everything is an environment variable, and every one has a working default.
 | `CASEFINDER_CACHE_TTL` | 900 | Result cache, seconds |
 | `CASEFINDER_FACET_CACHE_TTL` | 3600 | Filter-value cache, seconds |
 | `CASEFINDER_STALE_DAYS` | 7 | Age at which lists show a freshness banner |
+| `CASEFINDER_ASK` | false | `1` offers the Ask destination; off, it is hidden entirely |
 | `CASEFINDER_VERTEX_LOCATION` | `us-central1` | Vertex AI region for Ask |
 | `CASEFINDER_VERTEX_MODEL` | unset | Pin one Gemini model instead of probing |
 | `CASEFINDER_VIEWS_PATH` | `./views.json` | Shared team presets |
@@ -183,7 +184,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 393 tests, no credentials needed, ~2 s
+uv run pytest              # 396 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

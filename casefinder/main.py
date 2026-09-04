@@ -50,6 +50,13 @@ def case_page(case_number: str) -> None:
 
 @ui.page("/ask")
 def ask_route() -> None:
+    # Registered either way, and a redirect rather than a 404, because the
+    # route outlives the setting: a bookmark or an old link from a session when
+    # Ask was on should land somewhere useful instead of on an error page that
+    # makes the app look broken.
+    if not config.ASK_ENABLED:
+        ui.navigate.to("/")
+        return
     gated("ask", ask_page.render)
 
 

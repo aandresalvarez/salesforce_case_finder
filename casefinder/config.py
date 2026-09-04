@@ -67,6 +67,18 @@ USD_PER_TIB = float(os.environ.get("CASEFINDER_USD_PER_TIB", 6.25))
 # search inside this window costs nothing and returns instantly.
 CACHE_TTL_SECONDS = int(os.environ.get("CASEFINDER_CACHE_TTL", 900))
 
+# Whether the natural-language mode is offered at all. Off by default: the
+# feature is built and tested, but sending anything to a model is a decision a
+# site makes deliberately rather than one it discovers already made. With this
+# off there is no Ask destination, `/ask` redirects to Lists, and Settings does
+# not name Vertex — so nothing in the interface invites a question that would
+# reach a model.
+#
+# It gates the surface, not the safety. `ask.py` still sends only the question
+# and a static schema, never case data, because a flag someone can flip must
+# not be the thing standing between a corpus and a third party.
+ASK_ENABLED = _flag("CASEFINDER_ASK", False)
+
 # Vertex AI region for the optional natural-language mode.
 VERTEX_LOCATION = os.environ.get("CASEFINDER_VERTEX_LOCATION", "us-central1")
 
