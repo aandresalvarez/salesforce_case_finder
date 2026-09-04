@@ -68,6 +68,20 @@ set CASEFINDER_NATIVE=0 && run-windows.bat  # Windows
 The server still binds to `127.0.0.1` on a random port either way. Nothing is
 ever exposed to the network.
 
+### If the window says it has lost the connection
+
+That notice is about the window and the copy of Case Finder running on your own
+computer, not about BigQuery — the connection to the warehouse has its own
+screen and its own advice. It tells you which of the two things has happened:
+
+- **Reconnecting.** The link dropped and the app is still there. It comes back
+  on its own; the notice counts the seconds and the attempts so you can see it
+  trying.
+- **Case Finder has stopped responding.** The program behind the window is gone
+  or wedged, and nothing on the screen will do anything again. Close the window
+  and start Case Finder again. Nothing is lost — the app saves nothing to your
+  computer — and you can still select and copy anything on the page first.
+
 ---
 
 ## Credentials
@@ -194,7 +208,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 472 tests, no credentials needed, ~2 s
+uv run pytest              # 486 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

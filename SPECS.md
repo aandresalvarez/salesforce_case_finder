@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **472 passing**, ~1.7 s, no network access required |
+| Automated tests | **486 passing**, ~1.9 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,7 +45,7 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-6,547 lines across 25 modules.
+6,953 lines across 26 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
@@ -55,6 +55,7 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
 | `ui/case_detail.py` | 490 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
 | `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `ui/reconnect.py` | 401 | What the window says when the program behind it stops answering (D20). |
 | `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
@@ -66,7 +67,7 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/components/filters.py` | 195 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
 | `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
-| `main.py` | 135 | Routes, the loopback-only native window, and its selectable body (D19). |
+| `main.py` | 140 | Routes, the loopback-only native window, and its selectable body (D19). |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/intake_form.py` | 97 | Draws what `intake.py` parsed — as labels, never as HTML. |
@@ -123,6 +124,7 @@ added without invariant coverage cannot pass silently.
 | Case body rendering, and the wait before one appears | FR-CASE-4, FR-CASE-5 (D15) | `intake.py`, `ui/components/intake_form.py`, `ui/components/loading.py` | `test_intake.py`, `test_reading.py` |
 | The wait before any screen appears | D18 | `ui/components/loading.py`, and every page that queries | `test_reading.py` |
 | Selecting and copying any text on any screen | D19 | `main.py`, `ui/shell.py`, and every region whose click navigates | `test_reading.py` |
+| Losing the window's own connection to the app | D20 | `ui/reconnect.py`, `main.py` | `test_reconnect.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
@@ -672,6 +674,53 @@ click target and there is still no Open button. §9 is unaffected: selecting tex
 is a read, the corpus is already on the screen, and nothing new leaves the
 process. Copy summary stays exactly as specified; it is now the shortcut rather
 than the only door.
+
+### D20 — the window says which connection it lost, and what to do about it
+
+**Spec:** FR-START-2 covers one connection, Case Finder to BigQuery, and
+`shell.connection_screen` implements it. The spec says nothing about the other
+one — the window to the local server that draws it — because in a lean desktop
+app that connection is a loopback socket in a single process and was not
+expected to be a user-visible thing.
+
+**Built:** `ui/reconnect.py`, a notice installed into the shared page head at
+startup. It replaces NiceGUI's `#popup`, names the connection that was actually
+lost, counts the seconds and the retry attempts while socket.io works, and —
+when the server stops answering a plain HTTP request — stops saying
+"reconnecting" and says to close the window and start again.
+
+**Why:** reported as "the app lost connection with bigquery… I do not see any
+progress on reconnecting… and the entry app is unresponsive". BigQuery was not
+involved. What was on the screen was NiceGUI's own notice: two fixed strings in
+the bottom-left corner, `pointer-events: none`, no elapsed time, no attempt
+count, no advice, nothing to press. Every part of that report follows from it.
+The reader could not tell which connection had gone, could not tell whether
+anything was being attempted, and was not told that the only thing that would
+help was closing the window.
+
+Checking whether the reconnect works turned up the distinction the notice has to
+make. socket.io retries indefinitely, so "wait" is honest — while the server is
+there. If it is not, nothing can succeed: NiceGUI deletes a disconnected client
+after `reconnect_timeout`, the window is a `daemon=True` child that outlives a
+server killed rather than closed, and `main._free_port` puts the next launch on
+a different port. One HTTP request to a static file separates the two cases, and
+the notice reads it: refused, or accepted and then silent past a deadline, means
+the program is not coming back to this window. The deadline is not decoration —
+a wedged event loop accepts the connection and never answers, which without it
+reads as a healthy server for as long as the wedge lasts.
+
+Verified in the shipping engine rather than only in Chromium: both readings, the
+attempt counter, the dismissed-to-a-pill state and the pass-through scrim were
+driven inside WKWebView over pywebview's `evaluate_js`, which keeps working
+after the socket is down because it does not use it.
+
+**Effect on requirements:** none are changed. §9.5 is unaffected — the notice's
+markup is a fixed string with no interpolation, so no corpus value can reach
+HTML through it, and the probe asks for a static file rather than a page route
+precisely so an outage does not re-run the access check once a second. It is
+also the one screen deliberately not modal: the scrim passes the pointer
+through, so the case behind a dead window can still be selected and copied (D19)
+before it is closed.
 
 ---
 

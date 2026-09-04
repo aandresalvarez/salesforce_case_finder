@@ -22,7 +22,7 @@ import socket
 from nicegui import app, ui
 
 from . import config
-from .ui import ask_page, case_detail, lists, search, settings, sql_page
+from .ui import ask_page, case_detail, lists, reconnect, search, settings, sql_page
 from .ui.shell import gated
 
 HOST = "127.0.0.1"
@@ -114,6 +114,11 @@ def _window_args() -> dict[str, object]:
 
 
 def main() -> None:
+    # Before `ui.run`, because it writes into the head served with every page
+    # and the first page is served the moment the server is up. It is also the
+    # one part of the application that has to survive the socket going down, so
+    # it cannot be something a page sends over that socket — see `ui/reconnect`.
+    reconnect.install()
     app.native.window_args.update(_window_args())
     ui.run(
         host=HOST,
