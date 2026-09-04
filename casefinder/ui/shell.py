@@ -78,7 +78,11 @@ body {{
   padding: 7px 16px; margin: 1px 8px;
   border-radius: 5px; cursor: pointer;
   color: var(--cf-ink); font-size: 13.5px;
-  user-select: none;
+  /* A destination is a control, so dragging across one should not highlight
+     its label. Both spellings: the window this ships in is WebKit, which reads
+     the prefixed longhand, and until the page became selectable at all the
+     unprefixed one here was never doing anything. */
+  -webkit-user-select: none; user-select: none;
 }}
 /* The `:not()` is load-bearing rather than tidy. `.cf-nav:hover` is a class
    and a pseudo-class, so it outranks the single class below it: pointing at
@@ -168,6 +172,25 @@ body {{
 }}
 .cf-table td {{ font-size: 13px; }}
 """
+
+# For the click handler of a region that navigates but also holds text someone
+# might want to take: a list row, a search result, a related case.
+#
+# Selecting text is a click. Press in the middle of a description, release at
+# the end of it, and the browser sends `click` to the enclosing row exactly as
+# if the row had been tapped — so highlighting a name to copy it would open the
+# case instead, and lose the highlight on the way out. Every one of these
+# regions was written when nothing on the page was selectable, which is why
+# none of them thought about it.
+#
+# `emit` is NiceGUI's client-side call into the Python handler, and a
+# `js_handler` that declines to call it drops the event in the browser. The row
+# keeps its one handler rather than growing a second one to undo the first.
+#
+# The check is about this gesture, not about the page's history: a press
+# collapses whatever was selected before `click` is dispatched, so a plain
+# click always sees an empty selection.
+CLICK_UNLESS_SELECTING = "(...args) => { if (!window.getSelection().toString()) emit(...args) }"
 
 
 def theme() -> None:

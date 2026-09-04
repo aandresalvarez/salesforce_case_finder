@@ -543,7 +543,9 @@ def _view_group(title: str, group: list[views.SavedView], *, deletable: bool) ->
             "gap:12px; padding:9px 4px; border-bottom:1px solid " + shell.LINE
         ):
             with ui.column().style("gap:1px; min-width:0; cursor:pointer").on(
-                "click", lambda v=view: _open_view(v)
+                "click",
+                lambda v=view: _open_view(v),
+                js_handler=shell.CLICK_UNLESS_SELECTING,
             ):
                 ui.label(view.name).style("font-size:13.5px")
                 ui.label(view.description or view.summary).classes("cf-muted")

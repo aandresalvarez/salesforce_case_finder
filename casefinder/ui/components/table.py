@@ -21,7 +21,7 @@ from typing import Any
 
 from nicegui import ui
 
-from ..shell import ACCENT, LINE, MUTED, register_css
+from ..shell import ACCENT, CLICK_UNLESS_SELECTING, LINE, MUTED, register_css
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,9 @@ _CSS = f"""
 .cf-table {{ width:100%; border-collapse:collapse; table-layout:fixed; }}
 .cf-table th {{
   text-align:left; padding:7px 10px; border-bottom:1px solid {LINE};
-  white-space:nowrap; user-select:none;
+  /* A header is a sort button; the cells under it are the text worth taking.
+     Prefixed as well, for the WebKit the native window is built on. */
+  white-space:nowrap; -webkit-user-select:none; user-select:none;
   overflow:hidden; text-overflow:ellipsis;
 }}
 .cf-table th.cf-sortable {{ cursor:pointer; }}
@@ -192,7 +194,11 @@ def data_table(
         with ui.element("tbody"):
             for row in rows:
                 line = ui.element("tr").classes("cf-row")
-                line.on("click", lambda _=None, r=row: on_row_click(r))
+                line.on(
+                    "click",
+                    lambda _=None, r=row: on_row_click(r),
+                    js_handler=CLICK_UNLESS_SELECTING,
+                )
                 with line:
                     for column in columns:
                         cell = ui.element("td").classes(_drop_class(column))

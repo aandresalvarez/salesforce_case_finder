@@ -91,8 +91,30 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _window_args() -> dict[str, object]:
+    """Arguments for the native window, separated so a test can read them.
+
+    `text_select` is the one that is not self-explanatory. pywebview defaults
+    it to False, and what that means is not a greyed-out menu item — it appends
+    `body { user-select: none; cursor: default }` to the document *after* the
+    page's own head, so no stylesheet in this repository can undo it and no
+    browser reproduces it. The whole application was unselectable in the only
+    mode anyone runs it in: the way to get a requester's name out of a case was
+    Copy summary, which copies the entire case, or retyping it.
+
+    The place to fix it is here rather than in CSS. Being a rule appended late
+    to the head, it wins on source order against anything `shell.theme` writes,
+    so a stylesheet could only argue with `!important` — and losing that
+    argument is silent.
+    """
+    return {
+        "min_size": config.MIN_WINDOW_SIZE,
+        "text_select": True,
+    }
+
+
 def main() -> None:
-    app.native.window_args["min_size"] = config.MIN_WINDOW_SIZE
+    app.native.window_args.update(_window_args())
     ui.run(
         host=HOST,
         port=_free_port(),

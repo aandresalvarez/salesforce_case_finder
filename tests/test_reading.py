@@ -211,6 +211,154 @@ def test_searching_again_waits_as_visibly_as_searching_the_first_time(
     assert set(notes) == {"Searching…"}
 
 
+# --------------------------------------------------------------------------
+# Getting a name back out of a case
+# --------------------------------------------------------------------------
+
+
+def test_the_native_window_lets_text_be_selected():
+    """Nothing in the application could be selected, and not because of its CSS.
+
+    pywebview defaults `text_select` to False, and that appends
+    `body { user-select: none }` to the document after the page's own head. No
+    stylesheet in this repository could have caused it and no browser
+    reproduces it, so the search for it starts and ends in the wrong place: the
+    symptom is a case page where a requester's name can only be retyped, and
+    the cause is one keyword argument to the window.
+
+    The name is checked against pywebview's own signature as well as the value,
+    because `window_args` is forwarded as `**kwargs` — a misspelling would not
+    be a wrong setting, it would be a `TypeError` raised while opening the
+    window, in the one mode no test here runs.
+    """
+    import inspect
+
+    import webview
+
+    from casefinder import main
+
+    assert main._window_args()["text_select"] is True
+    assert "text_select" in inspect.signature(webview.create_window).parameters
+
+
+_ROW_SCREENS = ("open cases", "saved views", "search results", "case")
+
+# The three places that switch selection off, all of them controls: the rail's
+# destinations, the sort headers, and the search scope pill.
+_UNSELECTABLE = (
+    "casefinder.ui.shell",
+    "casefinder.ui.components.table",
+    "casefinder.ui.components.filters",
+)
+
+
+@pytest.mark.parametrize("module", _UNSELECTABLE)
+def test_a_control_that_switches_selection_off_says_so_twice(module):
+    """`user-select` on its own does nothing in the window this ships in.
+
+    The native window is WebKit, which reads `-webkit-user-select`. Measured
+    inside it, a rail chip declaring `user-select: none` computes to `text` —
+    the declaration had never once had an effect, and nobody could tell,
+    because pywebview was switching selection off for the whole document
+    anyway. Turning that off is what makes these three rules load-bearing for
+    the first time.
+    """
+    import importlib
+    import inspect
+
+    source = inspect.getsource(importlib.import_module(module))
+    prefixed = source.count("-webkit-user-select")
+    plain = source.count("user-select") - prefixed
+
+    assert prefixed == plain, f"{module} declares selection off in only one spelling"
+
+
+def test_no_body_text_opts_out_of_being_selected():
+    """The four inline `user-select:text` overrides on the intake form are gone.
+
+    They were the same bug diagnosed one label at a time — the form was the
+    screen someone happened to be looking at, so the form was what got patched,
+    and the fix stopped exactly at its edges. Content does not need to ask.
+    """
+    import inspect
+
+    from casefinder.ui.components import intake_form
+
+    assert "user-select" not in inspect.getsource(intake_form)
+
+
+@pytest.mark.parametrize("name", _ROW_SCREENS)
+def test_selecting_text_in_a_row_does_not_open_it(name, render, warehouse):
+    """Selectable text makes every row-sized click target ambiguous.
+
+    Press in the middle of a description, release at the end of it, and the
+    browser reports a click on the row — which until now could only have meant
+    "open this". Highlighting a name to copy it would navigate away and take
+    the highlight with it, which is worse than not being able to select at all.
+
+    The guard is client-side, so the event never leaves the browser and the row
+    keeps its one handler instead of growing a second to undo the first.
+    """
+    from casefinder.ui import shell
+
+    tree = _row_screen(name, warehouse, render)
+
+    guarded = 0
+    for element in tree.elements:
+        for listener in element._event_listeners.values():
+            if listener.type.split(".")[0] != "click":
+                continue
+            if listener.js_handler == shell.CLICK_UNLESS_SELECTING:
+                guarded += 1
+            elif "cf-row" in element._classes:
+                raise AssertionError(f"{name}: a whole-row click target ignores selections")
+
+    assert guarded, f"{name} has no row that stands down while text is selected"
+
+
+def _row_screen(name: str, warehouse, render):
+    """One of the screens whose rows *are* the navigation — UX-T3, no Open button.
+
+    Built here rather than taken from `test_visual.SCREENS`, because two of the
+    four are states of a screen rather than screens: search results only exist
+    once a search has run, and a case only has related cases when the warehouse
+    returns some.
+    """
+    from casefinder.models import RelatedCase, SearchHit
+    from casefinder.ui import search as search_ui
+
+    if name == "open cases":
+        return render(lists.render)
+    if name == "saved views":
+        return render(lists.render_saved_views)
+    if name == "search results":
+        warehouse.hits = [
+            SearchHit.from_row(
+                {
+                    "case_number": "CASE-056576",
+                    "subject": "Cohort extract request",
+                    "status": "Open",
+                    "turn_count": 6,
+                    "matching_turns": 2,
+                    "matched_case_fields": True,
+                    "total_matches": 1,
+                    "snippets": [
+                        {"turn_seq": 1, "actor_role": "customer", "text": "an omop cohort"}
+                    ],
+                }
+            )
+        ]
+        search_ui.state.search.text = "omop"
+        search_ui.state.search.executed = True
+        return render(search_ui.render)
+    warehouse.related = [
+        RelatedCase.from_row(
+            {"case_number": "CASE-056500", "subject": "Earlier request", "same_pi": True}
+        )
+    ]
+    return render(case_detail.render, "CASE-056576")
+
+
 def _notes(monkeypatch) -> list[str]:
     """Record the note each deferred load announces itself with.
 

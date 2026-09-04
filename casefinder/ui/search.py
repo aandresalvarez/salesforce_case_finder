@@ -373,7 +373,11 @@ def _result_card(hit: SearchHit) -> None:
     """
     with ui.column().classes("w-full cf-row").style(
         "gap:3px; padding:13px 12px; border-bottom:1px solid " + shell.LINE
-    ).on("click", lambda: ui.navigate.to(f"/case/{hit.case_number}")):
+    ).on(
+        "click",
+        lambda: ui.navigate.to(f"/case/{hit.case_number}"),
+        js_handler=shell.CLICK_UNLESS_SELECTING,
+    ):
         with ui.row().classes("w-full items-baseline justify-between").style("gap:12px"):
             ui.label(hit.case_number).classes("cf-casenum")
             with ui.row().classes("items-baseline").style("gap:10px"):

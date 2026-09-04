@@ -421,7 +421,11 @@ def _related(case_number: str) -> None:
         with ui.row().classes("w-full items-baseline cf-row").style(
             f"gap:10px; padding:7px 4px; border-bottom:1px solid {LINE};"
             "flex-wrap:nowrap"
-        ).on("click", lambda _=None, m=match: ui.navigate.to(f"/case/{m.case_number}")):
+        ).on(
+            "click",
+            lambda _=None, m=match: ui.navigate.to(f"/case/{m.case_number}"),
+            js_handler=shell.CLICK_UNLESS_SELECTING,
+        ):
             ui.label(match.case_number).classes("cf-casenum")
             ui.label(match.subject or "(no subject)").style(
                 "font-size:13px; min-width:0; overflow:hidden;"

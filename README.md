@@ -104,7 +104,10 @@ The corpus contains PHI, and the design assumes it.
 
 Two things leave the process at your explicit request: **Copy summary** writes a
 case handoff to your clipboard, and **Export metadata CSV** writes a file where
-you tell it to. Both are deliberate actions with visible results.
+you tell it to. Both are deliberate actions with visible results. Text on the
+screen can also be selected and copied, the way text in a window can; a row
+click stands down while you are doing it, so highlighting a name does not open
+the case out from under you.
 
 ---
 
@@ -191,7 +194,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 463 tests, no credentials needed, ~2 s
+uv run pytest              # 472 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

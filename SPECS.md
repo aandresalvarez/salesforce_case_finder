@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **463 passing**, ~1.7 s, no network access required |
+| Automated tests | **472 passing**, ~1.7 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,31 +45,31 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-6,492 lines across 25 modules.
+6,547 lines across 25 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
 | `queries.py` | 759 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
 | `models.py` | 588 | Typed rows; the single place that decides how a missing value is displayed. |
-| `ui/lists.py` | 572 | §6.2 — triage lists, filters, saved views, paging, CSV. |
-| `ui/case_detail.py` | 486 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/shell.py` | 480 | §3.1 — rail, content region, era indicator, error surfaces. |
-| `ui/search.py` | 421 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `ui/lists.py` | 574 | §6.2 — triage lists, filters, saved views, paging, CSV. |
+| `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
+| `ui/case_detail.py` | 490 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
+| `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
 | `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
 | `ask.py` | 231 | §6.5 — question in, SQL out; nothing else in the prompt. |
 | `intake.py` | 225 | Reads the serialised intake form out of a case body (D15). Pure. |
-| `ui/components/table.py` | 217 | The list table; clickable rows, no Open button, container-query columns (D16). |
+| `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
 | `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
 | `config.py` | 202 | Every environment variable and its default. |
-| `ui/components/filters.py` | 190 | The compact filter row and its disclosure. |
+| `ui/components/filters.py` | 195 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
 | `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
+| `main.py` | 135 | Routes, the loopback-only native window, and its selectable body (D19). |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
-| `main.py` | 113 | Routes, and the loopback-only native window. |
-| `ui/components/intake_form.py` | 99 | Draws what `intake.py` parsed — as labels, never as HTML. |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
+| `ui/components/intake_form.py` | 97 | Draws what `intake.py` parsed — as labels, never as HTML. |
 | `ui/components/pager.py` | 88 | The range line and its two arrows; one pager for every paged screen. |
 | `ui/components/metadata.py` | 69 | The flat metadata strip that replaced five metric cards. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
@@ -122,6 +122,7 @@ added without invariant coverage cannot pass silently.
 | Case: comments-first, header, metadata, copy summary, tabs, related, unknown | FR-CASE-1..11 | `ui/case_detail.py` | `test_ui_actions.py`, `test_visual.py` |
 | Case body rendering, and the wait before one appears | FR-CASE-4, FR-CASE-5 (D15) | `intake.py`, `ui/components/intake_form.py`, `ui/components/loading.py` | `test_intake.py`, `test_reading.py` |
 | The wait before any screen appears | D18 | `ui/components/loading.py`, and every page that queries | `test_reading.py` |
+| Selecting and copying any text on any screen | D19 | `main.py`, `ui/shell.py`, and every region whose click navigates | `test_reading.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
@@ -635,6 +636,42 @@ defer onto, which is what makes these pages testable synchronously. Two round
 trips that used to happen during a draw — the corpus size behind FR-SEARCH-8's
 boilerplate warning, and the freshness line on Settings — moved into the load
 for the same reason.
+
+### D19 — the window is selectable, and a row click stands down for a selection
+
+**Spec:** FR-CASE-9 gives the case page a **Copy summary** action and says
+nothing about selecting text, because selecting text is not a feature — it is
+what a window does.
+
+**Built:** the native window is created with `text_select=True`, the four inline
+`user-select:text` overrides on the intake form are gone, and the click handlers
+of the regions that navigate — list rows, search results, related cases, saved
+views — decline to fire while something is selected.
+
+**Why:** reported after use, as "I just need one name, or one sentence". None of
+it was selectable, and nothing in this repository was the cause: pywebview
+defaults `text_select` to False, which appends
+`body { user-select: none; cursor: default }` to the document *after* the page's
+own head. It cannot be seen in a browser, cannot be overridden by a stylesheet
+without `!important`, and is invisible to every test here, so the search for it
+starts on the case page and has to end at the window constructor. Copy summary
+was the only way text left the application, and it copies a whole case.
+
+Two things only turned up by measuring inside the real window. A rail chip
+declaring `user-select: none` computed to `text`: WebKit reads the prefixed
+longhand, so that rule had never once had an effect and nobody could tell,
+because pywebview was switching selection off document-wide anyway. And making
+the page selectable made every row-sized click target ambiguous — press in the
+middle of a description, release at the end of it, and the browser reports a
+click on the row, so highlighting a name would open the case and lose the
+highlight. The guard is a `js_handler` that declines to emit, which keeps the
+decision in the browser and the row on one handler rather than two.
+
+**Effect on requirements:** UX-T3 is unaffected — the row is still the whole
+click target and there is still no Open button. §9 is unaffected: selecting text
+is a read, the corpus is already on the screen, and nothing new leaves the
+process. Copy summary stays exactly as specified; it is now the shortcut rather
+than the only door.
 
 ---
 

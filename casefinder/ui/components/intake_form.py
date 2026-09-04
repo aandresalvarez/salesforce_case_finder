@@ -64,7 +64,7 @@ def render(form: intake.Intake) -> None:
             if form.fields:
                 ui.element("div").classes("cf-divider w-full").style("margin:12px 0 10px 0")
             ui.label("Request").classes("cf-metric-label")
-            ui.label(form.narrative).classes("cf-form-text").style("user-select:text")
+            ui.label(form.narrative).classes("cf-form-text")
         _original(form.raw)
 
 
@@ -72,16 +72,14 @@ def _field(field: intake.Field) -> None:
     classes = "cf-form-wide" if field.block else ""
     with ui.column().classes(classes).style("gap:1px; min-width:0"):
         ui.label(field.label).classes("cf-metric-label")
-        ui.label(field.value).style(
-            "font-size:13px; overflow-wrap:anywhere; user-select:text"
-        )
+        ui.label(field.value).style("font-size:13px; overflow-wrap:anywhere")
 
 
 def _original(raw: str) -> None:
     with ui.expansion("Original record").classes("w-full cf-muted").props("dense").style(
         "margin-top:10px"
     ):
-        ui.label(raw).classes("cf-form-raw").style("user-select:text")
+        ui.label(raw).classes("cf-form-raw")
 
 
 def body(text: str | None, *, empty_text: str = "(empty)") -> None:
@@ -94,6 +92,6 @@ def body(text: str | None, *, empty_text: str = "(empty)") -> None:
     """
     form = intake.parse(text)
     if form is None:
-        ui.label(text or empty_text).classes("cf-body").style("user-select:text")
+        ui.label(text or empty_text).classes("cf-body")
         return
     render(form)

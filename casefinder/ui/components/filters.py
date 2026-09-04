@@ -171,7 +171,12 @@ def scope_control(
             ("fields", "Subject & description", in_fields),
             ("conversation", "Inside conversation", in_conversation),
         ):
-            style = "padding:5px 14px; font-size:12.5px; cursor:pointer; user-select:none;"
+            # Prefixed as well as plain: the scope pill is a control, and the
+            # native window is WebKit, which reads the prefixed longhand.
+            style = (
+                "padding:5px 14px; font-size:12.5px; cursor:pointer;"
+                "-webkit-user-select:none; user-select:none;"
+            )
             if active:
                 style += " background:rgba(37,99,235,.10); color:#2563eb; font-weight:550;"
             ui.label(label).style(style).on(
