@@ -8,7 +8,20 @@ search-and-replace through the SQL.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+APP_NAME = "Case Finder"
+VERSION = "2.1.0"
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+
 
 # The project that is billed for queries and that holds the datasets. Both can
 # be overridden by environment variable so a different site can reuse the app
@@ -21,11 +34,30 @@ BILLING_PROJECT = os.environ.get("CASEFINDER_BILLING_PROJECT", PROJECT)
 # note is authored by nobody.
 USER_TABLE = f"{PROJECT}.salesforce_raw.User"
 
+# The raw Case object. The modelled `dim_case` carries the conversation-shaped
+# fields; the triage attributes support staff actually filter on — PI, IRB
+# protocol, department, funding status — only exist on the raw object, so
+# operational lists have to join back to it.
+CASE_TABLE = f"{PROJECT}.salesforce_raw.Case"
+
 # Hard ceiling on bytes billed per query. BigQuery kills the job rather than
 # running it, so a runaway query costs nothing instead of a surprise. The
 # heaviest legitimate query (full-text search over every conversation body)
 # scans ~220 MB, so 4 GB is roughly 18x headroom.
 MAX_BYTES_BILLED = int(os.environ.get("CASEFINDER_MAX_BYTES", 4 * 1024**3))
+
+# Wall-clock ceiling per job, which is a different guarantee from the byte cap
+# and not implied by it. Bytes billed measures input scanned; it says nothing
+# about how long a query runs. `SELECT t.*, c.* FROM turns CROSS JOIN cases`
+# scans 275 MB — comfortably under the cap, priced at a fraction of a cent by a
+# dry run — and then materialises eleven billion rows. The byte cap lets it
+# start, and a desktop app with no timeout waits for it forever with no way for
+# the user to stop it.
+#
+# This is `job_timeout_ms`, so BigQuery cancels the job server-side. A
+# client-side timeout would return control to the UI while leaving the query
+# running and billing.
+QUERY_TIMEOUT_SECONDS = int(os.environ.get("CASEFINDER_QUERY_TIMEOUT", 120))
 
 # Cost per byte scanned, used only to show an estimate in the UI.
 # BigQuery on-demand pricing is $6.25 per TiB at time of writing.
@@ -108,3 +140,51 @@ DEFAULT_ERA = "current"
 # A term that appears in nearly every case is not a search result, it is an
 # email footer. Above this share of the corpus the UI says so out loud.
 BOILERPLATE_WARN_RATIO = 0.5
+BOILERPLATE_NOTE = (
+    "Terms like “redcap” and “irb” sit in the email footer on almost every "
+    "case, so the match count is not telling you anything."
+)
+
+# --------------------------------------------------------------------------
+# v2.1 additions
+# --------------------------------------------------------------------------
+
+# The warehouse is batch-loaded, so a list can show a case as open after it was
+# closed in live Salesforce. Past this age the lists say so in a banner rather
+# than letting the user assume they are looking at today.
+STALE_DAYS = int(os.environ.get("CASEFINDER_STALE_DAYS", 7))
+
+# Facet values change far more slowly than case rows and carry no PHI, so they
+# get their own longer cache window.
+FACET_CACHE_TTL_SECONDS = int(os.environ.get("CASEFINDER_FACET_CACHE_TTL", 3600))
+
+# Native desktop window vs. plain browser tab. Native is the product; the
+# browser path exists so that a machine with a broken platform webview can
+# still be supported.
+NATIVE = _flag("CASEFINDER_NATIVE", True)
+
+WINDOW_SIZE = (1280, 800)
+MIN_WINDOW_SIZE = (1024, 700)
+
+# Shared team presets ship with the app and are read-only from the UI.
+VIEWS_PATH = Path(
+    os.environ.get("CASEFINDER_VIEWS_PATH", Path(__file__).resolve().parent.parent / "views.json")
+)
+
+
+def personal_views_path() -> Path:
+    """Where one user's own saved views live.
+
+    Definitions only — filters, sort, and column choices. Never rows, bodies,
+    snippets, or descriptions; see the saved-view rule in spec section 9.3.
+    """
+    override = os.environ.get("CASEFINDER_PERSONAL_VIEWS_PATH")
+    if override:
+        return Path(override)
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support" / "CaseFinder"
+    elif os.name == "nt":
+        base = Path(os.environ.get("APPDATA", Path.home())) / "CaseFinder"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "casefinder"
+    return base / "personal_views.json"

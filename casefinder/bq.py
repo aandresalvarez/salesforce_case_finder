@@ -13,8 +13,10 @@ Two rules hold everywhere in this module:
 from __future__ import annotations
 
 import re
+import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from google.cloud import bigquery
 from google.cloud.bigquery import ScalarQueryParameter
@@ -30,7 +32,14 @@ class CostError(RuntimeError):
     """Raised when a query would scan more than the configured cap."""
 
 
+class QueryTimeout(RuntimeError):
+    """Raised when BigQuery cancelled a query for running past the time ceiling."""
+
+
 _CLIENT: bigquery.Client | None = None
+# Pages warm several independent queries at once (see `data.prefetch`), so the
+# first request of the app's life can arrive on two threads at the same moment.
+_CLIENT_LOCK = threading.Lock()
 
 
 def get_client() -> bigquery.Client:
@@ -41,15 +50,18 @@ def get_client() -> bigquery.Client:
     person can see — the app grants nothing.
     """
     global _CLIENT
-    if _CLIENT is None:
-        try:
-            _CLIENT = bigquery.Client(project=config.BILLING_PROJECT)
-        except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
-            raise AuthError(
-                "Could not find Google Cloud credentials.\n\n"
-                "Run this once in a terminal, then restart the app:\n\n"
-                "    gcloud auth application-default login\n"
-            ) from exc
+    if _CLIENT is not None:
+        return _CLIENT
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            try:
+                _CLIENT = bigquery.Client(project=config.BILLING_PROJECT)
+            except Exception as exc:
+                raise AuthError(
+                    "Could not find Google Cloud credentials.\n\n"
+                    "Run this once in a terminal, then restart the app:\n\n"
+                    "    gcloud auth application-default login\n"
+                ) from exc
     return _CLIENT
 
 
@@ -65,8 +77,11 @@ def check_access() -> tuple[bool, str]:
         client = get_client()
         job = client.query(
             f"SELECT case_number FROM {era.table('dim_case')} LIMIT 1",
+            # Same two ceilings as every other job. A probe that can hang is a
+            # startup screen that can hang, with no UI drawn yet to say why.
             job_config=bigquery.QueryJobConfig(
-                maximum_bytes_billed=config.MAX_BYTES_BILLED
+                maximum_bytes_billed=config.MAX_BYTES_BILLED,
+                job_timeout_ms=config.QUERY_TIMEOUT_SECONDS * 1000,
             ),
         )
         list(job.result())
@@ -130,6 +145,9 @@ def _job_config(
         cfg.dry_run = True
     else:
         cfg.maximum_bytes_billed = config.MAX_BYTES_BILLED
+        # The byte cap bounds what a query scans, not how long it runs — see the
+        # note on QUERY_TIMEOUT_SECONDS. Both bounds are needed.
+        cfg.job_timeout_ms = config.QUERY_TIMEOUT_SECONDS * 1000
     return cfg
 
 
@@ -165,13 +183,38 @@ def run(
             )
 
     job = get_client().query(sql, job_config=_job_config(params))
-    iterator = job.result()
+    try:
+        iterator = job.result()
+    except Exception as exc:
+        # BigQuery reports a `job_timeout_ms` expiry as a cancellation, which
+        # reads to a user as "something went wrong" rather than "your query was
+        # too slow". Translating it here is the only place that knows a ceiling
+        # was set at all.
+        if _looks_like_timeout(exc):
+            raise QueryTimeout(
+                f"That query ran for more than {config.QUERY_TIMEOUT_SECONDS} seconds "
+                "and was stopped. It was not a lot of data to scan, so the cost "
+                "guard did not catch it — a join that multiplies rows is the "
+                "usual cause. Narrow it, or aggregate instead of selecting rows."
+            ) from exc
+        raise
     rows = [dict(row.items()) for row in iterator]
     return QueryResult(
         rows=rows,
         bytes_processed=int(job.total_bytes_processed or 0),
         cache_hit=bool(job.cache_hit),
     )
+
+
+def _looks_like_timeout(exc: Exception) -> bool:
+    """Did this failure come from the job timeout rather than from the query?
+
+    Matched on the message because the client raises the same exception class
+    for a job that was cancelled by a person, by an admin, or by the ceiling
+    set in `_job_config`, and only the text distinguishes them.
+    """
+    text = str(exc).lower()
+    return "timed out" in text or ("cancel" in text and "timeout" in text)
 
 
 # --------------------------------------------------------------------------
@@ -197,13 +240,18 @@ def assert_read_only(sql: str) -> None:
         raise ValueError("Empty query.")
     if ";" in stripped:
         raise ValueError("Only one statement at a time, please.")
-    if not re.match(r"^(SELECT|WITH)\b", stripped, re.IGNORECASE):
-        raise ValueError("Only SELECT queries are allowed.")
+    # Keyword before shape. Both rules refuse exactly the same set of queries in
+    # either order, but the failure matrix in spec section 12 asks a mutation to
+    # be told which keyword was the problem, and checking the SELECT prefix
+    # first would answer `DELETE FROM dim_case` with "only SELECT is allowed" —
+    # true, unhelpful, and the less specific of the two things we know.
     found = _FORBIDDEN.search(stripped)
     if found:
         raise ValueError(
             f"'{found.group(0).upper()}' is not allowed — this app is read-only."
         )
+    if not re.match(r"^(SELECT|WITH)\b", stripped, re.IGNORECASE):
+        raise ValueError("Only SELECT queries are allowed.")
 
 
 def _strip_sql_comments(sql: str) -> str:

@@ -1,0 +1,60 @@
+[project]
+name = "casefinder"
+version = "2.1.0"
+description = "Search the historical Salesforce support-case archive in BigQuery, from a local desktop window."
+requires-python = ">=3.10"
+dependencies = [
+    "nicegui>=2.0,<3",
+    # Upper bound on purpose. NiceGUI 2.x declares `pywebview>=5.0.1,<6.0.0` for
+    # its native extra, and an unbounded requirement here resolves to 6.x —
+    # outside the range the code that drives it was written against. Native
+    # desktop is the product, so the window opening is not something to leave to
+    # a resolver. Known limitation 13 asks for this surface to be validated per
+    # release; the pin is what makes that validation mean anything.
+    "pywebview>=5.4,<6",
+    "google-cloud-bigquery>=3.20",
+]
+
+[project.optional-dependencies]
+# Natural-language mode. Optional because Vertex AI may not be enabled on the
+# project, and every other feature works without it. This is the Gen AI SDK
+# rather than google-cloud-aiplatform: the same Gemini call, without pulling in
+# Cloud Storage, Resource Manager, and IAM to make it.
+ask = ["google-genai>=1.0"]
+dev = ["pytest>=8", "playwright>=1.40", "ruff>=0.6"]
+
+[project.scripts]
+casefinder = "casefinder.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["casefinder"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# BLE is on deliberately. The UI catches broadly at page boundaries so one
+# failed query does not blank a window, and each of those is marked with an
+# explicit noqa — which is the point: the broad catches stay visible in review
+# rather than becoming the ambient default.
+select = ["E", "F", "I", "UP", "B", "SIM", "BLE", "RUF"]
+# NiceGUI builds its element tree out of nested context managers, so the
+# nesting is the parent/child relationship rather than incidental structure.
+# Collapsing `with row(): with column():` into one statement would flatten
+# something that is not flat.
+ignore = ["SIM117"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests that hit BigQuery are opt-in: they need credentials and cost money.
+# Run them with `uv run pytest -m warehouse`.
+markers = [
+    "warehouse: touches live BigQuery (requires ADC; skipped by default)",
+    "ui: renders NiceGUI components in-process",
+]
+addopts = "-m 'not warehouse' --strict-markers"

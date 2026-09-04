@@ -104,6 +104,34 @@ def _term_params(terms: list[str]) -> list[ScalarQueryParameter]:
 
 
 # --------------------------------------------------------------------------
+# Triage attributes (v2.1)
+# --------------------------------------------------------------------------
+#
+# The modelled `dim_case` describes a case as a conversation. The attributes
+# support staff actually triage on — who the PI is, which IRB protocol, which
+# department, whether it is funded — were never modelled, so every operational
+# query joins back to the raw Salesforce Case object on `case_id = Case.Id`.
+# That join is 1:1 and complete: 1,714 of 1,714 current-era cases resolve.
+#
+# Each attribute is wrapped in NULLIF(TRIM(...), '') because Salesforce stores
+# an unset text field as the empty string, not NULL. Without it, 33,821 of the
+# 41,526 cases would report a department that renders as a blank cell, and
+# every filter dropdown would open with an empty first entry.
+
+_RAW_JOIN = f"LEFT JOIN `{config.CASE_TABLE}` rc ON rc.Id = c.case_id"
+
+PI = "NULLIF(TRIM(rc.PI_Name__c), '')"
+DEPARTMENT = "NULLIF(TRIM(rc.Project_Department__c), '')"
+IRB = "NULLIF(TRIM(rc.IRB_Protocol__c), '')"
+IRB_STATUS = "NULLIF(TRIM(rc.IRB_Status__c), '')"
+FUNDING = "NULLIF(TRIM(rc.Funding_Status__c), '')"
+
+# Spec section 5.5: last activity is the newest conversation turn, falling back
+# to the record's own modification stamp for a case nobody has replied to.
+LAST_ACTIVITY = "COALESCE(c.last_turn_at, c.last_modified_at)"
+
+
+# --------------------------------------------------------------------------
 # Search
 # --------------------------------------------------------------------------
 
@@ -136,7 +164,7 @@ def search(
     once per matching turn, and a 16-turn case would look like 16 cases.
     """
     if not terms:
-        return _browse(era, filters, sort=sort, limit=limit)
+        return browse(era, filters, sort=sort, limit=limit)
 
     turns = era.table("fct_conversation_turn")
     cases = era.table("dim_case")
@@ -251,7 +279,7 @@ LIMIT @row_limit"""
     return sql, params
 
 
-def _browse(
+def browse(
     era: Era, filters: Filters, *, sort: str = "newest", limit: int = 100
 ) -> tuple[str, list[Any]]:
     """No search term: just list cases matching the filters.
@@ -289,16 +317,69 @@ def corpus_size(era: Era) -> tuple[str, list[Any]]:
     return f"SELECT COUNT(*) AS n FROM {era.table('dim_case')}", []
 
 
-def facets(era: Era) -> tuple[str, list[Any]]:
-    """Distinct values for the filter dropdowns, in one pass over dim_case."""
+# PI and department lists run to the high hundreds. A dropdown that long is
+# already unusable, and pulling all of it into the client buys nothing.
+FACET_LIMIT = 500
+
+
+def facets(era: Era, *, extended: bool = False) -> tuple[str, list[Any]]:
+    """Distinct values for the filter dropdowns, in one pass over dim_case.
+
+    `extended=True` also returns the triage dimensions (department, PI, IRB),
+    which requires the raw-Case join. Search only needs the cheap set, so it
+    stays the default — spec section 7.3 lists this builder as reading
+    `dim_case`, and that remains true unless a list view asks for more.
+    """
     cases = era.table("dim_case")
-    sql = f"""SELECT
+    if not extended:
+        return (
+            f"""SELECT
   ARRAY_AGG(DISTINCT status IGNORE NULLS ORDER BY status) AS statuses,
   ARRAY_AGG(DISTINCT origin_class IGNORE NULLS ORDER BY origin_class) AS origin_classes,
   ARRAY_AGG(DISTINCT type IGNORE NULLS ORDER BY type) AS types,
   MIN(DATE(created_at)) AS min_date,
   MAX(DATE(created_at)) AS max_date
-FROM {cases}"""
+FROM {cases}""",
+            [],
+        )
+
+    sql = f"""WITH enriched AS (
+  SELECT
+    c.status,
+    c.origin_class,
+    c.type,
+    c.created_at,
+    {DEPARTMENT} AS department,
+    {PI} AS pi,
+    {IRB} AS irb
+  FROM {cases} c
+  {_RAW_JOIN}
+)
+SELECT
+  ARRAY_AGG(DISTINCT status IGNORE NULLS ORDER BY status) AS statuses,
+  ARRAY_AGG(DISTINCT origin_class IGNORE NULLS ORDER BY origin_class) AS origin_classes,
+  ARRAY_AGG(DISTINCT type IGNORE NULLS ORDER BY type) AS types,
+  ARRAY_AGG(DISTINCT department IGNORE NULLS ORDER BY department
+            LIMIT {FACET_LIMIT}) AS departments,
+  ARRAY_AGG(DISTINCT pi IGNORE NULLS ORDER BY pi LIMIT {FACET_LIMIT}) AS pis,
+  ARRAY_AGG(DISTINCT irb IGNORE NULLS ORDER BY irb LIMIT {FACET_LIMIT}) AS irbs,
+  MIN(DATE(created_at)) AS min_date,
+  MAX(DATE(created_at)) AS max_date
+FROM enriched"""
+    return sql, []
+
+
+def warehouse_freshness(era: Era) -> tuple[str, list[Any]]:
+    """How far behind live Salesforce this snapshot is, plus the open count.
+
+    Every operational list has to state this. A stale snapshot showing a closed
+    case as open is the single most likely way this app misleads someone.
+    """
+    sql = f"""SELECT
+  MAX(last_modified_at) AS newest,
+  COUNTIF(NOT is_closed) AS open_cases,
+  COUNT(*) AS total_cases
+FROM {era.table('dim_case')}"""
     return sql, []
 
 
@@ -308,7 +389,11 @@ FROM {cases}"""
 
 
 def case_header(era: Era, case_number: str) -> tuple[str, list[Any]]:
-    """The panel at the top of a case page."""
+    """The panel at the top of a case page.
+
+    Extended in v2.1 with the triage attributes (PI, IRB protocol, department,
+    funding) that only exist on the raw Case object — see `_RAW_JOIN`.
+    """
     cases = era.table("dim_case")
     attach_expr = (
         f"(SELECT COUNT(*) FROM {era.table('attachment_blob')} a "
@@ -326,8 +411,14 @@ def case_header(era: Era, case_number: str) -> tuple[str, list[Any]]:
   c.reason,
   c.priority,
   u.Name AS owner,
+  {PI} AS pi,
+  {DEPARTMENT} AS department,
+  {IRB} AS irb,
+  {IRB_STATUS} AS irb_status,
+  {FUNDING} AS funding,
   c.created_at,
   c.closed_at,
+  {LAST_ACTIVITY} AS last_activity,
   ROUND(c.hours_to_close / 24, 1) AS days_to_close,
   c.turn_count,
   c.customer_turn_count,
@@ -336,6 +427,7 @@ def case_header(era: Era, case_number: str) -> tuple[str, list[Any]]:
   c.description
 FROM {cases} c
 LEFT JOIN `{config.USER_TABLE}` u ON u.Id = c.owner_id
+{_RAW_JOIN}
 WHERE c.case_number = @case_number"""
     return sql, [ScalarQueryParameter("case_number", "STRING", case_number)]
 
@@ -415,21 +507,227 @@ ORDER BY bytes DESC"""
     return sql, [ScalarQueryParameter("case_number", "STRING", case_number)]
 
 
-def case_transcript(era: Era, case_number: str) -> tuple[str, list[Any]]:
-    """The whole thread as one ordered list of turns, for reading top to bottom."""
-    turns = era.table("fct_conversation_turn")
-    cases = era.table("dim_case")
+# --------------------------------------------------------------------------
+# Reading a case (v2.1)
+# --------------------------------------------------------------------------
+#
+# v1 had a single `case_transcript`. v2.1 splits it in two because the spec
+# asks for two different readings of the same rows: Comments is a flat stream
+# meant to be read top to bottom (FR-CASE-5), Messages is a compact index that
+# expands one row at a time (FR-CASE-7). Same source, different shape.
+#
+# "Comments" is a UX word, not a table. `Case.Comments` is empty in this corpus
+# — every row of it — so the comment stream is built from conversation turns:
+# CaseComment rows (internal notes) and the email traffic copied onto the case.
+
+
+def _turn_source(era: Era) -> str:
+    """The FROM/JOIN block shared by every per-case turn query.
+
+    The User join is load-bearing rather than cosmetic: CaseComment rows carry
+    only `actor_user_id`, so without it every internal note — the larger half
+    of the corpus at 12,878 turns — is authored by nobody.
+    """
+    return f"""FROM {era.table('fct_conversation_turn')} t
+JOIN {era.table('dim_case')} c ON c.case_id = t.case_id
+LEFT JOIN `{config.USER_TABLE}` u ON u.Id = t.actor_user_id
+WHERE c.case_number = @case_number"""
+
+
+def comments_stream(
+    era: Era, case_number: str, *, newest_first: bool = False
+) -> tuple[str, list[Any]]:
+    """The default case reading: one flat chronological stream of the thread."""
+    order = "DESC" if newest_first else "ASC"
     sql = f"""SELECT
   t.turn_seq,
   t.turn_ts,
   t.actor_role,
   t.direction,
+  t.source_object,
+  COALESCE(t.actor_name, u.Name, t.actor_email) AS who,
+  t.body_clean AS body
+{_turn_source(era)}
+ORDER BY t.turn_seq {order}"""
+    return sql, [ScalarQueryParameter("case_number", "STRING", case_number)]
+
+
+def case_messages(era: Era, case_number: str) -> tuple[str, list[Any]]:
+    """Individual messages, for the compact index on the Messages tab."""
+    sql = f"""SELECT
+  t.turn_seq,
+  t.turn_ts,
+  t.actor_role,
+  t.direction,
+  t.source_object,
   COALESCE(t.actor_name, u.Name, t.actor_email) AS who,
   t.subject,
-  t.body_clean AS body
-FROM {turns} t
-JOIN {cases} c ON c.case_id = t.case_id
-LEFT JOIN `{config.USER_TABLE}` u ON u.Id = t.actor_user_id
-WHERE c.case_number = @case_number
+  t.body_clean AS body,
+  t.body_clean_len AS body_len
+{_turn_source(era)}
 ORDER BY t.turn_seq"""
     return sql, [ScalarQueryParameter("case_number", "STRING", case_number)]
+
+
+RELATED_LIMIT = 50
+
+
+def related_cases(
+    era: Era, case_number: str, *, limit: int = RELATED_LIMIT
+) -> tuple[str, list[Any]]:
+    """Other cases sharing this one's PI, IRB protocol, or department.
+
+    The anchor's three attributes are read once into a single-row CTE and cross
+    joined, so the comparison happens inside BigQuery rather than costing a
+    second round trip to fetch the values first.
+
+    Each dimension is guarded with an explicit IS NOT NULL. Without it a case
+    with no recorded PI would match on `pi = pi` being NULL — which is not a
+    match, but is also not an exclusion, and the guard makes the intent legible
+    rather than depending on three-valued logic to do the right thing quietly.
+    """
+    cases = era.table("dim_case")
+    sql = f"""WITH anchor AS (
+  SELECT {PI} AS pi, {IRB} AS irb, {DEPARTMENT} AS department
+  FROM {cases} c
+  {_RAW_JOIN}
+  WHERE c.case_number = @case_number
+  LIMIT 1
+)
+SELECT
+  c.case_number,
+  c.subject,
+  c.status,
+  {LAST_ACTIVITY} AS last_activity,
+  a.pi IS NOT NULL AND {PI} = a.pi AS same_pi,
+  a.irb IS NOT NULL AND {IRB} = a.irb AS same_irb,
+  a.department IS NOT NULL AND {DEPARTMENT} = a.department AS same_department
+FROM {cases} c
+{_RAW_JOIN}
+CROSS JOIN anchor a
+WHERE c.case_number != @case_number
+  AND (
+    (a.pi IS NOT NULL AND {PI} = a.pi)
+    OR (a.irb IS NOT NULL AND {IRB} = a.irb)
+    OR (a.department IS NOT NULL AND {DEPARTMENT} = a.department)
+  )
+ORDER BY last_activity DESC NULLS LAST
+LIMIT @row_limit"""
+    return sql, [
+        ScalarQueryParameter("case_number", "STRING", case_number),
+        ScalarQueryParameter("row_limit", "INT64", limit),
+    ]
+
+
+# --------------------------------------------------------------------------
+# Operational lists (v2.1)
+# --------------------------------------------------------------------------
+
+TRIAGE_LIMIT = 500
+
+# Sort keys are an allowlist mapped to SQL, never the clicked column name
+# interpolated into the query. A header click is user input like any other.
+TRIAGE_SORTS = {
+    "case_number": "c.case_number",
+    "owner": "owner",
+    "status": "c.status",
+    "pi": "pi",
+    "department": "department",
+    "irb": "irb",
+    "funding": "funding",
+    "last_activity": "last_activity",
+    "created_at": "c.created_at",
+}
+
+DEFAULT_TRIAGE_SORT = "last_activity"
+
+
+@dataclass
+class TriageFilters:
+    """The five priority filters from spec FR-LIST-6, plus funding.
+
+    `open_only` defaults on because the landing view is a triage queue, not an
+    archive browse.
+    """
+
+    open_only: bool = True
+    statuses: list[str] = field(default_factory=list)
+    departments: list[str] = field(default_factory=list)
+    pis: list[str] = field(default_factory=list)
+    irbs: list[str] = field(default_factory=list)
+    funding: list[str] = field(default_factory=list)
+
+    def clauses(self) -> tuple[list[str], list[Any]]:
+        sql: list[str] = []
+        params: list[Any] = []
+        if self.open_only:
+            sql.append("NOT c.is_closed")
+        if self.statuses:
+            sql.append("c.status IN UNNEST(@f_status)")
+            params.append(ArrayQueryParameter("f_status", "STRING", self.statuses))
+        if self.departments:
+            sql.append(f"{DEPARTMENT} IN UNNEST(@f_dept)")
+            params.append(ArrayQueryParameter("f_dept", "STRING", self.departments))
+        if self.pis:
+            sql.append(f"{PI} IN UNNEST(@f_pi)")
+            params.append(ArrayQueryParameter("f_pi", "STRING", self.pis))
+        if self.irbs:
+            sql.append(f"{IRB} IN UNNEST(@f_irb)")
+            params.append(ArrayQueryParameter("f_irb", "STRING", self.irbs))
+        if self.funding:
+            sql.append(f"{FUNDING} IN UNNEST(@f_funding)")
+            params.append(ArrayQueryParameter("f_funding", "STRING", self.funding))
+        return sql, params
+
+    @property
+    def active_count(self) -> int:
+        """How many filters are narrowing the list, for the collapsed chip label."""
+        return sum(
+            1
+            for value in (self.statuses, self.departments, self.pis, self.irbs, self.funding)
+            if value
+        )
+
+
+def triage_list(
+    era: Era,
+    filters: TriageFilters | None = None,
+    *,
+    sort: str = DEFAULT_TRIAGE_SORT,
+    descending: bool = True,
+    limit: int = TRIAGE_LIMIT,
+) -> tuple[str, list[Any]]:
+    """One row per case for the operational lists.
+
+    Reads only the case dimension and the raw Case/User objects — no body
+    scan — so a triage list costs roughly 31 MB rather than the 245 MB a
+    conversation search does.
+    """
+    filters = filters or TriageFilters()
+    cases = era.table("dim_case")
+    where, params = filters.clauses()
+    params.append(ScalarQueryParameter("row_limit", "INT64", limit))
+
+    column = TRIAGE_SORTS.get(sort, TRIAGE_SORTS[DEFAULT_TRIAGE_SORT])
+    direction = "DESC" if descending else "ASC"
+
+    sql = f"""SELECT
+  c.case_number,
+  c.subject,
+  u.Name AS owner,
+  c.status,
+  c.is_closed,
+  {PI} AS pi,
+  {DEPARTMENT} AS department,
+  {IRB} AS irb,
+  {FUNDING} AS funding,
+  c.description,
+  {LAST_ACTIVITY} AS last_activity,
+  COUNT(*) OVER () AS total_matches
+FROM {cases} c
+LEFT JOIN `{config.USER_TABLE}` u ON u.Id = c.owner_id
+{_RAW_JOIN}
+{('WHERE ' + ' AND '.join(where)) if where else ''}
+ORDER BY {column} {direction} NULLS LAST, c.case_number DESC
+LIMIT @row_limit"""
+    return sql, params

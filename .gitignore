@@ -20,6 +20,13 @@ logs/
 data/
 *.csv
 
+# A user's own saved views live outside the repo by default (see
+# config.personal_views_path), but an overridden path could put one here. They
+# hold filter definitions rather than case data, and they are still nobody
+# else's business.
+personal_views.json
+
 # Local tooling
 .DS_Store
 .pytest_cache/
+.ruff_cache/

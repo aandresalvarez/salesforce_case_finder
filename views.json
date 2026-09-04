@@ -1,0 +1,63 @@
+{
+  "_comment": "Shared Case Finder presets, distributed with the app. Filter definitions only - this file must never contain case rows, message bodies, snippets, or descriptions. To add a team preset, save one in the app, use the overflow 'Copy definition' action, and paste the JSON object into the list below.",
+  "views": [
+    {
+      "name": "Open Cases (weekly review)",
+      "description": "Everything not closed, most recently active first.",
+      "open_only": true,
+      "sort": "last_activity",
+      "descending": true,
+      "columns": [
+        "case_number",
+        "owner",
+        "status",
+        "pi",
+        "department",
+        "irb",
+        "description",
+        "last_activity",
+        "funding"
+      ]
+    },
+    {
+      "name": "Data Broker Triage",
+      "description": "Provisional: cases in the Data Queue status. Definition pending confirmation.",
+      "open_only": true,
+      "statuses": [
+        "Data Queue"
+      ],
+      "sort": "created_at",
+      "descending": false,
+      "columns": [
+        "case_number",
+        "owner",
+        "status",
+        "pi",
+        "department",
+        "irb",
+        "description",
+        "last_activity",
+        "funding"
+      ]
+    },
+    {
+      "name": "Unassigned queues",
+      "description": "Open cases still sitting with a queue rather than a person.",
+      "open_only": true,
+      "statuses": [
+        "Submitted"
+      ],
+      "sort": "created_at",
+      "descending": false,
+      "columns": [
+        "case_number",
+        "owner",
+        "status",
+        "pi",
+        "department",
+        "irb",
+        "last_activity"
+      ]
+    }
+  ]
+}
