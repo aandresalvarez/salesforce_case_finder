@@ -44,9 +44,7 @@ _CSS = f"""
 .cf-select .q-field__append {{ padding-left:2px; }}
 """
 
-
-def _ensure_css() -> None:
-    register_css("filters", _CSS)
+register_css("filters", _CSS)
 
 
 class Debounce:
@@ -132,7 +130,6 @@ def open_only_toggle(value: bool, on_change: Callable[[bool], None]) -> None:
 
 def inline_row(build: Callable[[], None], active_count: int) -> None:
     """Render `build` twice: as a wide compact row, and behind a narrow disclosure."""
-    _ensure_css()
     with ui.row().classes("cf-filters-inline items-center w-full").style(
         "gap:10px; flex-wrap:wrap; margin:12px 0 6px 0"
     ):
@@ -157,7 +154,6 @@ def scope_control(
     scoped to nothing has no meaningful result and silently returning zero rows
     would look like a data problem.
     """
-    _ensure_css()
 
     def toggle(which: str, value: bool) -> None:
         fields, conversation = in_fields, in_conversation

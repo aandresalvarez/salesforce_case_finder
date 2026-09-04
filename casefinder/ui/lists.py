@@ -26,41 +26,67 @@ from .components import table as table_ui
 from .components.empty_state import empty
 from .shell import MUTED, muted, overflow, primary, quiet, state
 
-# Spec FR-LIST-4, in order. Description and funding are the two that give way
-# when the window is narrow.
+# Spec FR-LIST-4, in order. The description stays at every width and is
+# truncated instead; Funded, then Department, then PI give way to keep it that
+# way (D16).
 #
-# The widths add up to about 975px, which leaves the description whatever the
-# window has spare past the 1180px breakpoint at which it is dropped entirely.
-# They are honoured exactly rather than treated as hints, because the table
-# sets `table-layout:fixed` — see the note there for what that is protecting
-# against. Every column but the description is one line: these are identifiers
-# and short labels, and a row that grows because one owner has a long name is
-# the density problem in miniature.
+# Every width here is honoured exactly rather than treated as a hint, because
+# the table sets `table-layout:fixed` — see the note there for what that is
+# protecting against. The consequence is that these numbers have to be measured
+# rather than guessed: they add up to 922px, and Description gets the rest, so
+# thirty pixels of generosity anywhere in this dict comes out of the only
+# column that holds a sentence — and the drop thresholds in `table.py` are
+# derived from these sums, so changing one means re-deriving those. Every
+# column but the description is one line: these are identifiers and short
+# labels, and a row that grows because one owner has a long name is the density
+# problem in miniature.
 COLUMNS = {
     "case_number": table_ui.Column(
-        "case_number", "Case", lambda r: r.case_number, width="112px", one_line=True
+        # A case number is the row's identifier and the thing people read out
+        # to each other; it is the one column that must never ellipsise.
+        "case_number", "Case", lambda r: r.case_number, width="118px", one_line=True
     ),
     "owner": table_ui.Column(
-        "owner", "Owner", lambda r: show(r.owner), width="128px", one_line=True
+        "owner", "Owner", lambda r: show(r.owner), width="120px", one_line=True
     ),
     "status": table_ui.Column(
-        "status", "Status", lambda r: show(r.status), width="104px", one_line=True
+        "status", "Status", lambda r: show(r.status), width="92px", one_line=True
     ),
-    "pi": table_ui.Column("pi", "PI", lambda r: show(r.pi), width="128px", one_line=True),
+    "pi": table_ui.Column(
+        "pi",
+        "PI",
+        lambda r: show(r.pi),
+        width="124px",
+        # Third to go, and the last one that does. Below this the window is at
+        # its configured minimum and everything left is load-bearing.
+        drop=3,
+        one_line=True,
+    ),
     "department": table_ui.Column(
-        "department", "Department", lambda r: show(r.department), width="140px", one_line=True
+        "department",
+        "Department",
+        lambda r: show(r.department),
+        width="128px",
+        # Second to go. It is the widest of the identifying columns and the most
+        # redundant — a case with a PI usually implies its department, and
+        # neither PI nor IRB can be inferred back from it.
+        drop=2,
+        one_line=True,
     ),
     "irb": table_ui.Column(
         # IRB values are five-digit protocol numbers, or `NA`, `QI`, `unknown`.
         # The header is the widest thing in the column, so it sets the width.
-        "irb", "IRB / protocol", lambda r: show(r.irb), width="116px", one_line=True
+        "irb", "IRB / protocol", lambda r: show(r.irb), width="112px", one_line=True
     ),
     "description": table_ui.Column(
         "description",
         "Description",
         lambda r: preview(r.description),
         sortable=False,
-        droppable=True,
+        # Never drops. FR-LIST-4 says "truncated if width allows", which is an
+        # instruction to keep it and shorten it; it used to drop alongside
+        # Funded, so the one column that says what a case is about was the
+        # first thing a narrow window took away.
         clamp=True,
         subdued=True,
     ),
@@ -68,7 +94,9 @@ COLUMNS = {
         "last_activity",
         "Last activity",
         lambda r: show(r.last_activity),
-        width="116px",
+        # Room for the header plus the sort arrow: this is the default sort, so
+        # the arrow is normally present and the header clipped without it.
+        width="124px",
         numeric=True,
         one_line=True,
     ),
@@ -76,8 +104,9 @@ COLUMNS = {
         "funding",
         "Funded",
         lambda r: _funding(r.funding),
-        width="132px",
-        droppable=True,
+        width="104px",
+        # The only column FR-LIST-4 allows to disappear at narrow widths.
+        drop=1,
         one_line=True,
     ),
 }

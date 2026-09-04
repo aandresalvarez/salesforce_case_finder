@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **396 passing**, ~1.6 s, no network access required |
+| Automated tests | **454 passing**, ~1.7 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,30 +45,33 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-5,747 lines across 22 modules.
+6,342 lines across 25 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
 | `queries.py` | 759 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
-| `models.py` | 576 | Typed rows; the single place that decides how a missing value is displayed. |
-| `ui/lists.py` | 519 | §6.2 — triage lists, filters, saved views, paging, CSV. |
-| `ui/case_detail.py` | 442 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/shell.py` | 414 | §3.1 — rail, content region, era indicator, error surfaces. |
+| `models.py` | 588 | Typed rows; the single place that decides how a missing value is displayed. |
+| `ui/lists.py` | 548 | §6.2 — triage lists, filters, saved views, paging, CSV. |
+| `ui/case_detail.py` | 486 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
+| `ui/shell.py` | 431 | §3.1 — rail, content region, era indicator, error surfaces. |
 | `ui/search.py` | 380 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
 | `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
 | `ask.py` | 231 | §6.5 — question in, SQL out; nothing else in the prompt. |
+| `intake.py` | 225 | Reads the serialised intake form out of a case body (D15). Pure. |
+| `ui/components/table.py` | 217 | The list table; clickable rows, no Open button, container-query columns (D16). |
 | `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
-| `ui/components/filters.py` | 194 | The compact filter row and its disclosure. |
+| `config.py` | 202 | Every environment variable and its default. |
+| `ui/components/filters.py` | 190 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
-| `config.py` | 190 | Every environment variable and its default. |
-| `ui/components/table.py` | 169 | The list table; clickable rows, no Open button. |
-| `ui/settings.py` | 156 | §6.7 — era, connection, Ask availability, about. |
+| `ui/settings.py` | 160 | §6.7 — era, connection, Ask availability, about. |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
-| `main.py` | 96 | Routes, and the loopback-only native window. |
+| `main.py` | 103 | Routes, and the loopback-only native window. |
+| `ui/components/intake_form.py` | 99 | Draws what `intake.py` parsed — as labels, never as HTML. |
+| `ui/components/loading.py` | 95 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/pager.py` | 88 | The range line and its two arrows; one pager for every paged screen. |
-| `ui/components/metadata.py` | 62 | The flat metadata strip that replaced five metric cards. |
+| `ui/components/metadata.py` | 69 | The flat metadata strip that replaced five metric cards. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
 | `ui/components/freshness.py` | 38 | The stale-snapshot banner. |
 
@@ -117,6 +120,7 @@ added without invariant coverage cannot pass silently.
 | Lists, columns, sorting, filters, presets, saved views, paging, CSV | FR-LIST-1..12 (paging is D11) | `ui/lists.py`, `views.py`, `ui/components/pager.py` | `test_triage.py`, `test_ui_actions.py`, `test_pagination.py` |
 | Search: idle, execute, shortcut, parsing, scope, results, limits, paging, empty | FR-SEARCH-1..12 | `ui/search.py`, `queries.search`, `ui/components/pager.py` | `test_search_semantics.py`, `test_pagination.py` |
 | Case: comments-first, header, metadata, copy summary, tabs, related, unknown | FR-CASE-1..11 | `ui/case_detail.py` | `test_ui_actions.py`, `test_visual.py` |
+| Case body rendering, and the wait before one appears | FR-CASE-4, FR-CASE-5 (D15) | `intake.py`, `ui/components/intake_form.py`, `ui/components/loading.py` | `test_intake.py`, `test_reading.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
@@ -483,6 +487,91 @@ most four"; the rail is filtered once at import, so it never changes shape
 mid-session. The gate is on the surface, not the safety: `ask.py` still sends
 only the question and a static schema, never case data, because a flag someone
 can flip must not be what stands between a corpus and a third party.
+
+---
+
+### D15 — a case body that is the serialised intake form is restructured, not shown verbatim
+
+**Spec:** FR-CASE-4 and FR-CASE-5 treat a body as one opaque thing: the
+description "appears above the comment stream", each entry has "author,
+role/source, timestamp, body". §9.5 adds that case text is rendered as text.
+
+**Built:** `intake.py` recognises one specific shape — several JSON objects
+joined by a `~#~#~` separator, which is how the web intake form serialises
+itself into a case — and turns it into a labelled field grid, the request as
+its own block with the requester's line breaks intact, and a collapsed
+`Original record` holding the payload byte for byte. Every other body reaches
+the screen exactly as before. `parse` returns `None` the moment the text is not
+that shape, and one unparseable segment condemns the whole body rather than
+half of it.
+
+**Why:** the spec assumed bodies are prose, and most are. The ones that are not
+are a single seven-hundred-character line of `{"Field__c":"value",…}` with the
+actual request buried in the middle, and the field that holds it stores real
+newlines JSON-escaped, so the paragraph breaks the requester typed were on
+screen as the literal characters `\n`. Everything was present and none of it
+was legible. Restructuring is not a cosmetic preference here — it is the
+difference between a support person reading a request and a support person
+decoding one.
+
+**Effect on requirements:** §9.5 is unweakened and load-bearing on this path.
+Every value goes through `ui.label`, which escapes; nothing on a case page is
+rendered as HTML or markdown, and `test_reading.py` asserts that with a payload
+carrying a `<script>` tag. FR-CASE-4's "must not dominate" is unchanged — the
+description keeps its collapse-when-long behaviour and now takes the same
+reading as a comment, so a case whose description is the form is not the one
+place left showing JSON. The formatted view is an addition and never a
+replacement: the original is one click away on every body it touches, because a
+restructured view is an interpretation and someone acting on a case has to be
+able to check it against what the record literally says.
+
+---
+
+### D16 — three list columns give way at narrow widths, not one; the description is not among them
+
+**Spec:** FR-LIST-4 lists nine columns in order, marks the description
+"truncated if width allows", and grants exactly one — Funded — the note "may be
+hidden at narrow widths".
+
+**Built:** Funded gives way first, then Department, then PI, at table widths of
+1060, 956 and 828 pixels. The description gives way at no width at all.
+
+**Why:** the two halves of FR-LIST-4 turned out to be in conflict, and the
+conflict is arithmetic rather than editorial. The table sets
+`table-layout:fixed`, because without it one case whose description is a pasted
+email thread sets the width of every column in the list. Fixed layout makes the
+declared widths authoritative and hands the leftover to the single column that
+declares none — the description. So "truncated if width allows" is decided by
+subtraction, and when the subtraction reaches zero the outcome is not a narrower
+column. It is a column zero pixels wide: still in the table, still in the DOM,
+still carrying a header, with its content gone and no ellipsis and nothing
+whatever to say so. At a 1024-pixel window — `MIN_WINDOW_SIZE`, the smallest the
+app allows — that is exactly what happened.
+
+Given the choice between a description that silently vanishes and two columns
+that visibly leave, the columns leave. Department goes first because it is the
+widest of the identifiers and the most inferable — a case with a PI usually
+implies its department, and neither PI nor IRB can be recovered from it. Both
+remain in the CSV export and on the case page, so nothing is unreachable; they
+are absent from one view at one size.
+
+The description had previously been the *first* column to drop, which is how
+this was found: at 1280 pixels it was not dropping but was being handed 64
+pixels, and the only column that says what a case is about was wrapping to one
+syllable per line.
+
+**Effect on requirements:** FR-LIST-4's order, contents, and the description's
+"truncated" behaviour all hold, at every width from `MIN_WINDOW_SIZE` upward,
+with a measured floor of 138 pixels. The thresholds are not preferences and are
+not hand-tuned: `table.py` derives them from the declared widths, and
+`test_reading.py` re-derives them from `lists.COLUMNS` in each regime and fails
+if any of them would put the description below that floor. A future change to
+any column's width therefore cannot re-open this quietly.
+
+They are container queries rather than media queries, which is the other half of
+the fix. A `@media (max-width: 1180px)` rule measures the viewport, and the
+table is 240 pixels narrower than the viewport — so the rule that was supposed to
+drop Funded never fired at any window size a person would use.
 
 ---
 

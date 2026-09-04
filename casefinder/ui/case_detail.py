@@ -15,11 +15,23 @@ case down to header + comments, which is what NFR-PERF-3 requires.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from nicegui import ui
 
 from .. import data
-from ..models import CaseHeader, Comment, Message, TimelineEvent, show, when
+from ..models import (
+    Attachment,
+    CaseHeader,
+    Comment,
+    Message,
+    TimelineEvent,
+    show,
+    when,
+)
 from . import shell
+from .components import intake_form, loading
 from .components import metadata as metadata_ui
 from .components.empty_state import empty, unknown_case
 from .components.table import Column, data_table
@@ -40,24 +52,32 @@ _DIRECTIONS = {
 
 def render(case_number: str) -> None:
     case_number = case_number.upper()
-    try:
+
+    def load() -> CaseHeader | None:
         header = data.case_header(state.era, case_number)
-    except Exception as exc:  # noqa: BLE001
-        shell.error_region(exc)
-        return
+        if header is None:
+            return None
+        # Only the two the page always draws, and only once the header has
+        # proved the case exists — a mistyped case number should not spend a
+        # 237 MB scan finding out that it has no comments.
+        data.prefetch(
+            lambda: data.comments(state.era, case_number),
+            lambda: data.related(state.era, case_number),
+        )
+        return header
 
-    if header is None:
-        unknown_case(case_number, state.era.label, lambda: _switch_era(case_number))
-        return
+    def draw(header: CaseHeader | None) -> None:
+        if header is None:
+            unknown_case(case_number, state.era.label, lambda: _switch_era(case_number))
+            return
+        _page(header)
 
-    # Only the two the page always draws, and only once the header has proved
-    # the case exists — a mistyped case number should not spend a 237 MB scan
-    # finding out that it has no comments.
-    data.prefetch(
-        lambda: data.comments(state.era, case_number),
-        lambda: data.related(state.era, case_number),
+    loading.while_loading(
+        f"Opening {case_number}…", load, draw, on_error=shell.error_region
     )
 
+
+def _page(header: CaseHeader) -> None:
     with ui.column().classes("w-full cf-reading").style("gap:0"):
         with ui.row().classes("w-full items-start justify-between").style("gap:16px"):
             with ui.column().style("gap:0; min-width:0"):
@@ -100,11 +120,36 @@ TABS = ("Comments", "Messages", "Timeline", "Files")
 
 
 def _tabs(header: CaseHeader) -> None:
-    builders = {
+    # Each tab is a load and a draw rather than one function, so the slow half
+    # can go off the event loop behind a spinner. Comments is the exception:
+    # `render` prefetched it, so building it is a cache hit and a spinner would
+    # be a flicker announcing nothing.
+    number = header.case_number
+    deferred: dict[str, tuple[str, Callable[[], Any], Callable[[Any], None]]] = {
+        "Messages": (
+            "Loading messages…",
+            lambda: data.messages(state.era, number),
+            lambda rows: _messages(rows),
+        ),
+        "Timeline": (
+            "Building the timeline…",
+            lambda: data.timeline(state.era, number),
+            lambda rows: _timeline(rows),
+        ),
+        "Files": (
+            "Looking for files…",
+            lambda: data.attachments(state.era, number) if state.era.has_attachments else [],
+            lambda rows: _files(rows),
+        ),
+    }
+
+    def defer(name: str) -> None:
+        note, load, draw = deferred[name]
+        loading.while_loading(note, load, draw, on_error=shell.error_region)
+
+    builders: dict[str, Callable[[], None]] = {
         "Comments": lambda: comment_stream(header),
-        "Messages": lambda: _messages(header),
-        "Timeline": lambda: _timeline(header),
-        "Files": lambda: _files(header),
+        **{name: (lambda n=name: defer(n)) for name in deferred},
     }
 
     with ui.tabs().props("dense no-caps align=left").classes("w-full").style(
@@ -188,9 +233,11 @@ def _comment(entry: Comment) -> None:
             muted(entry.kind)
             muted("·")
             muted(when(entry.ts))
-        # Warehouse text that originated in email. Rendered as a label, never as
-        # HTML — see the escaping rule in spec section 9.5.
-        ui.label(entry.body or "(empty)").classes("cf-body").style("user-select:text")
+        # Warehouse text that originated in email, and sometimes the intake
+        # form serialised into it. `body` picks the reading for the shape it
+        # actually has; either way it renders as labels, never as HTML — see
+        # the escaping rule in spec section 9.5.
+        intake_form.body(entry.body)
 
 
 # --------------------------------------------------------------------------
@@ -198,9 +245,8 @@ def _comment(entry: Comment) -> None:
 # --------------------------------------------------------------------------
 
 
-def _messages(header: CaseHeader) -> None:
+def _messages(messages: list[Message]) -> None:
     """FR-CASE-7: a compact index; a row expands in place."""
-    messages = data.messages(state.era, header.case_number)
     if not messages:
         empty("No individual messages on this case.", icon="mail_outline")
         return
@@ -228,7 +274,7 @@ def _message_row(message: Message) -> None:
                 muted(f"{message.body_len:,} chars")
         if message.subject:
             ui.label(message.subject).classes("cf-muted").style("margin-bottom:6px")
-        ui.label(message.body or "(empty)").classes("cf-body")
+        intake_form.body(message.body)
 
 
 # --------------------------------------------------------------------------
@@ -236,7 +282,7 @@ def _message_row(message: Message) -> None:
 # --------------------------------------------------------------------------
 
 
-def _timeline(header: CaseHeader) -> None:
+def _timeline(events: list[TimelineEvent]) -> None:
     """FR-CASE-8: conversation and audit interleaved, in one ordered list."""
     if not state.era.has_history:
         with ui.row().classes("cf-note w-full").style("margin-bottom:12px"):
@@ -245,7 +291,6 @@ def _timeline(header: CaseHeader) -> None:
                 "shows conversation events only."
             )
 
-    events = data.timeline(state.era, header.case_number)
     if not events:
         empty("Nothing recorded on this case.", icon="timeline")
         return
@@ -303,7 +348,7 @@ def _timeline_row(event: TimelineEvent) -> None:
 # --------------------------------------------------------------------------
 
 
-def _files(header: CaseHeader) -> None:
+def _files(files: list[Attachment]) -> None:
     """FR-CASE-9: a table and one policy banner. No upload, preview, or delete."""
     with ui.row().classes("cf-note w-full items-center").style(
         "gap:8px; margin-bottom:12px"
@@ -315,7 +360,6 @@ def _files(header: CaseHeader) -> None:
         muted("Attachment records were not retained for this era.")
         return
 
-    files = data.attachments(state.era, header.case_number)
     if not files:
         muted("No files recorded on this case.")
         return
@@ -336,7 +380,7 @@ def _files(header: CaseHeader) -> None:
                 "Pointer",
                 lambda a: a.gcs_uri or "—",
                 sortable=False,
-                droppable=True,
+                drop=1,
             ),
         ],
         files,

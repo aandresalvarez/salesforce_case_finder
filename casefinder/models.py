@@ -88,6 +88,25 @@ PREVIEW_CHARS = 260
 _ATTRIBUTION = re.compile(r"^On\b.{0,110}?\bwrote:\s*", re.IGNORECASE)
 
 
+def strip_attribution(text: str, *, rounds: int = 2) -> str:
+    """Drop leading quoted-reply headers, leaving the message itself.
+
+    Twice by default, because a forwarded request arrives quoted inside a reply
+    and the second attribution is the one in front of the actual text. Bounded
+    rather than looped: three deep and it is a mail thread, not a request.
+
+    Only ever strips when something is left behind. A body that is *nothing
+    but* an attribution is a strange record, but returning empty for it would
+    hide the only thing it has.
+    """
+    for _ in range(rounds):
+        stripped = _ATTRIBUTION.sub("", text, count=1)
+        if not stripped:
+            break
+        text = stripped
+    return text
+
+
 def preview(text: Any, limit: int = PREVIEW_CHARS) -> str:
     """Flatten a free-text field into one line for a table cell.
 
@@ -108,16 +127,7 @@ def preview(text: Any, limit: int = PREVIEW_CHARS) -> str:
     cleaned = clean(text)
     if cleaned is None:
         return ""
-    flattened = " ".join(str(cleaned).split())
-    # Twice, because a forwarded request arrives quoted inside a reply and the
-    # second attribution is the one in front of the actual request. Bounded
-    # rather than looped: three of these deep and the text is a mail thread
-    # nobody is going to read two lines of anyway.
-    for _ in range(2):
-        stripped = _ATTRIBUTION.sub("", flattened, count=1)
-        if not stripped:
-            break
-        flattened = stripped
+    flattened = strip_attribution(" ".join(str(cleaned).split()))
     if len(flattened) <= limit:
         return flattened
     return flattened[:limit].rstrip() + "…"

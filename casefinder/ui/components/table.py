@@ -32,8 +32,10 @@ class Column:
     width: str = "auto"
     sortable: bool = True
     numeric: bool = False
-    # Columns the spec allows to disappear before the others when space runs out.
-    droppable: bool = False
+    # When the table is too narrow, columns give way in this order: 1 first,
+    # then 2, and so on. 0 never drops. Only the columns a requirement says may
+    # disappear should carry one — FR-LIST-4 grants it to Funded alone.
+    drop: int = 0
     # How a cell handles text that does not fit. `one_line` clips it with an
     # ellipsis, `clamp` keeps the first two lines. Both default off: a table
     # rendering arbitrary SQL results has no idea what is in its cells, and
@@ -43,15 +45,47 @@ class Column:
     subdued: bool = False
 
 
-# `table-layout:fixed` is load-bearing rather than cosmetic. Under the default
-# auto layout a browser sizes each column to its content, so one case whose
-# description is a pasted email thread drags every other column narrow — which
-# is exactly what happened: `Last activity` and `Funded` were crushed against
-# the right edge while `Description` took two fifths of the table. Fixed layout
-# makes the declared widths authoritative and gives the leftover to the one
-# column that asked for `auto`, so a row's height stops depending on its
-# content and the header stops depending on the row.
+# The table's own width, not the window's, is what the thresholds below are
+# measured against. That distinction is the whole reason they are container
+# queries: the rail and the pane's padding take this much, so a 1280px window
+# gives the table 1040px, and a `@media (max-width: 1180px)` rule written
+# against the viewport never fired at any size a person would use.
+PANE_CHROME = 240
+
+# The container width at or below which each step's columns give way, and the
+# floor those thresholds are chosen to hold.
+#
+# `table-layout:fixed` is load-bearing rather than cosmetic here. Under the
+# default auto layout a browser sizes each column to its content, so one case
+# whose description is a pasted email thread drags every other column narrow —
+# which is exactly what happened: `Last activity` and `Funded` were crushed
+# against the right edge while `Description` took two fifths of the table.
+# Fixed layout makes the declared widths authoritative and hands the leftover
+# to the one column that asked for `auto`.
+#
+# Which is also how the same column ended up 64px wide, and later 0px wide: the
+# leftover is whatever is left, including nothing. A zero-width column is not
+# an empty one. It is still in the table, still in the DOM, still has a header,
+# and there is no ellipsis and nothing at all to say its content went missing.
+# A column that drops out is at least honest about being gone.
+#
+# So the steps are a cascade rather than three independent choices. Each
+# threshold sits just above the width at which the previous step's remainder
+# would fall to `DESCRIPTION_FLOOR`, which holds that floor across every width
+# a supported window can produce — `config.MIN_WINDOW_SIZE` is 1024 wide, so
+# the narrowest container is 784. `tests/test_reading.py` re-derives all of
+# this from `lists.COLUMNS`, because the arithmetic is the kind that goes quietly
+# wrong when someone widens a column by thirty pixels.
+DROP_AT = {1: 1060, 2: 956, 3: 828}
+DESCRIPTION_FLOOR = 138
+
+_DROP_RULES = "\n".join(
+    f"@container (max-width: {width}px) {{ .cf-drop-{step} {{ display:none; }} }}"
+    for step, width in DROP_AT.items()
+)
+
 _CSS = f"""
+.cf-table-wrap {{ container-type:inline-size; }}
 .cf-table {{ width:100%; border-collapse:collapse; table-layout:fixed; }}
 .cf-table th {{
   text-align:left; padding:7px 10px; border-bottom:1px solid {LINE};
@@ -72,8 +106,14 @@ _CSS = f"""
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   overflow:hidden;
 }}
-@media (max-width: 1180px) {{ .cf-drop {{ display:none; }} }}
+{_DROP_RULES}
 """
+
+register_css("table", _CSS)
+
+# Every step that has a rule above. A column asking to drop at a width nothing
+# matches would silently never drop, which is the failure this makes impossible.
+DROP_STEPS = tuple(DROP_AT)
 
 # Above this length a cell gets its full text as a `title`, so hovering it
 # shows what the ellipsis took. A character count rather than a measurement,
@@ -84,8 +124,15 @@ _CSS = f"""
 _TITLE_AT = 15
 
 
-def _ensure_css() -> None:
-    register_css("table", _CSS)
+def _drop_class(column: Column) -> str:
+    if not column.drop:
+        return ""
+    if column.drop not in DROP_STEPS:
+        raise ValueError(
+            f"column {column.key!r} drops at step {column.drop}, "
+            f"which has no rule; the steps are {DROP_STEPS}"
+        )
+    return f"cf-drop-{column.drop}"
 
 
 def _quotable(text: str) -> str:
@@ -118,11 +165,12 @@ def data_table(
     `on_sort` receives the clicked column key; the caller decides whether that
     means "sort by this" or "reverse the current sort" and re-queries.
     """
-    _ensure_css()
-    with ui.element("table").classes("cf-table"):
+    with ui.element("div").classes("cf-table-wrap w-full"), ui.element("table").classes(
+        "cf-table"
+    ):
         with ui.element("thead"), ui.element("tr"):
             for column in columns:
-                classes = "cf-drop" if column.droppable else ""
+                classes = _drop_class(column)
                 if column.sortable and on_sort is not None:
                     classes += " cf-sortable"
                 cell = ui.element("th").classes(classes.strip())
@@ -147,7 +195,7 @@ def data_table(
                 line.on("click", lambda _=None, r=row: on_row_click(r))
                 with line:
                     for column in columns:
-                        cell = ui.element("td").classes("cf-drop" if column.droppable else "")
+                        cell = ui.element("td").classes(_drop_class(column))
                         with cell:
                             text = column.render(row)
                             label = ui.label(text)

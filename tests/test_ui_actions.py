@@ -562,19 +562,24 @@ def test_copy_summary_never_touches_disk(clipboard, warehouse, tmp_path, monkeyp
 
 
 def test_the_files_tab_states_the_box_policy(render, warehouse):
-    tree = render(case_detail._files, warehouse.header)
+    tree = render(case_detail._files, warehouse.attachments)
     assert "Box project folder" in tree.text
 
 
 def test_the_files_tab_offers_no_upload_or_delete(render, warehouse):
-    tree = render(case_detail._files, warehouse.header)
+    tree = render(case_detail._files, warehouse.attachments)
     for label in tree.button_labels():
         assert label.lower() not in {"upload", "delete", "preview", "download"}
 
 
 def test_the_archive_era_says_attachments_were_not_retained(render, warehouse):
+    """Through the tab rather than through `_files`, because the tab is where
+    the query now lives: `_files` draws rows it is handed and could not query
+    if it wanted to, so calling it directly would assert nothing about cost.
+    """
     shell.state.era_key = "archive"
-    tree = render(case_detail._files, warehouse.header)
+    tree = render(case_detail._tabs, warehouse.header)
+    tree.of_type("Tabs")[0].value = "Files"
     assert "not retained for this era" in tree.text
     assert "attachments" not in warehouse.calls
 

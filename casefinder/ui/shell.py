@@ -167,21 +167,29 @@ _registered_css: set[str] = set()
 def register_css(name: str, css: str) -> None:
     """Install a component's stylesheet once, for every client.
 
-    `ui.add_head_html` writes into the head of the *current* client, so the
-    obvious way to write this — a module-level `_added` flag guarding a call to
-    it — is wrong in a way that only shows up on the second page load. The first
-    client in the process sets the flag and gets the rules; every client after
-    it gets the class names with no rules behind them.
+    Call this at module scope. Not as a convention — as the only moment that
+    works, and this has now been got wrong twice in two different ways.
 
-    That is not hypothetical. It is why list descriptions rendered as full,
+    `ui.add_head_html` writes into the head of the *current* client, so the
+    first attempt — a module-level `_added` flag guarding a call to it — served
+    the rules to the first page load in the process and the class names to
+    every one after it. That is why list descriptions rendered as full,
     untruncated case bodies: `.cf-truncate` was on the element and its
     `-webkit-line-clamp` was in a stylesheet exactly one page load had ever
-    seen.
+    seen. `shared=True` fixes that half, by putting the stylesheet in the head
+    served to every client, which is what a component stylesheet is.
 
-    `shared=True` puts the stylesheet in the head served to every client, which
-    is what a component stylesheet is. The name is the dedupe key, because
-    shared head HTML accumulates and a component's CSS is registered on every
-    render.
+    The second way was registering on first draw. That is fine only while every
+    draw happens inside the page function, because the head is composed when
+    that function returns — and it stopped being true the moment slow content
+    moved behind `components/loading.py`. A form drawn from a timer callback
+    registers its CSS after the page has been sent, so the browser gets
+    `.cf-form` with nothing behind it and the fields render as a plain stack.
+    Import time is the only point guaranteed to be before any head is composed.
+
+    `Client.shared_head_html` is a class attribute, so this needs no client and
+    is safe to call while the module is being imported. The name is the dedupe
+    key, because shared head HTML accumulates.
     """
     if name in _registered_css:
         return

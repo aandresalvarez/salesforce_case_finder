@@ -172,10 +172,14 @@ def _head_seen_by(tree) -> str:
 
 @pytest.mark.parametrize(
     ("component", "rule"),
-    [("table", "-webkit-line-clamp"), ("filters", ".cf-select .q-field__control")],
+    [
+        ("table", "-webkit-line-clamp"),
+        ("filters", ".cf-select .q-field__control"),
+        ("intake_form", ".cf-form-grid"),
+    ],
 )
 def test_a_component_stylesheet_reaches_every_page_and_not_just_the_first(
-    component, rule, render, warehouse, monkeypatch
+    component, rule, render, warehouse
 ):
     """The regression that made list descriptions render as whole case bodies.
 
@@ -190,17 +194,54 @@ def test_a_component_stylesheet_reaches_every_page_and_not_just_the_first(
     per-client one. Asserting only on the second load would pass against a
     stylesheet that reached nobody, so both are checked.
     """
-    from casefinder.ui import shell as shell_module
-
-    # A fresh registry, so this asserts that the mechanism installs the CSS
-    # rather than that some earlier test in the session already did.
-    monkeypatch.setattr(shell_module, "_registered_css", set())
-
     first = render(lists.render)
     second = render(lists.render)
 
     assert rule in _head_seen_by(first), f"{component} CSS missing on the first load"
     assert rule in _head_seen_by(second), f"{component} CSS missing on the second load"
+
+
+@pytest.mark.parametrize(
+    ("module", "rule"),
+    [
+        ("casefinder.ui.components.table", "-webkit-line-clamp"),
+        ("casefinder.ui.components.filters", ".cf-select .q-field__control"),
+        ("casefinder.ui.components.intake_form", ".cf-form-grid"),
+    ],
+)
+def test_a_component_installs_its_stylesheet_at_import_and_not_at_first_draw(module, rule):
+    """The second way of getting this wrong, and the reason for the first rule.
+
+    A page's head is composed when its page function returns. Content behind
+    `components/loading.py` is drawn from a timer callback *after* that, so a
+    component registering its CSS the first time it draws registers it once the
+    only head that would have carried it has already gone out — and the browser
+    gets the class names with no rules, which is exactly the failure the shared
+    stylesheet was introduced to fix. It is what made the intake form render as
+    a plain stack of labels with no grid and no box around it.
+
+    Re-importing with an empty registry is what makes this an assertion about
+    the module rather than about whichever earlier test drew the component
+    first. Both the registry and the accumulated head are put back afterwards,
+    so the check leaves nothing behind for the next test to trip over.
+    """
+    import importlib
+
+    from nicegui import Client
+
+    from casefinder.ui import shell as shell_module
+
+    names = set(shell_module._registered_css)
+    head = Client.shared_head_html
+    shell_module._registered_css.clear()
+    try:
+        importlib.reload(importlib.import_module(module))
+        added = Client.shared_head_html[len(head) :]
+        assert rule in added, f"{module} did not install its stylesheet on import"
+    finally:
+        shell_module._registered_css.clear()
+        shell_module._registered_css.update(names)
+        Client.shared_head_html = head
 
 
 @pytest.mark.parametrize("cls", [".cf-body", ".cf-snippet"])

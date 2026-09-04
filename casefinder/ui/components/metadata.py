@@ -13,6 +13,7 @@ from nicegui import ui
 
 from ...models import CaseHeader
 from ..shell import LINE, MUTED
+from . import intake_form
 
 
 def metric_strip(pairs: Sequence[tuple[str, str]]) -> None:
@@ -49,14 +50,20 @@ def header_block(header: CaseHeader, *, on_back) -> None:
 
 
 def description_block(text: str | None) -> None:
-    """Spec FR-CASE-4: present but not dominant, collapsed when long."""
+    """Spec FR-CASE-4: present but not dominant, collapsed when long.
+
+    The description is the same warehouse text as a comment body and arrives in
+    the same two shapes, so it goes through the same reader — a case whose
+    description is the serialised intake form should not be the one place in
+    the app that still shows it as JSON.
+    """
     if not text:
         return
     long_text = len(text) > 420
     if long_text:
         with ui.expansion("Description").classes("w-full").style("margin-bottom:6px"):
-            ui.label(text).classes("cf-body")
+            intake_form.body(text)
     else:
         with ui.column().classes("w-full").style("gap:2px; margin-bottom:10px"):
             ui.label("Description").classes("cf-metric-label")
-            ui.label(text).classes("cf-body")
+            intake_form.body(text)

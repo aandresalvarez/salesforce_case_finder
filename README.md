@@ -14,7 +14,7 @@ data to disk.
 |---|---|
 | **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter, sort, save a view, export the metadata. |
 | **Search** | Full-text across case fields *and* the conversation bodies — the part that is actually hard to reach in SQL. Matches are shown in context. |
-| **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. |
+| **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as — with the original always one click away. |
 | **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
 | **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
 
@@ -184,7 +184,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 396 tests, no credentials needed, ~2 s
+uv run pytest              # 454 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -256,6 +256,7 @@ casefinder/
   models.py      typed rows and the formatting rules for missing values
   views.py       saved views; the allowlist of what may be persisted
   ask.py         question in, SQL out, no case data in the prompt
+  intake.py      reads the serialised intake form out of a case body
   main.py        routes, and the loopback-only native window
   ui/            one module per screen, plus shared components/
 ```
