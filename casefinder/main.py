@@ -21,7 +21,7 @@ import socket
 
 from nicegui import app, ui
 
-from . import config
+from . import config, window
 from .ui import ask_page, case_detail, lists, reconnect, search, settings, sql_page
 from .ui.shell import gated
 
@@ -106,10 +106,19 @@ def _window_args() -> dict[str, object]:
     to the head, it wins on source order against anything `shell.theme` writes,
     so a stylesheet could only argue with `!important` — and losing that
     argument is silent.
+
+    `js_api` is the other one. It is the only part of the application that
+    still works after the server has gone, because pywebview routes it into the
+    window process instead of over the websocket — which is why the notice in
+    `ui/reconnect` can offer a working Restart rather than instructions. The
+    object is constructed here in both processes and used in neither this one
+    nor by pickle: `native_mode._open_window` reads `app.native.window_args` in
+    the window process, where a live object is what is wanted. See `window`.
     """
     return {
         "min_size": config.MIN_WINDOW_SIZE,
         "text_select": True,
+        "js_api": window.WindowApi(),
     }
 
 
@@ -119,6 +128,18 @@ def main() -> None:
     # one part of the application that has to survive the socket going down, so
     # it cannot be something a page sends over that socket — see `ui/reconnect`.
     reconnect.install()
+    # Read before the window process is spawned, so that process does not
+    # inherit a promise only this one can keep. If we were started by a window
+    # whose own server had died, that window is still on screen holding the
+    # last thing it drew, waiting for this to say it is serving before it goes.
+    token = window.ready_signal()
+    if token is not None:
+        # `on_connect` and not `on_startup`. Startup is uvicorn binding a
+        # socket, which happens 0.55s in — measured — and several seconds
+        # before the native window has drawn anything. The old window closes on
+        # this signal, so the signal has to mean "there is a page on a screen",
+        # and a client connecting is exactly that.
+        app.on_connect(lambda: window.announce(token))
     app.native.window_args.update(_window_args())
     ui.run(
         host=HOST,

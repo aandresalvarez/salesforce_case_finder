@@ -78,9 +78,14 @@ screen and its own advice. It tells you which of the two things has happened:
   on its own; the notice counts the seconds and the attempts so you can see it
   trying.
 - **Case Finder has stopped responding.** The program behind the window is gone
-  or wedged, and nothing on the screen will do anything again. Close the window
-  and start Case Finder again. Nothing is lost — the app saves nothing to your
-  computer — and you can still select and copy anything on the page first.
+  or wedged, and nothing on the screen will do anything again. The notice offers
+  two buttons: **Restart Case Finder**, which starts a fresh copy and keeps this
+  window on screen until the new one is up, and **Close window**. Nothing is lost
+  — the app saves nothing to your computer — and you can still select and copy
+  anything on the page before pressing either.
+
+  In a browser tab there is no second process to ask, so there are no buttons:
+  close the tab and start Case Finder the way you normally do.
 
 ---
 
@@ -208,7 +213,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 486 tests, no credentials needed, ~2 s
+uv run pytest              # 512 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

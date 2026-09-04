@@ -140,9 +140,9 @@ def _display(value: Any) -> str:
         return "Yes" if value else "No"
     if value is None:
         return ""
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return str(value)
-    if isinstance(value, (list, dict)):
+    if isinstance(value, list | dict):
         # Not something the form emits, but a nested value must not crash the
         # page; JSON is at least honest about what it is.
         return json.dumps(value, ensure_ascii=False)

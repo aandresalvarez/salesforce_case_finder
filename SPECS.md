@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **486 passing**, ~1.9 s, no network access required |
+| Automated tests | **512 passing**, ~1.8 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,7 +45,7 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-6,953 lines across 26 modules.
+7,331 lines across 27 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
@@ -55,7 +55,7 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
 | `ui/case_detail.py` | 490 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
 | `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
-| `ui/reconnect.py` | 401 | What the window says when the program behind it stops answering (D20). |
+| `ui/reconnect.py` | 566 | What the window says, and offers, when the program behind it stops answering (D20, D21). |
 | `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
@@ -64,10 +64,11 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
 | `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
 | `config.py` | 202 | Every environment variable and its default. |
+| `window.py` | 192 | What the native window can still do once the server behind it has gone (D21). |
 | `ui/components/filters.py` | 195 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
 | `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
-| `main.py` | 140 | Routes, the loopback-only native window, and its selectable body (D19). |
+| `main.py` | 161 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/intake_form.py` | 97 | Draws what `intake.py` parsed — as labels, never as HTML. |
@@ -125,6 +126,7 @@ added without invariant coverage cannot pass silently.
 | The wait before any screen appears | D18 | `ui/components/loading.py`, and every page that queries | `test_reading.py` |
 | Selecting and copying any text on any screen | D19 | `main.py`, `ui/shell.py`, and every region whose click navigates | `test_reading.py` |
 | Losing the window's own connection to the app | D20 | `ui/reconnect.py`, `main.py` | `test_reconnect.py` |
+| Getting out of a window whose app has gone | D21 | `window.py`, `ui/reconnect.py`, `main.py` | `test_window.py`, `test_reconnect.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
@@ -721,6 +723,62 @@ precisely so an outage does not re-run the access check once a second. It is
 also the one screen deliberately not modal: the scrim passes the pointer
 through, so the case behind a dead window can still be selected and copied (D19)
 before it is closed.
+
+### D21 — the dead window can restart the app, and waits for it before closing
+
+**Spec:** nothing in the spec covers it. The window is treated throughout as a
+view of the program, and the case where the view outlives the program does not
+appear.
+
+**Built:** `casefinder/window.py`, a small object handed to pywebview as
+`js_api` from `main._window_args`, and two buttons in D20's notice —
+**Restart Case Finder** and **Close window** — that appear only once that
+bridge has answered.
+
+**Why:** reported as "the app is not responding… you can provide options to the
+user… one option could be, to restart the app", with a photograph of D20's own
+notice. The investigation is worth recording, because most of what it ruled out
+is what a report like that usually means:
+
+| | |
+|---|---|
+| Close the window | the server notices and exits. Clean. |
+| Close the terminal that launched it | SIGHUP reaches the whole process group; both processes go. Clean. |
+| **Kill the server, or let it die of anything** | **the window is re-parented to PID 1 and stays on screen, drawn and dead** |
+| Click the window's own close button afterwards | the process does exit. |
+
+No crash reports, and no evidence the server dies on its own. The window in the
+photograph post-dated the D20 commit by eleven minutes and was a leftover from
+this project's own native test runs, which kill servers directly — six of them
+had accumulated, invisible to `pkill` because a spawned child's argv is
+`python -c from multiprocessing.spawn import spawn_main`. So there was no crash
+to fix. The defect is the third row: when the server does go, for any reason,
+the window survives it and the best D20 could do was describe the exit.
+
+It does not have to. The window process is alive; only its parent is gone. The
+`js_api` bridge runs page → window process and never touches the websocket, so
+it works in exactly the situation where nothing else does — a page whose server
+had been killed went on calling into it once a second, started a replacement
+that outlived the window launching it, and shut itself down on request.
+
+Two details are the whole quality of it. The replacement is signalled by a file
+in a 0700 directory whose path is passed in the environment, and the signal is
+sent from `on_connect`, not `on_startup`: startup is uvicorn binding a socket at
+0.55 s, and the window is not on screen until 1.9 s. Closing on the earlier
+signal would blank the screen for over a second immediately after someone
+pressed Restart, which looks exactly like the app dying again. Measured on the
+handover, the new window appears at 4.5 s and the old one goes at 5.1 s — the
+two overlap, and there is never an empty screen. And `close` is `os._exit`
+rather than `webview.Window.destroy()`, because destroy takes the window off the
+screen and leaves the process running with nothing to show, which is how
+invisible copies accumulate in the first place.
+
+**Effect on requirements:** none are changed. §9.3 still holds — the window
+process writes one empty file to a temporary directory and removes it again, and
+nothing from the corpus passes through this path. §9.6 is unaffected: the bridge
+is process-local, exposes exactly three verbs that take no arguments, and opens
+no port. A browser has no second process, gets no buttons, and still gets the
+sentence telling it what to do by hand.
 
 ---
 

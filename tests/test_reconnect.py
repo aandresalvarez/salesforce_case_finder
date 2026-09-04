@@ -27,7 +27,10 @@ from casefinder.ui import reconnect
 # Saying which connection was lost
 # --------------------------------------------------------------------------
 
+# What the probe can conclude on its own.
 READINGS = ("waiting", "stopped")
+# And what the reader can cause by pressing the one button that still works.
+PRESSED = ("starting", "unstartable")
 
 
 @pytest.mark.parametrize("reading", READINGS)
@@ -67,6 +70,43 @@ def test_the_stopped_reading_says_what_to_do_about_it():
 
     assert "Close this window" in act
     assert "start Case Finder again" in act
+
+
+def test_the_stopped_reading_offers_a_way_out_where_there_is_one():
+    """Two sentences for one situation, because there are two situations.
+
+    The desktop window has a live process behind the page and can genuinely
+    restart itself. A browser tab has nothing of the sort, and telling it to
+    press a button it has not got would be worse than the manual instruction it
+    gets instead — which is why `act` above is still exactly what it was.
+    """
+    words = reconnect._WORDING["stopped"]
+
+    assert "Restart Case Finder" in words["actNative"]
+    assert "Close this window" in words["act"]
+    assert "Restart" not in words["act"]
+
+
+def test_a_browser_is_not_promised_buttons_it_does_not_have():
+    """And the choice is made from the bridge, not from a guess about the agent."""
+    paint = reconnect._JS.split("function paint(")[1].split("\n  }")[0]
+
+    assert "bridge && words.actNative ? words.actNative : words.act" in paint
+
+
+@pytest.mark.parametrize("reading", READINGS + PRESSED)
+def test_every_reading_the_script_can_show_has_words_for_it(reading):
+    """Four states now, and a missing one paints `undefined` into the card.
+
+    Which is the failure this file cannot afford: the notice is what the reader
+    has left when everything else has gone.
+    """
+    assert f'"{reading}"' in reconnect._JS
+
+    words = reconnect._WORDING[reading]
+
+    assert words["title"] and words["what"] and words["pill"]
+    assert "act" in words
 
 
 def test_a_dead_window_can_still_be_read_from():
@@ -158,6 +198,70 @@ def test_the_inert_notice_is_only_hidden_once_ours_is_working():
 
 
 # --------------------------------------------------------------------------
+# Doing something about it
+# --------------------------------------------------------------------------
+
+
+def test_the_buttons_only_appear_where_something_can_answer_them():
+    """`data-bridge` is set only where `window.pywebview` actually replied.
+
+    Showing the buttons everywhere and finding out on click would put a dead
+    button on the one screen whose entire purpose is that its buttons work.
+    """
+    for block in reconnect._CSS.split("}"):
+        if "inline-block" not in block:
+            continue
+        selectors = block.split("*/")[-1].split("{")[0]
+        assert '[data-bridge="1"]' in selectors
+
+    found = reconnect._JS.split("function findBridge(")[1].split("\n  }")[0]
+
+    assert "window.pywebview" in found
+
+
+def test_the_old_window_waits_for_the_new_one_before_it_goes():
+    """Close first and the screen is empty for the length of a cold start.
+
+    Which is several seconds of nothing immediately after pressing Restart —
+    indistinguishable from the app dying again, and the reason the handshake in
+    `casefinder/window` exists at all. So the only `close` in here is the one
+    behind the answer that says the replacement is serving.
+    """
+    restart = reconnect._JS.split("function restart(")[1].split("\n  }\n")[0]
+
+    assert 'state === "ready"' in restart
+    assert "bridge.close()" in restart
+    assert 'state === "ready"' in restart.split("bridge.close()")[0]
+
+
+def test_a_restart_that_never_arrives_stops_being_promised():
+    """A spinner with no deadline is the thing this whole file replaced.
+
+    The generous number is deliberate: a cold start imports the world and opens
+    a BigQuery client, and giving up on a Case Finder that is still starting
+    would be its own kind of lie.
+    """
+    restart = reconnect._JS.split("function restart(")[1].split("\n  }\n")[0]
+
+    assert "TUNING.startWait" in restart
+    assert "Date.now() > until" in restart
+    assert reconnect.TUNING["startWait"] >= 20000
+
+
+def test_reload_is_only_offered_while_there_is_something_to_reload():
+    """Every reading but `waiting` means no server, and a reload against no
+    server replaces this notice with WebKit's blank failure page."""
+    hides = [
+        block
+        for block in reconnect._CSS.split("}")
+        if "#cf-outage-reload" in block and "display: none" in block
+    ]
+
+    assert hides
+    assert 'not([data-state="waiting"])' in hides[0]
+
+
+# --------------------------------------------------------------------------
 # Getting it into the page at all
 # --------------------------------------------------------------------------
 
@@ -171,8 +275,8 @@ def test_the_notice_is_built_with_nothing_left_in_it():
     html = reconnect.head_html()
 
     assert "__" not in html
-    for reading in READINGS:
-        assert json.dumps(reconnect._WORDING[reading]["title"])[1:-1] in html
+    for words in reconnect._WORDING.values():
+        assert json.dumps(words["title"])[1:-1] in html
 
 
 def test_starting_the_app_installs_the_notice(monkeypatch):
