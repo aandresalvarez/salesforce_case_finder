@@ -415,6 +415,52 @@ def test_the_rail_holds_the_destinations_and_settings(render, warehouse):
     assert _rail_labels(tree) == expected
 
 
+def test_the_app_opens_on_search_and_lists_is_second(render, warehouse):
+    """D17, and the order in the rail is the same fact as the landing page.
+
+    `/` *is* Search rather than a redirect to it. A native window gets one page
+    load to put something on the screen, and a bounce spends it on a round trip
+    that draws nothing.
+    """
+    keys = [key for key, *_ in shell.DESTINATIONS]
+    targets = {key: target for key, _, _, target in shell.DESTINATIONS}
+
+    assert keys[:2] == ["search", "lists"]
+    assert targets["search"] == "/"
+    assert _rail_labels(render(shell.rail, "search"))[:2] == ["Search", "Lists"]
+
+
+def test_every_destination_in_the_rail_is_a_route_that_exists():
+    """A rail entry pointing at an unregistered path is a dead menu item, and
+    nothing else in the app would notice — the click just 404s."""
+    from nicegui import Client
+
+    from casefinder import main  # noqa: F401  (importing is what registers them)
+
+    registered = set(Client.page_routes.values())
+    targets = {target for *_, target in shell._ALL_DESTINATIONS} | {"/settings"}
+
+    assert targets <= registered
+
+
+def test_the_rail_chips_are_all_the_same_rectangle():
+    """The selected background was as wide as its own label, so it read as a
+    badge around a word rather than a row in a menu. The rail is a `ui.column`,
+    and NiceGUI's `.nicegui-column` puts `align-items: flex-start` on it — the
+    fix has to be on the chip, because nothing in this project's CSS is what
+    made them content-width in the first place."""
+    assert "align-self: stretch" in shell._CSS.split(".cf-nav {")[1].split("}")[0]
+
+
+def test_pointing_at_the_selected_destination_does_not_recolour_it():
+    """`.cf-nav:hover` is a class *and* a pseudo-class, so it outranks the
+    single class `.cf-nav-active` and replaced the selection colour with the
+    hover grey. The one item whose shading should never change was the only
+    one that did."""
+    assert ".cf-nav:not(.cf-nav-active):hover" in shell._CSS
+    assert "\n.cf-nav:hover" not in shell._CSS
+
+
 def test_ask_is_not_offered_unless_it_is_switched_on(render, warehouse):
     """The natural-language mode is off by default, and off means invisible:
     no destination, nothing in Settings naming a model. A feature that is
@@ -428,8 +474,8 @@ def test_ask_is_not_offered_unless_it_is_switched_on(render, warehouse):
 def test_the_ask_route_sends_you_home_rather_than_breaking(monkeypatch):
     """The route stays registered when the feature is off, because it outlives
     the setting: a bookmark, or a link copied while Ask was on, should land on
-    Lists instead of a 404 that reads as a broken app. Asserting on the
-    navigation rather than on a rendered page, since there is no page.
+    the first screen instead of a 404 that reads as a broken app. Asserting on
+    the navigation rather than on a rendered page, since there is no page.
     """
     from casefinder import main
 
@@ -450,8 +496,8 @@ def test_ask_is_offered_when_it_is_switched_on(render, warehouse, monkeypatch):
     monkeypatch.setattr(ask, "model_name", lambda: "gemini-2.5-flash")
 
     assert _rail_labels(render(shell.rail, "lists")) == [
-        "Lists",
         "Search",
+        "Lists",
         "Ask",
         "SQL",
         "Settings",

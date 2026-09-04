@@ -30,17 +30,27 @@ HOST = "127.0.0.1"
 
 @ui.page("/")
 def index() -> None:
+    # Search, not Lists — D17. The rail's Search entry points here rather than
+    # at `/search`, so the landing page and the destination are one page and
+    # not two that happen to render the same thing.
+    gated("search", search.render)
+
+
+@ui.page("/search")
+def search_page() -> None:
+    # Kept because it was the search URL for the whole of v1 and costs one
+    # line. Nothing inside the app navigates here.
+    gated("search", search.render)
+
+
+@ui.page("/lists")
+def lists_page() -> None:
     gated("lists", lists.render)
 
 
 @ui.page("/views")
 def saved_views() -> None:
     gated("lists", lists.render_saved_views)
-
-
-@ui.page("/search")
-def search_page() -> None:
-    gated("search", search.render)
 
 
 @ui.page("/case/{case_number}")
@@ -52,8 +62,8 @@ def case_page(case_number: str) -> None:
 def ask_route() -> None:
     # Registered either way, and a redirect rather than a 404, because the
     # route outlives the setting: a bookmark or an old link from a session when
-    # Ask was on should land somewhere useful instead of on an error page that
-    # makes the app look broken.
+    # Ask was on should land on Search instead of on an error page that makes
+    # the app look broken.
     if not config.ASK_ENABLED:
         ui.navigate.to("/")
         return

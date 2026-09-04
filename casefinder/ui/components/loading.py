@@ -39,9 +39,17 @@ def _can_defer() -> bool:
     return True
 
 
-def placeholder(note: str) -> None:
-    """A spinner and a line saying what is being waited for."""
-    with ui.row().classes("w-full items-center").style("gap:10px; padding:26px 0"):
+def placeholder(note: str, *, center: bool = False) -> None:
+    """A spinner and a line saying what is being waited for.
+
+    Left-aligned by default, because it stands in for content that will be
+    left-aligned and a spinner that moves when the content arrives is a second
+    thing happening. `center` is for the one screen whose content is centred —
+    the idle search page, where a left-aligned spinner under a centred box
+    reads as a layout fault rather than as a wait.
+    """
+    justify = " justify-center" if center else ""
+    with ui.row().classes("w-full items-center" + justify).style("gap:10px; padding:26px 0"):
         ui.spinner(size="1.4rem")
         ui.label(note).classes("cf-muted")
 
@@ -52,6 +60,7 @@ def while_loading(
     then: Callable[[Any], None],
     *,
     on_error: Callable[[Exception], None],
+    center: bool = False,
 ) -> ui.column:
     """Show `note` with a spinner, run `load` off the event loop, draw `then`.
 
@@ -74,7 +83,7 @@ def while_loading(
         return container
 
     with container:
-        placeholder(note)
+        placeholder(note, center=center)
 
     async def run_it() -> None:
         try:

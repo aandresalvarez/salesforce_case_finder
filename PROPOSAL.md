@@ -32,7 +32,7 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 454 automated
+**Status: complete and verified against the live warehouse.** 463 automated
 tests, plus 30 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path.
@@ -80,10 +80,11 @@ The earlier concept had a dashboard landing page, a Search button, an Open butto
 on every row, an Apply Filters button, a persistent Save/Export/Columns toolbar,
 five metric cards in the case header, and nested cards throughout.
 
-All of it is gone. You land on Open Cases, not a dashboard. Enter searches. Rows
-are clickable. Filters apply as you set them. Administrative actions live in an
-overflow menu. The rule the whole UI is built on is that a screen has at most one
-primary filled button, and controls appear only when they are needed.
+All of it is gone. You land on a search box, not a dashboard — Open Cases is one
+click away in the rail. Enter searches. Rows are clickable. Filters apply as you
+set them. Administrative actions live in an overflow menu. The rule the whole UI
+is built on is that a screen has at most one primary filled button, and controls
+appear only when they are needed.
 
 This is not minimalism for its own sake. It is a triage tool people open thirty
 times a day; every control that is present but not needed is a thing to look past

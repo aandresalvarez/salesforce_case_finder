@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **454 passing**, ~1.7 s, no network access required |
+| Automated tests | **463 passing**, ~1.7 s, no network access required |
 | Warehouse tests | **30 passing** against live BigQuery, ~45 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,16 +45,16 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-6,342 lines across 25 modules.
+6,492 lines across 25 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
 | `queries.py` | 759 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
 | `models.py` | 588 | Typed rows; the single place that decides how a missing value is displayed. |
-| `ui/lists.py` | 548 | §6.2 — triage lists, filters, saved views, paging, CSV. |
+| `ui/lists.py` | 572 | §6.2 — triage lists, filters, saved views, paging, CSV. |
 | `ui/case_detail.py` | 486 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/shell.py` | 431 | §3.1 — rail, content region, era indicator, error surfaces. |
-| `ui/search.py` | 380 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `ui/shell.py` | 480 | §3.1 — rail, content region, era indicator, error surfaces. |
+| `ui/search.py` | 421 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
 | `data.py` | 315 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 287 | Saved views, and the allowlist of what may be persisted. |
 | `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
@@ -65,11 +65,11 @@ makes the contract explicit and the whole suite finishes in a second.
 | `config.py` | 202 | Every environment variable and its default. |
 | `ui/components/filters.py` | 190 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
-| `ui/settings.py` | 160 | §6.7 — era, connection, Ask availability, about. |
+| `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
 | `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
-| `main.py` | 103 | Routes, and the loopback-only native window. |
+| `main.py` | 113 | Routes, and the loopback-only native window. |
 | `ui/components/intake_form.py` | 99 | Draws what `intake.py` parsed — as labels, never as HTML. |
-| `ui/components/loading.py` | 95 | Says a slow thing is happening, and gets the work off the event loop. |
+| `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/pager.py` | 88 | The range line and its two arrows; one pager for every paged screen. |
 | `ui/components/metadata.py` | 69 | The flat metadata strip that replaced five metric cards. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
@@ -116,11 +116,12 @@ added without invariant coverage cannot pass silently.
 
 | Area | Spec | Where | Tests |
 |---|---|---|---|
-| Startup, access probe, no setup dashboard | FR-START-1..3 | `main.py`, `ui/shell.py` | `test_ui_actions.py`, `test_visual.py` |
+| Startup, access probe, no setup dashboard | FR-START-1..3 (landing page is D17) | `main.py`, `ui/shell.py` | `test_ui_actions.py`, `test_visual.py` |
 | Lists, columns, sorting, filters, presets, saved views, paging, CSV | FR-LIST-1..12 (paging is D11) | `ui/lists.py`, `views.py`, `ui/components/pager.py` | `test_triage.py`, `test_ui_actions.py`, `test_pagination.py` |
 | Search: idle, execute, shortcut, parsing, scope, results, limits, paging, empty | FR-SEARCH-1..12 | `ui/search.py`, `queries.search`, `ui/components/pager.py` | `test_search_semantics.py`, `test_pagination.py` |
 | Case: comments-first, header, metadata, copy summary, tabs, related, unknown | FR-CASE-1..11 | `ui/case_detail.py` | `test_ui_actions.py`, `test_visual.py` |
 | Case body rendering, and the wait before one appears | FR-CASE-4, FR-CASE-5 (D15) | `intake.py`, `ui/components/intake_form.py`, `ui/components/loading.py` | `test_intake.py`, `test_reading.py` |
+| The wait before any screen appears | D18 | `ui/components/loading.py`, and every page that queries | `test_reading.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
 | SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
@@ -572,6 +573,68 @@ They are container queries rather than media queries, which is the other half of
 the fix. A `@media (max-width: 1180px)` rule measures the viewport, and the
 table is 240 pixels narrower than the viewport — so the rule that was supposed to
 drop Funded never fired at any window size a person would use.
+
+### D17 — the app opens on Search; Lists is the second destination
+
+**Spec:** navigation rule 4 says "No Dashboard/Home page. The first screen is
+**Lists → Open Cases**", and FR-LIST-1 makes Open Cases the default route.
+Navigation rule 1 lists the destinations as "Lists, Search, Ask, SQL", in that
+order.
+
+**Built:** `/` is Search. Lists keeps everything else it had, at `/lists`, and
+is second in the rail.
+
+**Why:** requested after use. The rule this is really about is the one that
+says there is no dashboard, and Search does not reintroduce one — the idle
+screen is a heading and a text box, which is the sparsest screen in the
+application and by some distance the fastest to draw. What changed is which
+question the app assumes you arrived with. Lists answers "what is on my plate";
+Search answers "where is that one case", and the second is the more common
+arrival, including for someone who already has a case number in hand and wants
+FR-SEARCH-3's shortcut.
+
+It also happens to be the better landing page for a cold start, which was not
+the reason but is worth recording: Open Cases needs three warehouse round trips
+before it can draw a row, and the idle search screen needs none before it can
+draw the box and take focus.
+
+**Effect on requirements:** FR-LIST-1's default view is unchanged — Open Cases
+is still what `/lists` renders and still what a saved view returns to. Nav rule
+4's prohibition holds. Nav rules 1, 2, 3, 5 and 6 hold; only the order within
+rule 1 differs, and `test_ui_actions.py` asserts the new one, that the
+destination targeting `/` is Search, and that every target in the rail is a
+registered route.
+
+### D18 — every screen that queries before it draws says so first
+
+**Spec:** §12 covers errors and inline validation. It says nothing about the
+interval between asking for a screen and getting one, which on this warehouse
+is one to five seconds for almost every screen in the app.
+
+**Built:** the placeholder built for the case page (D15) is now in front of the
+access probe, the list, the search result, the search page's filter values, and
+the snapshot date on Settings. Each names what it is waiting for — "Connecting
+to BigQuery…", "Loading open cases (weekly review)…", "Searching…".
+
+**Why:** a desktop window that goes blank does not look busy, it looks broken,
+and the second click that produces is a second 240 MB scan. The version of this
+that only covered the case page left the two worst waits uncovered. The first
+was the access probe in `shell.gated`, which every route goes through: it is a
+BigQuery job, and on the first page of a session it is also where the client is
+constructed and the credentials discovered, so the window was empty for several
+seconds with not even the rail drawn. The second was `search.results`, where
+the placeholder had to go *inside* the refreshable rather than around it —
+sorting, filtering and paging all come back through `refresh()`, and each is
+another query, so deferring only the first search would have covered the one
+wait a reader expects and none of the four they do not.
+
+**Effect on requirements:** none are relaxed. The load moves to a worker thread
+and the draw stays on the event loop, so `load` callables must not touch the
+UI; `while_loading` falls back to running inline when there is no event loop to
+defer onto, which is what makes these pages testable synchronously. Two round
+trips that used to happen during a draw — the corpus size behind FR-SEARCH-8's
+boilerplate warning, and the freshness line on Settings — moved into the load
+for the same reason.
 
 ---
 

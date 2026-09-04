@@ -20,10 +20,12 @@ from nicegui import ui
 
 from .. import config, data
 from ..config import ERAS
+from ..data import Page
 from ..models import SearchHit, Snippet, show
 from ..queries import SORTS, Filters, parse_terms
 from . import shell
 from .components import filters as filter_ui
+from .components import loading
 from .components import pager as pager_ui
 from .components.empty_state import empty
 from .shell import MUTED, muted, state
@@ -146,12 +148,28 @@ def idle_controls() -> None:
 
 
 def _idle() -> None:
-    """FR-SEARCH-1. Nothing but the question and the box."""
+    """FR-SEARCH-1. Nothing but the question and the box.
+
+    This is now the first screen of the app (D17), which makes the order things
+    appear in part of the design. The heading and the box are free, so they are
+    drawn and focused straight away; the filter controls under them need the
+    facet query, and someone who opened the app to type a case number should
+    not wait on a list of departments to do it.
+    """
     with ui.column().classes("w-full items-center").style("gap:0; padding-top:12vh"):
         ui.label("Search historical support cases").classes("cf-h1")
         with ui.element("div").style("width:min(560px, 100%); margin-top:16px"):
             _input_box(centered=True)
-        idle_controls()
+        # `_facets` rather than `data.facets`, so the load warms the cache the
+        # controls read from and a facet query that fails still leaves a
+        # usable search box with empty pickers under it.
+        loading.while_loading(
+            "Loading filters…",
+            _facets,
+            lambda _: idle_controls(),
+            on_error=shell.error_region,
+            center=True,
+        )
         muted(
             f"{state.era.approx_cases:,} cases · terms are matched literally and "
             "must all be present"
@@ -184,34 +202,57 @@ def results() -> None:
             ui.label("Search terms need at least two characters.")
         return
 
-    try:
-        page = data.search(
-            state.era,
-            terms,
-            _filters(),
-            in_conversation=search.in_conversation,
-            in_fields=search.in_fields,
-            sort=search.sort,
-            limit=min(search.rows_per_page, MAX_RETRIEVAL),
-            offset=search.offset,
-        )
-        if not page.rows and search.offset:
-            # Same fallback the lists page makes: a page past the end of a
-            # result that moved is a first page, not an empty search.
-            search.offset = 0
-            page = data.search(
-                state.era,
-                terms,
-                _filters(),
-                in_conversation=search.in_conversation,
-                in_fields=search.in_fields,
-                sort=search.sort,
-                limit=min(search.rows_per_page, MAX_RETRIEVAL),
-            )
-    except Exception as exc:  # noqa: BLE001
-        shell.error_region(exc)
-        return
+    # Deferred here, inside the refreshable, rather than around it. Everything
+    # that changes the answer — new terms, a filter, a sort, the next page —
+    # comes back through `refresh()`, and each of those is another round trip
+    # against the conversation table. A spinner that only appeared on the first
+    # search would be missing from every wait after it.
+    loading.while_loading(
+        "Searching…",
+        lambda: _fetch(terms),
+        lambda page: _found(terms, page),
+        on_error=shell.error_region,
+    )
 
+
+def _ask(terms: list[str], offset: int) -> Page:
+    search = state.search
+    return data.search(
+        state.era,
+        terms,
+        _filters(),
+        in_conversation=search.in_conversation,
+        in_fields=search.in_fields,
+        sort=search.sort,
+        limit=min(search.rows_per_page, MAX_RETRIEVAL),
+        offset=offset,
+    )
+
+
+def _fetch(terms: list[str]) -> Page:
+    """Every warehouse call the result needs, made off the event loop.
+
+    The corpus size is in here and not left to `_boilerplate_warning` because
+    that runs while the page is being drawn, and a round trip there is a round
+    trip with nothing on the screen to say so. It goes out alongside the search
+    rather than after it, so the two cost one wait between them.
+    """
+    search = state.search
+    data.prefetch(
+        lambda: _ask(terms, search.offset),
+        lambda: data.corpus_size(state.era),
+    )
+
+    page = _ask(terms, search.offset)
+    if not page.rows and search.offset:
+        # Same fallback the lists page makes: a page past the end of a result
+        # that moved is a first page, not an empty search.
+        search.offset = 0
+        page = _ask(terms, 0)
+    return page
+
+
+def _found(terms: list[str], page: Page) -> None:
     if not page.rows:
         quoted = " and ".join(f"“{t}”" for t in terms) if terms else "these filters"
         empty(

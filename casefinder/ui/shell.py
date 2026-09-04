@@ -19,11 +19,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from nicegui import ui
+from nicegui import context, ui
 
 from .. import config, data
 from ..config import ERAS, Era
 from ..queries import TriageFilters
+from .components import loading
 
 # --------------------------------------------------------------------------
 # Visual language — spec section 3.3
@@ -66,12 +67,25 @@ body {{
 }}
 .cf-nav {{
   display: flex; align-items: center; gap: 9px;
+  /* Every chip is the same rectangle: the rail's width less these margins.
+     Without it each one is as wide as its own label — 88px behind `Lists`,
+     101px behind `Search`, 109px behind `Settings` — because the rail is a
+     `ui.column`, and NiceGUI's own `.nicegui-column` sets `align-items:
+     flex-start` on it. Nothing in this file said so, which is why the
+     selected item looked like a badge around a word rather than a row in a
+     menu, and why the sizes had to be measured to be believed. */
+  align-self: stretch;
   padding: 7px 16px; margin: 1px 8px;
   border-radius: 5px; cursor: pointer;
   color: var(--cf-ink); font-size: 13.5px;
   user-select: none;
 }}
-.cf-nav:hover {{ background: rgba(0,0,0,.045); }}
+/* The `:not()` is load-bearing rather than tidy. `.cf-nav:hover` is a class
+   and a pseudo-class, so it outranks the single class below it: pointing at
+   the destination you are already on replaced its selection colour with the
+   hover grey, and the one item whose shading should never change was the only
+   one that did. */
+.cf-nav:not(.cf-nav-active):hover {{ background: rgba(0,0,0,.045); }}
 /* Selection is a subtle background, not a large button — nav rule 5. */
 .cf-nav-active {{ background: rgba(37,99,235,.10); color: var(--cf-accent); font-weight: 550; }}
 .cf-content {{
@@ -157,6 +171,21 @@ body {{
 
 
 def theme() -> None:
+    """Install the application stylesheet on this client, once.
+
+    Once matters now that `gated` puts a placeholder on the screen before it
+    knows which page it is drawing. The theme has to go in before that
+    placeholder or the wait is rendered in Times New Roman on white; the page
+    that follows then asks for it again, and without the guard every load
+    would carry two copies of the same stylesheet.
+
+    Per client rather than per process: unlike `register_css`, this is the
+    client's own head, and `Client` objects do not outlive a page load.
+    """
+    client = context.client
+    if getattr(client, "_cf_themed", False):
+        return
+    client._cf_themed = True
     ui.add_head_html(f"<style>{_CSS}</style>")
     ui.query("body").style(f"background:{CANVAS}")
 
@@ -305,13 +334,18 @@ state = State()
 # At most four primary destinations — nav rule 1. Settings is separate and
 # anchored at the bottom; About lives inside it rather than beside it.
 #
+# Search is first, and `/` is Search rather than Lists — D17. The order here is
+# the order in the rail, and the destination whose target is `/` is the one the
+# app opens on, so those two facts are one line rather than two places to keep
+# in agreement.
+#
 # Ask is conditional, which is the one place the rail is not a constant. The
 # filter runs at import, so a destination is either in the rail for the life of
 # the process or absent from it — the rail never changes shape under a reader
 # mid-session, which is what nav rule 1 is really protecting.
 _ALL_DESTINATIONS = (
-    ("lists", "Lists", "list_alt", "/"),
-    ("search", "Search", "search", "/search"),
+    ("search", "Search", "search", "/"),
+    ("lists", "Lists", "list_alt", "/lists"),
     ("ask", "Ask", "chat_bubble_outline", "/ask"),
     ("sql", "SQL", "code", "/sql"),
 )
@@ -396,13 +430,28 @@ def gated(active: str, render) -> None:
 
     Every page uses this, so a revoked credential produces the Connect screen
     wherever the user happens to be rather than a stack trace inside a table.
+
+    The probe is a BigQuery job, and on the first page of a session it is also
+    where the client is constructed and the credentials discovered — several
+    seconds, before which nothing at all has been drawn, not even the rail. So
+    it waits like everything else that waits: `theme` first, because a spinner
+    needs the stylesheet as much as a page does, and then the probe off the
+    event loop behind a placeholder. It is cached for the process, so only the
+    first page of a session pays it and only that one shows this.
     """
-    ok, reason = data.check_access()
-    if not ok:
-        connection_screen(reason)
-        return
-    with layout(active):
-        render()
+
+    def draw(access: tuple[bool, str]) -> None:
+        ok, reason = access
+        if not ok:
+            connection_screen(reason)
+            return
+        with layout(active):
+            render()
+
+    theme()
+    loading.while_loading(
+        "Connecting to BigQuery…", data.check_access, draw, on_error=error_region, center=True
+    )
 
 
 def error_region(exc: Exception) -> None:

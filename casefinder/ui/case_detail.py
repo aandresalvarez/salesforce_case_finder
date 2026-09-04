@@ -478,7 +478,7 @@ def _search_for(term: str | None) -> None:
     state.search.text = f'"{term}"'
     state.search.executed = True
     state.search.dismissed_boilerplate = False
-    ui.navigate.to("/search")
+    ui.navigate.to("/")
 
 
 def _switch_era(case_number: str) -> None:

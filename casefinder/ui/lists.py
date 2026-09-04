@@ -1,4 +1,8 @@
-"""Lists — the operational default, and the first thing the app shows.
+"""Lists — the operational default, one click from wherever you are.
+
+It is not the first thing the app shows any more; Search is (D17). What it
+still is, is the screen a support person spends the day on, and the only one
+that answers "what is on my plate" rather than "where is that one case".
 
 The lean rules that shape this page (FR-LIST-2, UX-T5) are about what is *not*
 here: no New view, Save, Export, Columns, or Refresh buttons in the toolbar, no
@@ -21,6 +25,7 @@ from ..queries import TRIAGE_LIMIT, TRIAGE_PAGE_SIZE, TRIAGE_SORTS, TriageFilter
 from . import shell
 from .components import filters as filter_ui
 from .components import freshness as freshness_ui
+from .components import loading
 from .components import pager as pager_ui
 from .components import table as table_ui
 from .components.empty_state import empty
@@ -150,15 +155,34 @@ def render() -> None:
     if not state.lists.columns:
         _apply_view(views.shared_views()[0])
 
-    # The title needs freshness, the filter row needs facets, and the table
-    # needs the list. None of the three depends on the others, so they go out
-    # together and the page waits once instead of three times.
+    loading.while_loading(
+        f"Loading {state.lists.view_name.lower()}…",
+        _warm,
+        lambda _: _page(),
+        on_error=shell.error_region,
+    )
+
+
+def _warm() -> None:
+    """Every query the page needs, off the event loop and all at once.
+
+    The title needs freshness, the filter row needs facets, and the table needs
+    the list. None of the three depends on the others, so they go out together
+    and the page waits once instead of three times.
+
+    Nothing is returned. `prefetch` fills the cache and swallows what fails, so
+    `_page` asks for each value again through the ordinary path — which is a
+    cache hit, or the same failure reported by the part of the page that wanted
+    it rather than by the whole screen.
+    """
     data.prefetch(
         lambda: data.freshness(state.era, config.STALE_DAYS),
         lambda: data.facets(state.era, extended=True),
         _query,
     )
 
+
+def _page() -> None:
     _title_row()
     # Called, not refreshed: `refresh()` re-runs targets that already exist, and
     # on a fresh page load there are none, so the list would come up empty.
@@ -533,7 +557,7 @@ def _view_group(title: str, group: list[views.SavedView], *, deletable: bool) ->
 
 def _open_view(view: views.SavedView) -> None:
     _apply_view(view)
-    ui.navigate.to("/")
+    ui.navigate.to("/lists")
 
 
 def _copy_definition(view: views.SavedView) -> None:

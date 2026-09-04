@@ -10,10 +10,13 @@ data to disk.
 
 ## What it does
 
+The app opens on Search — a heading and a box, nothing else. Type a case
+number and you land on the case; type anything else and you get results.
+
 | | |
 |---|---|
-| **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter, sort, save a view, export the metadata. |
 | **Search** | Full-text across case fields *and* the conversation bodies — the part that is actually hard to reach in SQL. Matches are shown in context. |
+| **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter, sort, save a view, export the metadata. |
 | **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as — with the original always one click away. |
 | **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
 | **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
@@ -122,7 +125,7 @@ Measured against the live warehouse:
 
 | Operation | Cold | Warm (cached) | Scanned |
 |---|---:|---:|---:|
-| Open the app on Lists | ~4.7 s | ~0.2 s | ~5 MB |
+| Open Lists | ~4.7 s | ~0.2 s | ~5 MB |
 | Search, one term, whole conversation | ~1.5 s | instant | ~245 MB |
 | Open a case | ~2.7 s | instant | ~240 MB |
 
@@ -131,6 +134,10 @@ pages that need several independent queries issue them concurrently. Repeating
 anything inside the cache window costs nothing at all. The app only mentions
 cost when a query scans more than ~50 MB — below that there is nothing worth
 saying.
+
+None of those waits is a blank window. Every screen that has to ask BigQuery
+something before it can draw puts up a line saying what it is waiting for, and
+does the asking off the event loop so that line actually reaches the screen.
 
 ---
 
@@ -184,7 +191,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 454 tests, no credentials needed, ~2 s
+uv run pytest              # 463 tests, no credentials needed, ~2 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

@@ -18,6 +18,7 @@ from nicegui import ui
 from .. import ask, cache, config, data, views
 from ..config import ERAS
 from .components import filters as filter_ui
+from .components import loading
 from .shell import muted, quiet, secondary, state
 
 
@@ -75,11 +76,18 @@ def _era() -> None:
     filter_ui.era_select(state.era_key, ERAS, set_era)
     muted(state.era.blurb).style("margin-top:8px; max-width:560px")
 
-    try:
-        fresh = data.freshness(state.era, config.STALE_DAYS)
-        muted(fresh.label).style("margin-top:8px")
-    except Exception:  # noqa: BLE001
-        pass
+    # A warehouse round trip for one line of text. Deferred rather than
+    # dropped: coming straight to Settings from a cold start is the one path
+    # where nothing else has asked for it yet, and the rest of the page has
+    # nothing to wait for.
+    loading.while_loading(
+        "Checking the snapshot date…",
+        lambda: data.freshness(state.era, config.STALE_DAYS),
+        lambda fresh: muted(fresh.label).style("margin-top:8px"),
+        # The date is context, not the point of the page. If the warehouse
+        # cannot say, the section is still correct without it.
+        on_error=lambda _exc: None,
+    )
 
     _rows([("Dataset", f"{config.PROJECT}.{state.era.dataset}")])
 

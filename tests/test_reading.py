@@ -141,6 +141,76 @@ def test_every_slow_tab_has_something_to_show_while_it_loads(render, warehouse, 
     assert notes == ["Loading messages…", "Building the timeline…", "Looking for files…"]
 
 
+def test_the_first_screen_of_a_session_says_it_is_connecting(render, warehouse, monkeypatch):
+    """The longest wait in the app, and the one with the least on the screen.
+
+    The access probe is a BigQuery job, and on the first page of a session it
+    is also where the client is constructed and the credentials discovered. It
+    ran ahead of everything, so the window was empty for several seconds — no
+    rail, no title, nothing to distinguish a slow start from a failed one.
+    """
+    from casefinder.ui import shell
+
+    notes = _notes(monkeypatch)
+    render(shell.gated, "search", lambda: None)
+
+    assert notes[0] == "Connecting to BigQuery…"
+
+
+@pytest.mark.parametrize(
+    ("name", "note"),
+    [
+        ("open cases", "Loading open cases (weekly review)…"),
+        ("search idle", "Loading filters…"),
+        ("settings", "Checking the snapshot date…"),
+    ],
+)
+def test_a_screen_that_queries_before_it_draws_says_so_first(
+    name, note, render, warehouse, monkeypatch
+):
+    """The rule the case page established, applied to the rest of the app.
+
+    Any screen that has to ask BigQuery something before it can draw has a
+    blank window for as long as the round trip takes, and a round trip against
+    this warehouse is one to five seconds. Which screens those are is not
+    obvious from looking at them — Settings is a static page apart from one
+    line reporting the snapshot date, and that line is a query.
+    """
+    from test_visual import SCREENS
+
+    notes = _notes(monkeypatch)
+    render(SCREENS[name])
+
+    assert note in notes
+
+
+def test_searching_again_waits_as_visibly_as_searching_the_first_time(
+    render, warehouse, monkeypatch
+):
+    """The placeholder is inside the refreshable, not around it.
+
+    Sorting, filtering, and turning the page all come back through
+    `results.refresh()`, and every one of them is another query. Deferring the
+    first search only would have put a spinner on the one wait the reader was
+    expecting and none on the four they were not.
+    """
+    from casefinder.ui import search as search_ui
+
+    shell_state = search_ui.state.search
+    shell_state.text = "cohort"
+    shell_state.executed = True
+    tree = render(search_ui.render)
+
+    # Installed after the first render, so anything captured here belongs to
+    # the refresh. `results` is a module-level refreshable and re-runs for
+    # every client that still holds one, hence a set rather than a list.
+    notes = _notes(monkeypatch)
+    with tree.client:
+        search_ui.results.refresh()
+
+    assert set(notes) == {"Searching…"}
+
+
 def _notes(monkeypatch) -> list[str]:
     """Record the note each deferred load announces itself with.
 
