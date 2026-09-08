@@ -33,7 +33,6 @@ CASE_BUILDERS = (
     ("case_timeline", queries.case_timeline),
     ("case_attachments", queries.case_attachments),
     ("comments_stream", queries.comments_stream),
-    ("case_messages", queries.case_messages),
     ("related_cases", queries.related_cases),
 )
 
@@ -168,7 +167,6 @@ def test_row_returning_builders_are_limited(era):
     per_case_full_read = {
         "case_header",
         "comments_stream",
-        "case_messages",
         "case_timeline",
         "case_attachments",
     }
@@ -278,3 +276,21 @@ def test_the_sweep_covers_every_builder_in_the_module():
 
     missing = public - swept - _EXEMPT
     assert not missing, f"builders with no invariant coverage: {sorted(missing)}"
+
+
+def test_related_cases_rank_by_strength_before_recency(era):
+    """Twenty-three related cases ordered by recency is a list nobody reads.
+
+    The two sharing this case's IRB protocol — the two actually about the same
+    study — sat below ten that merely share a department, with the reason
+    printed at the end of each row rather than being the thing that ordered it.
+    In a department the size of Anaesthesia, sharing one is barely a signal.
+    """
+    sql, _params = queries.related_cases(era, "CASE-1")
+
+    order = sql.split("ORDER BY")[1]
+    irb = order.index("a.irb IS NOT NULL")
+    pi = order.index("a.pi IS NOT NULL")
+    recency = order.index("last_activity")
+
+    assert irb < pi < recency, "recency still outranks the relationship"

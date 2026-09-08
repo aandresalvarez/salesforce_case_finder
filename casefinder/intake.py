@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .models import clean, strip_attribution
@@ -52,6 +53,30 @@ _NARRATIVE_KEY = "Description"
 
 # A value long enough that a two-column grid would give it one word per line.
 _BLOCK_AT = 96
+
+# What `_display` renders a boolean as, and the shortest value worth treating
+# as an identifier. See `_identifying`.
+_CLOSED_ANSWERS = frozenset({"yes", "no"})
+_DISTINCTIVE_AT = 4
+
+# Fields that route the request rather than describe it. Every one of them is a
+# queue name, an integration id, or a link back into the system that produced
+# the form — true, and never the reason anybody opened the case. They are not
+# discarded, they move behind the `Original record` disclosure that already
+# holds the payload verbatim.
+#
+# Matched on the Salesforce API name rather than the rendered label, because
+# the API name is what the integration controls and the label is what this
+# module decides.
+_ROUTING = frozenset({
+    "Original_Queue_Name__c",
+    "Active_Queue__c",
+    "CustomOrigin__c",
+    "Custom_Origin__c",
+    "Project_Record_ID__c",
+    "REDCAP_StudyName__c",
+    "REDCap_StudyName__c",
+})
 
 # Tokens whose conventional casing is not what a mechanical rule produces.
 # Applied per word after the name is split, so `IRB_Protocol__c` reads
@@ -84,6 +109,14 @@ class Field:
     # Long or multi-line values get a row to themselves; a grid cell would
     # render them one word per line.
     block: bool
+    # Set when the page already shows this value somewhere better, naming where.
+    # The field is kept on the object and dropped by the renderer, so the
+    # `Original record` disclosure is still the whole payload.
+    echoes: str = ""
+    # Set when the page shows something *different* for the same thing, naming
+    # what it shows. The opposite of an echo, and the only part of a form worth
+    # interrupting somebody for.
+    conflicts: str = ""
 
 
 @dataclass(frozen=True)
@@ -210,16 +243,207 @@ def parse(text: Any) -> Intake | None:
 
     narrative = _tidy(strip_attribution(str(merged.pop(_NARRATIVE_KEY, "") or "")))
 
-    fields = tuple(
+    fields = _dedupe(
         Field(
             label=label_for(key),
             value=shown,
             block="\n" in shown or len(shown) > _BLOCK_AT,
+            echoes="the routing record" if key in _ROUTING else "",
         )
         for key, value in merged.items()
         if (shown := _display(value))
     )
 
+    # Counted over every populated field, including the routing ones. This
+    # decides whether the payload *is* a form, which is a question about its
+    # shape; how much of it is worth drawing is a different question, asked
+    # later and by the renderer.
     if len(fields) + bool(narrative) < _MIN_FIELDS:
         return None
     return Intake(fields=fields, narrative=narrative, raw=raw)
+
+
+def _dedupe(fields: Iterable[Field]) -> tuple[Field, ...]:
+    """Mark a field whose value another field on the same form already carries.
+
+    The form asks for several things twice under different names — an address
+    as `Email` and again as `ContactEmail`, a SUNet id on both objects, a
+    department under three names — and the two queue fields arrive byte
+    identical. Nobody typed them twice; the integration collects them from more
+    than one place. The first spelling wins, on the same principle as the
+    object merge above: earlier is more specific.
+    """
+    out: list[Field] = []
+    seen: dict[str, str] = {}
+    for field in fields:
+        key = _comparable(field.value)
+        if not _identifying(key):
+            out.append(field)
+            continue
+        first = seen.get(key)
+        if first is not None and not field.echoes:
+            field = replace(field, echoes=first)
+        elif first is None:
+            seen[key] = field.label
+        out.append(field)
+    return tuple(out)
+
+
+def _identifying(value: str) -> str | bool:
+    """Whether two fields carrying this value are the same datum or a coincidence.
+
+    An address, a SUNet id, a department name: carried twice, it is once. An
+    answer drawn from a closed set is not — `DICOM: No` and `Is the requester
+    the PI: No` are two different questions that happen to agree, and folding
+    the second into the first would delete an answer rather than a repetition.
+
+    So the bar is conservative in the safe direction. Failing to spot a
+    duplicate shows one row too many; mistaking an answer for a duplicate
+    removes something the record says, and nothing on screen would admit it.
+    """
+    return value not in _CLOSED_ANSWERS and len(value) >= _DISTINCTIVE_AT
+
+
+def _comparable(value: str) -> str:
+    """Two spellings of the same answer, reduced to one string.
+
+    Case and surrounding space only. Nothing cleverer: `41288` and `IRB 41288`
+    are not the same answer, and a rule loose enough to call them equal would
+    hide the disagreement this exists to find.
+    """
+    return " ".join(value.split()).casefold()
+
+
+def reconcile(form: Intake, shown: Mapping[str, str]) -> Intake:
+    """Compare the form against what the page already says, field by field.
+
+    `shown` maps a field label to the value the page displays for it — the case
+    header's own subject, PI, department, funding and IRB. Three outcomes:
+
+    * the same answer, and the field is marked as an echo. The case page showed
+      the subject as its title and again in the form, the PI in the metadata
+      grid and again in the form, and so on for nine values on a form of
+      twenty-eight. Repetition on that scale stops reading as confirmation and
+      starts reading as noise to skim past, which is how the tenth field —
+      the one that differs — gets skimmed past too.
+    * a different answer, and the field is marked as a conflict. This is the
+      one worth the reader's attention: a requester who wrote `TBD` for the IRB
+      protocol before the protocol existed leaves a form that disagrees with
+      the record, and shown flat and far apart the two look like the page
+      repeating itself rather than like a fact that changed.
+    * nothing to compare against, and the field is left alone.
+    """
+    return replace(
+        form,
+        fields=tuple(_against(field, shown) for field in form.fields),
+    )
+
+
+def _against(field: Field, shown: Mapping[str, str]) -> Field:
+    if field.echoes or field.conflicts:
+        return field
+    for label, value in shown.items():
+        if not value or _comparable(label) != _comparable(field.label):
+            continue
+        if _comparable(value) == _comparable(field.value):
+            return replace(field, echoes=label)
+        return replace(field, conflicts=value)
+    return field
+
+
+# Labels the form's narrative is written under. The requester types into one
+# box; the integration prefixes each answer, so what arrives is a single string
+# with these words in it and nothing else marking the boundaries.
+_SECTION = re.compile(
+    r"^(Summary|Description|Question|Availability|Requested For|Contact E-?mail"
+    r"|Phone|Appointment|Department|Is requestor the PI|Research|Plans to publish"
+    r"|Funding|REDCap URL|Request submitted by)\s*:\s*",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Of those, the ones that are contact details or a restatement of the form's own
+# fields. They are answered again in the grid and in the requester panel, so
+# inside the request they are the same repetition this module exists to remove.
+_NOT_THE_REQUEST = frozenset({
+    "availability", "requested for", "contact email", "contact e-mail", "phone",
+    "appointment", "department", "is requestor the pi", "research",
+    "plans to publish", "funding", "redcap url", "request submitted by",
+})
+
+# What the form asks about the person asking. Shown once, beside the case,
+# rather than as seven rows in the middle of the request.
+_REQUESTER = ("First name", "Last name", "Email", "SUNet ID", "Phone", "Rank",
+              "Department")
+
+
+@dataclass(frozen=True)
+class Requester:
+    """Who filed the request, as the form recorded them."""
+
+    name: str
+    rows: tuple[tuple[str, str], ...]
+
+
+def sections(narrative: str) -> tuple[tuple[str, str], ...]:
+    """Split the narrative into the parts the requester actually wrote.
+
+    `Summary`, `Description` and `Question` are three different answers to
+    three different prompts, and running them together as one paragraph — which
+    is how they arrive — buries the question, which is the part a support
+    person is answering. Everything after them is contact detail the form
+    already collected in its own fields.
+
+    Returns the kept sections in the order they were written. Text before the
+    first label is returned under an empty label, so a narrative with no labels
+    at all comes back whole rather than empty.
+    """
+    marks = list(_SECTION.finditer(narrative))
+    if not marks:
+        text = narrative.strip()
+        return ((("", text),) if text else ())
+
+    out: list[tuple[str, str]] = []
+    lead = narrative[: marks[0].start()].strip()
+    if lead:
+        out.append(("", lead))
+    for i, mark in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(narrative)
+        label = mark.group(1)
+        if label.casefold().replace("-", "") in _NOT_THE_REQUEST:
+            continue
+        body = narrative[mark.end() : end].strip()
+        if body:
+            out.append((label[:1].upper() + label[1:].lower(), body))
+    return tuple(out)
+
+
+def requester(form: Intake) -> Requester | None:
+    """The person who filed the form, lifted out of it.
+
+    Seven of the form's fields describe the requester rather than the request —
+    a name split across two of them, an address, a telephone number, a rank.
+    They belong beside the case, not in the middle of what was asked, and
+    nothing is lost by moving them: `mark_requester` marks the originals so the
+    grid stops drawing them.
+    """
+    have = {f.label: f.value for f in form.fields if f.value}
+    name = " ".join(x for x in (have.get("First name"), have.get("Last name")) if x)
+    rows = tuple(
+        (label, have[label])
+        for label in _REQUESTER
+        if label in have and label not in ("First name", "Last name")
+    )
+    if not name and not rows:
+        return None
+    return Requester(name=name, rows=rows)
+
+
+def mark_requester(form: Intake) -> Intake:
+    """Fold the requester's own details out of the request grid."""
+    return replace(
+        form,
+        fields=tuple(
+            replace(f, echoes="the requester") if f.label in _REQUESTER and not f.echoes else f
+            for f in form.fields
+        ),
+    )

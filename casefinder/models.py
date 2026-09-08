@@ -23,6 +23,9 @@ from typing import Any
 
 MISSING = "—"
 
+# Also read by the case page, which marks each change of month in a long
+# thread. Kept here beside `_day` so the two never drift into different
+# spellings of the same month.
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -107,6 +110,53 @@ def strip_attribution(text: str, *, rounds: int = 2) -> str:
     return text
 
 
+# Line breaks that arrived as text rather than as characters.
+#
+# The web intake form serialises itself into a case body as JSON, so every
+# newline the requester typed is stored as the two characters `\` and `n` —
+# `intake.py` decodes them when it recognises the payload, which is why a case
+# page reads correctly. A search snippet is cut out of the middle of that same
+# body with SUBSTR and never reaches the parser, so it arrived on screen as
+# `...quality of care outcomes\n\nQuestion: Would like to request an update...`
+# with the escapes showing, in prose that is otherwise perfectly readable.
+#
+# Only previews are treated this way. A snippet and a list description are one
+# flowing line, so a break becomes a space; the full body on the case page is
+# left exactly as the record has it, because someone acting on a case has to be
+# able to see what it literally says — a body that really does contain a
+# backslash and an `n`, such as pasted code, is then still telling the truth.
+_ESCAPED_BREAK = re.compile(r"\\(?:r\\n|[rnt])")
+
+# Field labels the intake path leaves at the front of a description. `Summary:`
+# sits in front of very nearly every one, so the first nine characters of the
+# Description column were identical on every row — in the one column FR-LIST-4
+# refuses to let drop at narrow widths, which makes them the most expensive
+# nine characters on the screen.
+#
+# An allowlist rather than a general `Word:` rule. A description opening
+# `Question:` or `Availability:` is answering something, and the label is the
+# only thing that says what; these three are the form's own field names and
+# carry nothing the column heading does not already say.
+_LEADING_LABEL = re.compile(r"^(?:Summary|Description|Subject)\s*:\s*", re.IGNORECASE)
+
+
+def flatten(text: str) -> str:
+    """One line of prose: escaped breaks to spaces, whitespace collapsed."""
+    return " ".join(_ESCAPED_BREAK.sub(" ", text).split())
+
+
+def strip_leading_label(text: str) -> str:
+    """Drop a form field name from the front, if that is all it is.
+
+    Only ever strips when something is left behind, for the same reason
+    `strip_attribution` does: a description that is *nothing but* a label is a
+    strange record, and showing an empty cell for it would be a worse answer
+    than showing what is there.
+    """
+    stripped = _LEADING_LABEL.sub("", text, count=1).lstrip()
+    return stripped or text
+
+
 def preview(text: Any, limit: int = PREVIEW_CHARS) -> str:
     """Flatten a free-text field into one line for a table cell.
 
@@ -127,7 +177,7 @@ def preview(text: Any, limit: int = PREVIEW_CHARS) -> str:
     cleaned = clean(text)
     if cleaned is None:
         return ""
-    flattened = strip_attribution(" ".join(str(cleaned).split()))
+    flattened = strip_leading_label(strip_attribution(flatten(str(cleaned))))
     if len(flattened) <= limit:
         return flattened
     return flattened[:limit].rstrip() + "…"
@@ -144,7 +194,9 @@ class Snippet:
         return cls(
             turn_seq=row.get("turn_seq") or 0,
             actor_role=clean(row.get("actor_role")),
-            text=(row.get("text") or "").strip(),
+            # Flattened here rather than at the drawing site, so the dedupe in
+            # `_distinct` compares what the reader will actually see.
+            text=flatten(row.get("text") or ""),
         )
 
 
@@ -340,6 +392,54 @@ class CaseHeader:
             out.append(("Files", f"{self.attachments:,}"))
         return out
 
+    def about(self) -> list[tuple[str, str]]:
+        """What the rail carries: everything the identity bar does not, and
+        nothing that has no value.
+
+        Status, owner and age moved into the bar that follows the reader down a
+        long thread, so repeating them here would be the redundancy this page
+        was rebuilt to remove.
+
+        The em dashes go too, which is a departure from FR-CASE-3. That rule is
+        right for the grid it was written for: four attributes across a reading
+        column, in fixed positions, where a blank cell and a missing row look
+        different and a reader can tell "not recorded" from "not shown". A rail
+        is one column with no fixed positions, so an unrecorded Type costs a
+        whole line of a panel that also has to hold the related cases — and on
+        this corpus Type and Reason are unrecorded on most cases. The values
+        are still on the case; what is dropped is a row saying there is none.
+        """
+        return [
+            (label, value)
+            for label, value in self.extended()
+            if label != "Owner" and value != MISSING
+        ]
+
+    def intake_echoes(self) -> dict[str, str]:
+        """What this page already displays, keyed by the intake form's labels.
+
+        The web form asks for several things the case record also carries, so
+        a case page used to show its subject as the title and again in the
+        form, its PI in the metadata and again in the form, and so on. Handed
+        to `intake.reconcile`, this is what lets the form show only what the
+        page has not said yet — and what lets the one field that *disagrees*
+        stop looking like more of the same.
+
+        Keys are the labels `intake.label_for` produces, not Salesforce API
+        names: the comparison happens after parsing, on what a reader sees.
+        Department appears three times on the form under three names.
+        """
+        return {
+            "Subject": self.subject or "",
+            "PI name": self.pi or "",
+            "Funding status": self.funding or "",
+            "Origin": self.origin or "",
+            "IRB protocol": self.irb or "",
+            "Department": self.department or "",
+            "Stanford dept": self.department or "",
+            "Project department": self.department or "",
+        }
+
     def extended(self) -> list[tuple[str, str]]:
         """Always-visible metadata — spec FR-CASE-3. Missing renders as an em dash."""
         rows = [
@@ -369,6 +469,8 @@ class Comment:
     source: str | None
     direction: str | None
     body: str
+    subject: str | None = None
+    body_len: int = 0
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Comment:
@@ -380,6 +482,8 @@ class Comment:
             source=clean(row.get("source_object")),
             direction=clean(row.get("direction")),
             body=(row.get("body") or "").strip(),
+            subject=clean(row.get("subject")),
+            body_len=row.get("body_len") or 0,
         )
 
     @property
@@ -398,31 +502,27 @@ class Comment:
         return self.direction or "message"
 
 
-@dataclass(frozen=True)
-class Message:
-    turn_seq: int
-    ts: datetime | None
-    who: str | None
-    actor_role: str | None
-    direction: str | None
-    source: str | None
-    subject: str | None
-    body: str
-    body_len: int
+def without_repeats(entries: list[Comment]) -> list[Comment]:
+    """Drop a turn that repeats the one before it, keeping the first.
 
-    @classmethod
-    def from_row(cls, row: dict[str, Any]) -> Message:
-        return cls(
-            turn_seq=row.get("turn_seq") or 0,
-            ts=row.get("turn_ts"),
-            who=clean(row.get("who")),
-            actor_role=clean(row.get("actor_role")),
-            direction=clean(row.get("direction")),
-            source=clean(row.get("source_object")),
-            subject=clean(row.get("subject")),
-            body=(row.get("body") or "").strip(),
-            body_len=row.get("body_len") or 0,
-        )
+    The integration copies some submissions onto the case twice — once as the
+    email and once as the case comment — so a case can open with the same
+    intake payload rendered twice in a row, by the same author, at the same
+    minute. Two identical seven-hundred-character forms stacked on top of each
+    other read as a rendering fault, and on a long thread they are two screens
+    of scrolling that say one thing.
+
+    Adjacent only, and on the exact body. A case where the same short reply
+    genuinely recurs — "thanks", a week apart — keeps both, because the turns
+    are not adjacent and the timestamps are not the same.
+    """
+    kept: list[Comment] = []
+    for entry in entries:
+        last = kept[-1] if kept else None
+        if last is not None and last.body == entry.body and last.who == entry.who:
+            continue
+        kept.append(entry)
+    return kept
 
 
 @dataclass(frozen=True)
@@ -500,6 +600,26 @@ class RelatedCase:
             same_irb=bool(row.get("same_irb")),
             same_department=bool(row.get("same_department")),
         )
+
+    # How the list is grouped, strongest first. An IRB protocol is one study,
+    # so two cases sharing one are two requests about the same work; a PI is a
+    # person, whose cases are usually related and sometimes not; a department
+    # on its own is a building. In a department the size of Anaesthesia the
+    # third is barely a signal at all, which is why it is named as "only".
+    STRENGTHS = (
+        ("irb", "Same IRB protocol"),
+        ("pi", "Same PI"),
+        ("department", "Same department only"),
+    )
+
+    @property
+    def strength(self) -> str:
+        """The strongest thing this case has in common with the one on screen."""
+        if self.same_irb:
+            return "irb"
+        if self.same_pi:
+            return "pi"
+        return "department"
 
     @property
     def why(self) -> str:

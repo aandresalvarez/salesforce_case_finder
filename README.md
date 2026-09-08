@@ -17,7 +17,7 @@ number and you land on the case; type anything else and you get results.
 |---|---|
 | **Search** | Full-text across case fields *and* the conversation bodies — the part that is actually hard to reach in SQL. Matches are shown in context. |
 | **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter by owner, status, department, PI or IRB; sort, save a view, export the metadata. From a case, the `…` menu opens its owner's queue. |
-| **Case** | The whole case on one page: metadata, the comment stream, individual emails, an interleaved timeline, file pointers, and related cases. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as — with the original always one click away. |
+| **Case** | The request pinned at the top, the conversation beside the facts about it. A long thread shows its opening and its latest with the middle folded behind a count, and each month marked. The rail carries the case's PI, protocol and funding, and its related cases grouped by how strongly they are related — none of which scrolls away. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as, with the fields the case already shows folded away and the original always one click away. |
 | **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
 | **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
 
@@ -114,12 +114,12 @@ The corpus contains PHI, and the design assumes it.
 
 | | |
 |---|---|
-| **Nothing at rest** | Results live in a 15-minute in-memory cache with no disk backend. Quitting the app is the whole retention policy. |
+| **Nothing at rest** | Results live in a 15-minute in-memory cache with no disk backend. Entries are deleted when they expire rather than merely refused, and the cache is capped so a long day cannot grow the process without limit. Quitting the app is still the whole retention policy. |
 | **Nothing on the network** | The local server binds to loopback on a random port. There is no on-air, tunnel, or share mode in the code. |
 | **Nothing to Gemini** | Ask is off unless a site switches it on, and even then it sends your question and a static table layout. No case row, body, subject, or search result is ever part of a prompt. |
 | **Nothing in an export** | The CSV is metadata only — case number, owner, status, PI, department, IRB, funding, last activity. Descriptions and message bodies are excluded on purpose. |
 | **Nothing in a saved view** | Saved views persist filter definitions: field names, selected values, sort order, visible columns. Never rows, bodies, snippets, descriptions, or summaries. |
-| **Nothing written, anywhere** | Every query is checked for read-only-ness before it is submitted, including the ones Gemini writes. |
+| **Nothing written, anywhere** | Every query is checked for read-only-ness before it is submitted, including the ones Gemini writes — first against the text, then against BigQuery's own reading of it, which is the one that decides. |
 
 Two things leave the process at your explicit request: **Copy summary** writes a
 case handoff to your clipboard, and **Export metadata CSV** writes a file where
@@ -176,6 +176,9 @@ Everything is an environment variable, and every one has a working default.
 | `CASEFINDER_USD_PER_TIB` | 6.25 | Rate used for the on-screen estimate |
 | `CASEFINDER_CACHE_TTL` | 900 | Result cache, seconds |
 | `CASEFINDER_FACET_CACHE_TTL` | 3600 | Filter-value cache, seconds |
+| `CASEFINDER_CACHE_MAX_ENTRIES` | 150 | Result cache ceiling; least recently used goes first |
+| `CASEFINDER_FACET_CACHE_MAX_ENTRIES` | 32 | Filter-value cache ceiling |
+| `CASEFINDER_CACHE_REAP_SECONDS` | 60 | How often expired entries are deleted; `0` disables the sweep |
 | `CASEFINDER_STALE_DAYS` | 7 | Age at which lists show a freshness banner |
 | `CASEFINDER_ASK` | false | `1` offers the Ask destination; off, it is hidden entirely |
 | `CASEFINDER_VERTEX_LOCATION` | `us-central1` | Vertex AI region for Ask |
@@ -287,7 +290,12 @@ casefinder/
   ask.py         question in, SQL out, no case data in the prompt
   intake.py      reads the serialised intake form out of a case body
   main.py        routes, and the loopback-only native window
-  ui/            one module per screen, plus shared components/
+  ui/            one module per screen, plus:
+    theme.py       the visual language — one stylesheet, two installers
+    state.py       what the reader has asked for, held between renders
+    shell.py       the navigation rail and the connection gate
+    errors.py      how a page reports a failure
+    components/    the reusable pieces, including the button vocabulary
 ```
 
 `data.py` is the rule that keeps the rest honest: pages render data and dispatch

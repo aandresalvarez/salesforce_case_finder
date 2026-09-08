@@ -264,3 +264,94 @@ def test_the_original_payload_is_carried_verbatim():
 )
 def test_a_salesforce_api_name_reads_as_a_label(name, expected):
     assert intake.label_for(name) == expected
+
+
+# --------------------------------------------------------------------------
+# Reconciling the form against the case that already shows half of it
+# --------------------------------------------------------------------------
+
+
+def _form():
+    return intake.parse(synthetic.intake_payload())
+
+
+def _by(form, label):
+    return next(f for f in form.fields if f.label == label)
+
+
+def test_a_value_the_case_already_shows_is_marked_as_an_echo():
+    """The case page showed its subject as the title and again in the form, its
+    PI in the metadata and again in the form, and so on for nine values on a
+    form of twenty-eight. Repetition on that scale stops reading as
+    confirmation and becomes noise to skim — which is how the one field that
+    disagrees gets skimmed past too."""
+    form = intake.reconcile(_form(), {"Subject": "Registry linkage", "PI name": synthetic.PI})
+
+    assert _by(form, "Subject").echoes == "Subject"
+    assert _by(form, "PI name").echoes == synthetic.PI or _by(form, "PI name").echoes
+    assert not _by(form, "Rank").echoes, "a field the case does not show was dropped"
+
+
+def test_a_value_that_disagrees_is_flagged_rather_than_hidden():
+    """The one part of a form worth interrupting somebody for. A requester who
+    wrote `TBD` before the protocol existed leaves a form that disagrees with
+    the record, and shown flat and far apart the two read as the page repeating
+    itself rather than as a fact that changed."""
+    form = intake.reconcile(_form(), {"IRB protocol": "41288"})
+
+    irb = _by(form, "IRB protocol")
+    assert irb.value == "TBD"
+    assert irb.conflicts == "41288"
+    assert not irb.echoes, "a disagreement was folded away as a duplicate"
+
+
+def test_the_comparison_ignores_case_and_spacing_and_nothing_else():
+    """Loose enough to see two spellings of one answer, tight enough to keep a
+    disagreement: `41288` and `IRB 41288` are not the same answer."""
+    form = intake.reconcile(_form(), {"Funding status": "  funded - GRANT "})
+    assert _by(form, "Funding status").echoes
+
+    form = intake.reconcile(_form(), {"IRB protocol": "TBD (pending)"})
+    assert _by(form, "IRB protocol").conflicts == "TBD (pending)"
+
+
+def test_the_form_folds_its_own_repeats():
+    """The integration collects some answers from more than one place, so the
+    address arrives as `Email` and again as `ContactEmail`, and the SUNet id on
+    both objects. Nobody typed them twice."""
+    form = _form()
+
+    assert _by(form, "Contact email").echoes == "Email"
+    assert _by(form, "SUNet ID case").echoes == "SUNet ID"
+    assert not _by(form, "Email").echoes, "the first spelling should win"
+
+
+def test_a_shared_yes_or_no_is_a_coincidence_not_a_duplicate():
+    """`DICOM: No` and `Is the requester the PI: No` are two different
+    questions that happen to agree. Folding the second into the first would
+    delete an answer rather than a repetition, and nothing on screen would
+    admit it."""
+    form = _form()
+
+    assert not _by(form, "DICOM").echoes
+    assert not _by(form, "I am PI case").echoes
+
+
+def test_routing_fields_are_moved_out_of_the_way_not_deleted():
+    """A queue name is true and is never the reason anybody opened the case."""
+    form = _form()
+
+    assert _by(form, "Original queue name").echoes == "the routing record"
+    assert _by(form, "Project record ID").echoes == "the routing record"
+    # And the payload behind `Original record` is still the whole thing.
+    assert "Original_Queue_Name__c" in form.raw
+
+
+def test_reconciling_never_removes_a_field_from_the_record():
+    """Folding is a rendering decision. The parsed form keeps every field, so
+    the disclosure that shows the payload verbatim still can."""
+    before = _form()
+    after = intake.reconcile(before, {"Subject": "Registry linkage"})
+
+    assert len(after.fields) == len(before.fields)
+    assert after.raw == before.raw

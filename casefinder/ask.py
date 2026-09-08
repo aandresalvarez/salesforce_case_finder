@@ -177,6 +177,23 @@ def _model():
     raise VertexUnavailable(_PROBE_FAILURE)
 
 
+def reset() -> None:
+    """Forget the probe result, whichever way it went.
+
+    The failure is cached for the life of the process so that a page asking
+    `available()` on every render does not re-probe four models over the
+    network each time. That is right as a cache and wrong as a verdict: a
+    project whose Vertex API was switched on a minute ago, or a laptop whose
+    network has come back, would otherwise need the application restarted
+    before Ask reappeared. `data.reset_connection` calls this, so Retry on the
+    connection screen and "Clear cached results" in Settings both mean it.
+    """
+    global _CLIENT, _MODEL_NAME, _PROBE_FAILURE
+    _CLIENT = None
+    _MODEL_NAME = None
+    _PROBE_FAILURE = None
+
+
 def model_name() -> str | None:
     """The model actually in use, once one has answered."""
     return _MODEL_NAME

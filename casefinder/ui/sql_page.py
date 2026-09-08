@@ -17,9 +17,11 @@ from nicegui import ui
 
 from .. import bq, config, data
 from ..models import show
-from . import shell
+from . import errors
+from .components.actions import muted, primary, quiet, secondary
 from .components.table import Column, data_table
-from .shell import CANVAS, muted, primary, quiet, secondary, state
+from .state import state
+from .theme import CANVAS
 
 STARTER = """-- Cases opened per year.
 SELECT created_year, COUNT(*) AS cases
@@ -149,7 +151,7 @@ def _run() -> None:
     try:
         page.result = data.run_sql(page.text)
     except Exception as exc:  # noqa: BLE001
-        page.error = f"{shell.friendly(exc)}\n{type(exc).__name__}: {exc}"
+        page.error = f"{errors.friendly(exc)}\n{type(exc).__name__}: {exc}"
     body.refresh()
 
 
@@ -159,7 +161,7 @@ def _estimate() -> None:
         page.estimate = data.estimate_sql(page.text)
     except Exception as exc:  # noqa: BLE001
         page.estimate = None
-        page.error = f"{shell.friendly(exc)}\n{type(exc).__name__}: {exc}"
+        page.error = f"{errors.friendly(exc)}\n{type(exc).__name__}: {exc}"
         cost_line.refresh()
         body.refresh()
         return

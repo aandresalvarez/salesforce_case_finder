@@ -170,6 +170,20 @@ STALE_DAYS = int(os.environ.get("CASEFINDER_STALE_DAYS", 7))
 # get their own longer cache window.
 FACET_CACHE_TTL_SECONDS = int(os.environ.get("CASEFINDER_FACET_CACHE_TTL", 3600))
 
+# How many entries each cache may hold before the least recently used is
+# dropped. A ceiling on entries rather than on bytes: sizing a Python object
+# graph is expensive and inaccurate, and a predictable limit is worth more here
+# than a precise one. 150 result entries is a long day of searching and opening
+# cases; the largest single entry is one case's whole conversation.
+CACHE_MAX_ENTRIES = int(os.environ.get("CASEFINDER_CACHE_MAX_ENTRIES", 150))
+FACET_CACHE_MAX_ENTRIES = int(os.environ.get("CASEFINDER_FACET_CACHE_MAX_ENTRIES", 32))
+
+# How often expired entries are actually deleted rather than merely refused.
+# The TTL decides what may be served; this decides how long a value that may no
+# longer be served stays in memory, which for a PHI corpus is the number that
+# matters. Set to 0 to disable the sweep.
+CACHE_REAP_SECONDS = int(os.environ.get("CASEFINDER_CACHE_REAP_SECONDS", 60))
+
 # Native desktop window vs. plain browser tab. Native is the product; the
 # browser path exists so that a machine with a broken platform webview can
 # still be supported.

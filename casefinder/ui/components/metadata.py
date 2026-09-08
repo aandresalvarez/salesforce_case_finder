@@ -11,8 +11,9 @@ from collections.abc import Sequence
 
 from nicegui import ui
 
+from ... import intake
 from ...models import CaseHeader
-from ..shell import LINE, MUTED
+from ..theme import LINE, MUTED
 from . import intake_form
 
 
@@ -38,6 +39,31 @@ def attribute_grid(pairs: Sequence[tuple[str, str]], *, columns: int = 4) -> Non
                 ui.label(value).style("font-size:13px; overflow-wrap:anywhere")
 
 
+def pairs(rows: Sequence[tuple[str, str]]) -> None:
+    """Label over value, down a column. The rail's whole vocabulary.
+
+    Not `attribute_grid`: that lays four across a reading column, and a 280px
+    rail has room for one. Same pairs, same type, one track — which is also
+    what keeps UX-INV-6 true, since neither draws a card around anything.
+    """
+    with ui.column().classes("w-full").style("gap:11px"):
+        for label, value in rows:
+            with ui.column().style("gap:1px; min-width:0"):
+                ui.label(label).classes("cf-metric-label")
+                ui.label(value).style("font-size:12.5px; overflow-wrap:anywhere")
+
+
+def person(who: intake.Requester) -> None:
+    """The requester, in the rail. Name first, then how to reach them."""
+    with ui.column().classes("w-full").style("gap:9px"):
+        if who.name:
+            ui.label(who.name).style("font-size:13px; font-weight:600")
+        for label, value in who.rows:
+            with ui.column().style("gap:1px; min-width:0"):
+                ui.label(label).classes("cf-metric-label")
+                ui.label(value).style("font-size:12.5px; overflow-wrap:anywhere")
+
+
 def header_block(header: CaseHeader, *, on_back) -> None:
     """Back link, title, case number — the top of a case page."""
     with ui.row().classes("items-center").style("gap:5px; cursor:pointer").on(
@@ -49,21 +75,27 @@ def header_block(header: CaseHeader, *, on_back) -> None:
     ui.label(header.case_number).classes("cf-casenum").style("margin-top:2px")
 
 
-def description_block(text: str | None) -> None:
-    """Spec FR-CASE-4: present but not dominant, collapsed when long.
+def description_block(text: str | None, *, shown=None) -> None:
+    """The request, above the thread it started.
 
-    The description is the same warehouse text as a comment body and arrives in
-    the same two shapes, so it goes through the same reader — a case whose
-    description is the serialised intake form should not be the one place in
-    the app that still shows it as JSON.
+    Two shapes, and the difference matters. A submitted form *is* the request:
+    it is the only copy on the page now that the turn repeating it has gone,
+    and burying it in a collapsed disclosure headed `Description` hides the one
+    thing a reader most often opens the case for. A pasted email is prose that
+    may run to any length, and FR-CASE-4 asks for it to be present without
+    dominating — so that one keeps the disclosure.
     """
     if not text:
         return
-    long_text = len(text) > 420
-    if long_text:
+    if intake.parse(text) is not None:
+        with ui.column().classes("w-full cf-request").style("gap:2px"):
+            ui.label("The request").classes("cf-request-h")
+            intake_form.body(text, shown=shown)
+        return
+    if len(text) > 420:
         with ui.expansion("Description").classes("w-full").style("margin-bottom:6px"):
-            intake_form.body(text)
-    else:
-        with ui.column().classes("w-full").style("gap:2px; margin-bottom:10px"):
-            ui.label("Description").classes("cf-metric-label")
-            intake_form.body(text)
+            intake_form.body(text, shown=shown)
+        return
+    with ui.column().classes("w-full").style("gap:2px; margin-bottom:10px"):
+        ui.label("Description").classes("cf-metric-label")
+        intake_form.body(text, shown=shown)

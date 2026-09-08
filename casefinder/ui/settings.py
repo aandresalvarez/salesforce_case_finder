@@ -15,11 +15,12 @@ from __future__ import annotations
 
 from nicegui import ui
 
-from .. import ask, cache, config, data, views
+from .. import ask, config, data, views
 from ..config import ERAS
 from .components import filters as filter_ui
 from .components import loading
-from .shell import muted, quiet, secondary, state
+from .components.actions import muted, quiet, secondary
+from .state import state
 
 
 def render() -> None:
@@ -104,20 +105,33 @@ def _cost_and_cache() -> None:
             ("Assumed price", f"${config.USD_PER_TIB:,.2f} per TiB (CASEFINDER_USD_PER_TIB)"),
             (
                 "Result cache",
-                f"{config.CACHE_TTL_SECONDS // 60} minutes, in memory only "
-                "(CASEFINDER_CACHE_TTL)",
+                f"{config.CACHE_TTL_SECONDS // 60} minutes, in memory only, "
+                f"at most {config.CACHE_MAX_ENTRIES} entries "
+                "(CASEFINDER_CACHE_TTL, CASEFINDER_CACHE_MAX_ENTRIES)",
             ),
             (
                 "Filter-value cache",
                 f"{config.FACET_CACHE_TTL_SECONDS // 60} minutes "
                 "(CASEFINDER_FACET_CACHE_TTL)",
             ),
+            (
+                "Expired entries",
+                (
+                    f"deleted every {config.CACHE_REAP_SECONDS} seconds"
+                    if config.CACHE_REAP_SECONDS
+                    else "deleted when their key is next read"
+                )
+                + " (CASEFINDER_CACHE_REAP_SECONDS)",
+            ),
             ("Stale-data warning", f"after {config.STALE_DAYS} days (CASEFINDER_STALE_DAYS)"),
         ]
     )
     with ui.row().classes("items-center").style("gap:10px; margin-top:12px"):
         secondary("Clear cached results", _clear_cache, icon="delete_sweep")
-        muted("Cached rows live in this process only and disappear when it exits.")
+        muted(
+            "Cached rows live in this process only, are deleted when they "
+            "expire, and disappear entirely when it exits."
+        )
 
 
 def _saved_views() -> None:
@@ -163,6 +177,6 @@ def _recheck() -> None:
 
 
 def _clear_cache() -> None:
-    cache.clear_all()
+    data.clear_caches()
     ui.notify("Cached results cleared", type="positive")
     ui.navigate.reload()

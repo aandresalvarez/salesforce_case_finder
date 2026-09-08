@@ -20,6 +20,13 @@ logs/
 data/
 *.csv
 
+# Screenshots of the running app show real cases. They are working material,
+# not source, and they never belong in the repository.
+Claude outputs/
+*.png
+*.jpg
+*.jpeg
+
 # A user's own saved views live outside the repo by default (see
 # config.personal_views_path), but an overridden path could put one here. They
 # hold filter definitions rather than case data, and they are still nobody

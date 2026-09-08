@@ -269,7 +269,7 @@ def test_browse_is_cheap_enough_to_be_the_default_path():
     so an accidental join to the turn table would turn a free interaction into a
     245 MB one and nothing would look wrong on screen."""
     sql, params = queries.browse(CURRENT, Filters())
-    assert bq.estimate_bytes(sql, params) < 50 * 1024 * 1024
+    assert bq.dry_run(sql, params).bytes_processed < 50 * 1024 * 1024
 
 
 # --------------------------------------------------------------------------
@@ -381,7 +381,7 @@ def test_the_enriched_columns_join_without_dropping_cases(triage_page):
 def test_the_triage_list_stays_inside_its_documented_budget():
     """Section 8 budgets ~31 MB. This is the app's landing query."""
     sql, params = queries.triage_list(CURRENT, TriageFilters())
-    assert bq.estimate_bytes(sql, params) < 100 * 1024 * 1024
+    assert bq.dry_run(sql, params).bytes_processed < 100 * 1024 * 1024
 
 
 def test_consecutive_pages_partition_the_result_without_gaps_or_repeats():
@@ -444,8 +444,10 @@ def test_a_page_costs_what_the_whole_list_costs():
     page, page_params = queries.triage_list(
         CURRENT, TriageFilters(), limit=queries.TRIAGE_PAGE_SIZE, offset=200
     )
-    whole_bytes = bq.estimate_bytes(whole, queries.triage_list(CURRENT, TriageFilters())[1])
-    page_bytes = bq.estimate_bytes(page, page_params)
+    whole_bytes = bq.dry_run(
+        whole, queries.triage_list(CURRENT, TriageFilters())[1]
+    ).bytes_processed
+    page_bytes = bq.dry_run(page, page_params).bytes_processed
     assert page_bytes == whole_bytes
 
 
@@ -529,7 +531,7 @@ def test_a_cheap_query_can_still_be_slow_enough_to_need_the_other_ceiling():
         f"SELECT t.*, c.* FROM `{config.PROJECT}.salesforce_marts.fct_conversation_turn` t "
         f"CROSS JOIN `{config.PROJECT}.salesforce_marts.dim_case` c"
     )
-    planned = bq.estimate_bytes(runaway)
+    planned = bq.dry_run(runaway).bytes_processed
     assert planned < config.MAX_BYTES_BILLED, (
         "this query is supposed to be cheap to scan — that is the whole point"
     )
@@ -549,4 +551,4 @@ def test_every_query_the_app_submits_carries_the_cap():
     assert result.rows
     # The same job again, submitted through the estimator, must be priced rather
     # than executed.
-    assert bq.estimate_bytes(sql, params) >= 0
+    assert bq.dry_run(sql, params).bytes_processed >= 0

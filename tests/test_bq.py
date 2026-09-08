@@ -24,25 +24,30 @@ from casefinder.bq import CostError, QueryResult
 
 
 class FakeJob:
-    def __init__(self, rows, bytes_processed, cache_hit):
+    def __init__(self, rows, bytes_processed, cache_hit, statement_type="SELECT"):
         self._rows = rows
         self.total_bytes_processed = bytes_processed
         self.cache_hit = cache_hit
+        # What BigQuery says it parsed. Real jobs carry this; the preflight
+        # guard reads it, so the fake has to have one or every preflight test
+        # would be exercising the "client too old to report a type" fallback.
+        self.statement_type = statement_type
 
     def result(self):
         return list(self._rows)
 
 
 class FakeClient:
-    def __init__(self, rows=(), bytes_processed=1024, cache_hit=False):
+    def __init__(self, rows=(), bytes_processed=1024, cache_hit=False, statement_type="SELECT"):
         self.rows = list(rows)
         self.bytes_processed = bytes_processed
         self.cache_hit = cache_hit
+        self.statement_type = statement_type
         self.calls: list[tuple[str, object]] = []
 
     def query(self, sql, job_config=None):
         self.calls.append((sql, job_config))
-        return FakeJob(self.rows, self.bytes_processed, self.cache_hit)
+        return FakeJob(self.rows, self.bytes_processed, self.cache_hit, self.statement_type)
 
     @property
     def configs(self):
@@ -193,7 +198,7 @@ def test_an_ordinary_failure_is_not_relabelled_as_a_timeout(monkeypatch):
 def test_the_timeout_message_reaches_the_user_intact():
     """`friendly()` replaces most BigQuery text with one plain sentence, which
     would throw away the only explanation the user gets here."""
-    from casefinder.ui.shell import friendly
+    from casefinder.ui.errors import friendly
 
     message = friendly(bq.QueryTimeout("That query ran for more than 120 seconds"))
     assert "120 seconds" in message
@@ -204,15 +209,20 @@ def test_the_timeout_message_reaches_the_user_intact():
 # --------------------------------------------------------------------------
 
 
+def _planned(monkeypatch, size, statement_type="SELECT"):
+    """Answer the preflight dry run without a round trip."""
+    monkeypatch.setattr(bq, "dry_run", lambda *a, **k: bq.DryRun(size, statement_type))
+
+
 def test_preflight_refuses_a_query_that_is_too_big(client, monkeypatch):
-    monkeypatch.setattr(bq, "estimate_bytes", lambda *a, **k: config.MAX_BYTES_BILLED + 1)
+    _planned(monkeypatch, config.MAX_BYTES_BILLED + 1)
     with pytest.raises(CostError, match="safety cap"):
         bq.run("SELECT 1", preflight=True)
     assert client.calls == [], "the query ran anyway"
 
 
 def test_the_cost_error_says_how_big_and_what_to_do(client, monkeypatch):
-    monkeypatch.setattr(bq, "estimate_bytes", lambda *a, **k: 20 * 1024**3)
+    _planned(monkeypatch, 20 * 1024**3)
     with pytest.raises(CostError) as caught:
         bq.run("SELECT 1", preflight=True)
     message = str(caught.value)
@@ -221,7 +231,7 @@ def test_the_cost_error_says_how_big_and_what_to_do(client, monkeypatch):
 
 
 def test_preflight_lets_a_query_under_the_cap_through(client, monkeypatch):
-    monkeypatch.setattr(bq, "estimate_bytes", lambda *a, **k: 1024)
+    _planned(monkeypatch, 1024)
     bq.run("SELECT 1", preflight=True)
     assert len(client.calls) == 1
 
@@ -452,3 +462,79 @@ def test_there_is_no_tunnel_switch_to_flip():
     assert "on_air" not in source
     assert "0.0.0.0" not in inspect.getsource(main)
     assert "reload=False" in source  # a reloader would open a second window and client
+
+
+# --------------------------------------------------------------------------
+# The parser has the last word — finding #01
+# --------------------------------------------------------------------------
+
+
+def test_preflight_refuses_what_bigquery_parsed_as_a_mutation(client, monkeypatch):
+    """The keyword scan is a pre-filter; this is the check that decides.
+
+    Text that reads as a SELECT and plans as something else is exactly the case
+    a regex cannot catch, so the verdict comes from the dry run instead.
+    """
+    _planned(monkeypatch, 1024, statement_type="DELETE")
+    with pytest.raises(ValueError, match="DELETE statement"):
+        bq.run("SELECT 1", preflight=True)
+    assert client.calls == [], "the query ran anyway"
+
+
+def test_a_multi_statement_script_is_refused_by_its_type(client, monkeypatch):
+    """BigQuery reports a script as SCRIPT, whatever its first statement is."""
+    _planned(monkeypatch, 1024, statement_type="SCRIPT")
+    with pytest.raises(ValueError, match="SCRIPT statement"):
+        bq.run("SELECT 1", preflight=True)
+
+
+def test_statement_type_is_checked_before_cost(client, monkeypatch):
+    """A mutation is not reported to the user as an expense."""
+    _planned(monkeypatch, config.MAX_BYTES_BILLED + 1, statement_type="CREATE_TABLE")
+    with pytest.raises(ValueError, match="CREATE TABLE statement"):
+        bq.run("SELECT 1", preflight=True)
+
+
+def test_a_client_that_reports_no_type_falls_back_to_the_keyword_guard(client, monkeypatch):
+    """An absent verdict is not a failing one — the syntactic guard already ran."""
+    _planned(monkeypatch, 1024, statement_type=None)
+    bq.run("SELECT 1", preflight=True)
+    assert len(client.calls) == 1
+
+
+def test_the_cost_estimate_shares_the_read_only_round_trip(client, monkeypatch):
+    """`Check cost` must not be a way to plan a mutation without the guard."""
+    _planned(monkeypatch, 1024, statement_type="MERGE")
+    with pytest.raises(ValueError, match="MERGE statement"):
+        data.estimate_sql("SELECT 1")
+
+
+def test_the_apps_own_queries_are_never_planned(client):
+    """Only untrusted text pays for a dry run, and only it is type-checked."""
+    bq.run("SELECT 1")
+    assert len(client.calls) == 1
+    assert client.configs[0].dry_run in (False, None)
+
+
+def test_no_path_sends_untrusted_text_without_the_parser_verdict(client, monkeypatch):
+    """The text scan is best-effort; this is the check that cannot be skipped.
+
+    `assert_read_only` reads SQL without parsing it, and anything short of a
+    parser can be argued with — an unclosed block comment, a raw string whose
+    backslash rules differ from the reader's. That is why it is a pre-filter.
+    Both entry points for text the application did not write are pinned here to
+    go through `plan`, which is the only function that asks BigQuery what it
+    actually parsed.
+    """
+    planned: list[str] = []
+
+    def plan(sql, params=None):
+        planned.append(sql)
+        return bq.DryRun(1024, "SELECT")
+
+    monkeypatch.setattr(bq, "plan", plan)
+
+    data.run_sql("SELECT 1")
+    data.estimate_sql("SELECT 2")
+
+    assert planned == ["SELECT 1", "SELECT 2"]

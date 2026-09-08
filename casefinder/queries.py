@@ -555,26 +555,20 @@ LEFT JOIN `{config.USER_TABLE}` u ON u.Id = t.actor_user_id
 WHERE c.case_number = @case_number"""
 
 
-def comments_stream(
-    era: Era, case_number: str, *, newest_first: bool = False
-) -> tuple[str, list[Any]]:
-    """The default case reading: one flat chronological stream of the thread."""
-    order = "DESC" if newest_first else "ASC"
-    sql = f"""SELECT
-  t.turn_seq,
-  t.turn_ts,
-  t.actor_role,
-  t.direction,
-  t.source_object,
-  COALESCE(t.actor_name, u.Name, t.actor_email) AS who,
-  t.body_clean AS body
-{_turn_source(era)}
-ORDER BY t.turn_seq {order}"""
-    return sql, [ScalarQueryParameter("case_number", "STRING", case_number)]
+def comments_stream(era: Era, case_number: str) -> tuple[str, list[Any]]:
+    """The default case reading: one flat chronological stream of the thread.
 
+    Always oldest first. The page offers the other order and produces it by
+    reversing the rows it already holds — asking the warehouse for them the
+    other way round would re-scan the body column to reorder rows that are
+    already in memory.
 
-def case_messages(era: Era, case_number: str) -> tuple[str, list[Any]]:
-    """Individual messages, for the compact index on the Messages tab."""
+    Carries the subject and the body length as well, which `case_messages`
+    used to fetch separately. They were the only two columns that made a
+    "message" different from a "comment": same table, same rows, same order,
+    read twice. A reader switching to the compact reading now pays nothing,
+    where the second tab cost another ~256 MB scan of the body column.
+    """
     sql = f"""SELECT
   t.turn_seq,
   t.turn_ts,
@@ -632,7 +626,15 @@ WHERE c.case_number != @case_number
     OR (a.irb IS NOT NULL AND {IRB} = a.irb)
     OR (a.department IS NOT NULL AND {DEPARTMENT} = a.department)
   )
-ORDER BY last_activity DESC NULLS LAST
+-- Strength before recency. A case sharing this one's IRB protocol is working
+-- on the same study; one sharing only its department is in the same building.
+-- Ordering by recency put ten of the second above two of the first, and the
+-- reason was a label at the end of the row rather than the thing that ranked
+-- it — so the strongest matches in a 23-case list were the hardest to find.
+ORDER BY
+  (a.irb IS NOT NULL AND {IRB} = a.irb) DESC,
+  (a.pi IS NOT NULL AND {PI} = a.pi) DESC,
+  last_activity DESC NULLS LAST
 LIMIT @row_limit"""
     return sql, [
         ScalarQueryParameter("case_number", "STRING", case_number),

@@ -20,131 +20,19 @@ from collections.abc import Callable
 from nicegui import ui
 
 from .. import config, data, views
-from ..models import TriageRow, preview, show
-from ..queries import TRIAGE_LIMIT, TRIAGE_PAGE_SIZE, TRIAGE_SORTS, TriageFilters
-from . import shell
+from ..models import TriageRow, show
+from ..queries import TRIAGE_LIMIT, TRIAGE_PAGE_SIZE, TriageFilters
+from . import errors
 from .components import filters as filter_ui
 from .components import freshness as freshness_ui
 from .components import loading
 from .components import pager as pager_ui
 from .components import table as table_ui
+from .components.actions import muted, overflow, primary, quiet
 from .components.empty_state import empty
-from .shell import MUTED, muted, overflow, primary, quiet, state
-
-# Spec FR-LIST-4, in order. The description stays at every width and is
-# truncated instead; Funded, then Department, then PI give way to keep it that
-# way (D16).
-#
-# Every width here is honoured exactly rather than treated as a hint, because
-# the table sets `table-layout:fixed` — see the note there for what that is
-# protecting against. The consequence is that these numbers have to be measured
-# rather than guessed: they add up to 922px, and Description gets the rest, so
-# thirty pixels of generosity anywhere in this dict comes out of the only
-# column that holds a sentence — and the drop thresholds in `table.py` are
-# derived from these sums, so changing one means re-deriving those. Every
-# column but the description is one line: these are identifiers and short
-# labels, and a row that grows because one owner has a long name is the density
-# problem in miniature.
-COLUMNS = {
-    "case_number": table_ui.Column(
-        # A case number is the row's identifier and the thing people read out
-        # to each other; it is the one column that must never ellipsise.
-        "case_number", "Case", lambda r: r.case_number, width="118px", one_line=True
-    ),
-    "owner": table_ui.Column(
-        "owner", "Owner", lambda r: show(r.owner), width="120px", one_line=True
-    ),
-    "status": table_ui.Column(
-        "status", "Status", lambda r: show(r.status), width="92px", one_line=True
-    ),
-    "pi": table_ui.Column(
-        "pi",
-        "PI",
-        lambda r: show(r.pi),
-        width="124px",
-        # Third to go, and the last one that does. Below this the window is at
-        # its configured minimum and everything left is load-bearing.
-        drop=3,
-        one_line=True,
-    ),
-    "department": table_ui.Column(
-        "department",
-        "Department",
-        lambda r: show(r.department),
-        width="128px",
-        # Second to go. It is the widest of the identifying columns and the most
-        # redundant — a case with a PI usually implies its department, and
-        # neither PI nor IRB can be inferred back from it.
-        drop=2,
-        one_line=True,
-    ),
-    "irb": table_ui.Column(
-        # IRB values are five-digit protocol numbers, or `NA`, `QI`, `unknown`.
-        # The header is the widest thing in the column, so it sets the width.
-        "irb", "IRB / protocol", lambda r: show(r.irb), width="112px", one_line=True
-    ),
-    "description": table_ui.Column(
-        "description",
-        "Description",
-        lambda r: preview(r.description),
-        sortable=False,
-        # Never drops. FR-LIST-4 says "truncated if width allows", which is an
-        # instruction to keep it and shorten it; it used to drop alongside
-        # Funded, so the one column that says what a case is about was the
-        # first thing a narrow window took away.
-        clamp=True,
-        subdued=True,
-    ),
-    "last_activity": table_ui.Column(
-        "last_activity",
-        "Last activity",
-        lambda r: show(r.last_activity),
-        # Room for the header plus the sort arrow: this is the default sort, so
-        # the arrow is normally present and the header clipped without it.
-        width="124px",
-        numeric=True,
-        one_line=True,
-    ),
-    "funding": table_ui.Column(
-        "funding",
-        "Funded",
-        lambda r: _funding(r.funding),
-        width="104px",
-        # The only column FR-LIST-4 allows to disappear at narrow widths.
-        drop=1,
-        one_line=True,
-    ),
-}
-
-# Salesforce spells the funded values `Funded - Grant`, `Funded - Industry`,
-# `Funded - Departmental/Gift`. Under a column headed `Funded`, the first two
-# words are the header again, and at any width that leaves room for the
-# description they are all that fits: the column read `Funded - …` four times
-# over and distinguished nothing. `Unfunded`, `Seeking Funding` and the
-# free-text answers people typed instead are left exactly as they are.
-_FUNDED_PREFIX = "Funded - "
-
-
-def _funding(value: str | None) -> str:
-    text = show(value)
-    return text[len(_FUNDED_PREFIX) :] if text.startswith(_FUNDED_PREFIX) else text
-
-
-def _apply_view(view: views.SavedView) -> None:
-    state.lists.view_name = view.name
-    state.lists.offset = 0
-    state.lists.filters = TriageFilters(
-        open_only=view.filters.open_only,
-        owners=list(view.filters.owners),
-        statuses=list(view.filters.statuses),
-        departments=list(view.filters.departments),
-        pis=list(view.filters.pis),
-        irbs=list(view.filters.irbs),
-        funding=list(view.filters.funding),
-    )
-    state.lists.sort = view.sort if view.sort in TRIAGE_SORTS else "last_activity"
-    state.lists.descending = view.descending
-    state.lists.columns = view.columns
+from .list_columns import COLUMNS
+from .state import state
+from .theme import MUTED
 
 
 def focus_on_owner(owner: str) -> None:
@@ -160,7 +48,7 @@ def focus_on_owner(owner: str) -> None:
     what this person is carrying, not everything they have ever touched. The
     toggle is on screen for anyone who meant the second thing.
     """
-    _apply_view(
+    state.lists.apply(
         views.SavedView(
             name=f"Cases owned by {owner}",
             filters=TriageFilters(open_only=True, owners=[owner]),
@@ -176,13 +64,13 @@ def _current_columns() -> list[table_ui.Column]:
 
 def render() -> None:
     if not state.lists.columns:
-        _apply_view(views.shared_views()[0])
+        state.lists.apply(views.shared_views()[0])
 
     loading.while_loading(
         f"Loading {state.lists.view_name.lower()}…",
         _warm,
         lambda _: _page(),
-        on_error=shell.error_region,
+        on_error=errors.error_region,
     )
 
 
@@ -254,7 +142,7 @@ def _view_selector() -> None:
 
 
 def _switch(view: views.SavedView) -> None:
-    _apply_view(view)
+    state.lists.apply(view)
     body.refresh()
     header_meta.refresh()
 
@@ -299,13 +187,28 @@ def _column_picker() -> None:
 
 
 def _hard_refresh() -> None:
+    """Everything this screen shows, re-read from the warehouse.
+
+    Including the facets, which live in their own cache on a much longer
+    window. Leaving them out meant a user who explicitly asked for fresh data
+    could still be choosing from an hour-old list of owners and departments —
+    and the one thing an explicit refresh must not do is refresh only some of
+    what is on the screen.
+    """
     from .. import cache
 
     cache.results.invalidate("triage")
     cache.results.invalidate("freshness")
-    body.refresh()
-    header_meta.refresh()
+    cache.facets.invalidate()
     ui.notify("Reloaded from BigQuery", type="positive")
+    # A reload rather than `body.refresh()`, because refreshing redraws on the
+    # event loop and `body` asks the warehouse three times while it does. With
+    # the caches just emptied every one of those is a miss, so the window would
+    # freeze — with no spinner, since the placeholder is installed by `render` —
+    # for the whole of the extended-facet query, which has an hour-long TTL
+    # precisely because it is slow. Reloading re-enters `render`, which says
+    # what it is waiting for and issues the three concurrently.
+    ui.navigate.reload()
 
 
 def _save_dialog() -> None:
@@ -483,7 +386,7 @@ def body() -> None:
             state.lists.offset = 0
             page = _query()
     except Exception as exc:  # noqa: BLE001
-        shell.error_region(exc)
+        errors.error_region(exc)
         return
 
     if not page.rows:
@@ -539,63 +442,3 @@ def _open_case(row: TriageRow) -> None:
     ui.navigate.to(f"/case/{row.case_number}")
 
 
-# --------------------------------------------------------------------------
-# Saved Views screen — FR-LIST-9, reachable from the selector, not the rail
-# --------------------------------------------------------------------------
-
-
-def render_saved_views() -> None:
-    ui.label("Saved views").classes("cf-h1")
-    muted("Filter definitions only. No case rows or message text is stored.")
-
-    shared = [v for v in views.all_views() if v.shared]
-    personal = [v for v in views.all_views() if not v.shared]
-
-    _view_group("Shared presets", shared, deletable=False)
-    _view_group("My views", personal, deletable=True)
-
-    if not personal:
-        muted(
-            "Saving a view from the Lists overflow menu puts it here. "
-            f"It is written to {config.personal_views_path()}."
-        ).style("margin-top:14px")
-
-
-def _view_group(title: str, group: list[views.SavedView], *, deletable: bool) -> None:
-    if not group:
-        return
-    ui.label(title).classes("cf-h2").style("margin:22px 0 6px 0")
-    for view in group:
-        with ui.row().classes("w-full items-center justify-between cf-row").style(
-            "gap:12px; padding:9px 4px; border-bottom:1px solid " + shell.LINE
-        ):
-            with ui.column().style("gap:1px; min-width:0; cursor:pointer").on(
-                "click",
-                lambda v=view: _open_view(v),
-                js_handler=shell.CLICK_UNLESS_SELECTING,
-            ):
-                ui.label(view.name).style("font-size:13.5px")
-                ui.label(view.description or view.summary).classes("cf-muted")
-            with ui.row().classes("items-center").style("gap:2px"), overflow():
-                ui.menu_item("Open", on_click=lambda v=view: _open_view(v))
-                ui.menu_item("Copy definition", on_click=lambda v=view: _copy_definition(v))
-                if deletable:
-                    ui.separator()
-                    ui.menu_item("Delete", on_click=lambda v=view: _delete_view(v))
-
-
-def _open_view(view: views.SavedView) -> None:
-    _apply_view(view)
-    ui.navigate.to("/lists")
-
-
-def _copy_definition(view: views.SavedView) -> None:
-    """FR-LIST-11: sharing is handing the maintainer a definition, not a service."""
-    ui.clipboard.write(view.share_text())
-    ui.notify("View definition copied", type="positive")
-
-
-def _delete_view(view: views.SavedView) -> None:
-    if views.delete_personal(view.name):
-        ui.notify(f"Deleted “{view.name}”", type="positive")
-        ui.navigate.to("/views")

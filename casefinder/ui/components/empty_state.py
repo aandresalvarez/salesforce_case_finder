@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 
 from nicegui import ui
 
-from ..shell import ACCENT, MUTED
+from ..theme import ACCENT, MUTED
 
 
 def empty(

@@ -304,3 +304,34 @@ def test_closing_ends_the_process_rather_than_just_the_window(monkeypatch):
     window.WindowApi().close()
 
     assert left == [0]
+
+
+def test_the_browser_fallback_really_opens_a_browser(monkeypatch):
+    """`CASEFINDER_NATIVE=0` is the documented recovery for a machine whose
+    platform webview is missing — WebView2 on Windows, WebKit on macOS. It has
+    to actually avoid the webview.
+
+    NiceGUI treats a window size as a request for a window: `ui_run` sets
+    `native = True` whenever `window_size` is given, regardless of the `native`
+    argument. Passing it unconditionally sent the fallback back into the very
+    component it was meant to route around, and nothing said so — the window
+    simply failed to open again.
+    """
+    from unittest import mock
+
+    import nicegui.ui_run as ui_run
+
+    from casefinder import config, main
+
+    def run_with(native: bool):
+        activated: list[bool] = []
+        monkeypatch.setattr(config, "NATIVE", native)
+        with mock.patch.object(
+            ui_run.native_module, "activate", lambda *a, **k: activated.append(True)
+        ), mock.patch.object(ui_run, "core") as core, mock.patch.object(ui_run, "Server"):
+            core.app.config = mock.MagicMock()
+            main.main()
+        return bool(activated)
+
+    assert run_with(True) is True, "native mode stopped opening a window"
+    assert run_with(False) is False, "the browser fallback still opened the webview"

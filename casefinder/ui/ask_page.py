@@ -19,10 +19,11 @@ from nicegui import ui
 
 from .. import ask, data
 from ..config import ERAS
-from . import shell
+from . import errors
 from .components import filters as filter_ui
+from .components.actions import muted, primary, quiet, secondary
 from .components.table import Column, data_table
-from .shell import muted, primary, quiet, secondary, state
+from .state import state
 
 EXAMPLES = (
     "How many cases were opened each year?",
@@ -32,7 +33,7 @@ EXAMPLES = (
 
 
 class AskState:
-    """Page-local state. Deliberately not on `shell.state`.
+    """Page-local state. Deliberately not on the session `state`.
 
     A generated query is a scratchpad, not a session preference: leaving the
     page should not preserve a half-reviewed query to be run later out of
@@ -193,7 +194,7 @@ def _run() -> None:
         page.result = data.run_sql(page.sql)
         page.ran_sql = page.sql
     except Exception as exc:  # noqa: BLE001
-        page.error = shell.friendly(exc) + f"\n\n{type(exc).__name__}: {exc}"
+        page.error = errors.friendly(exc) + f"\n\n{type(exc).__name__}: {exc}"
     body.refresh()
 
 
@@ -201,7 +202,7 @@ def _estimate() -> None:
     try:
         size = data.estimate_sql(page.sql)
     except Exception as exc:  # noqa: BLE001
-        ui.notify(shell.friendly(exc), type="warning")
+        ui.notify(errors.friendly(exc), type="warning")
         return
     ui.notify(f"This query would scan {size / 1024**2:,.1f} MB", type="info")
 

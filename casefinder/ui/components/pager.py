@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from nicegui import ui
 
-from ..shell import MUTED
+from ..theme import MUTED
 
 
 def range_label(offset: int, shown: int, total: int, *, noun: str = "case") -> str:

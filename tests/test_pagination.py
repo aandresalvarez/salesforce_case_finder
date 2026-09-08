@@ -24,9 +24,10 @@ import synthetic
 from casefinder import config, data, models, queries
 from casefinder.models import SearchHit
 from casefinder.queries import TRIAGE_LIMIT, TRIAGE_PAGE_SIZE, Filters, TriageFilters
-from casefinder.ui import lists, search
+from casefinder.ui import list_columns, lists, search
+from casefinder.ui import state as ui_state
 from casefinder.ui.components import pager as pager_ui
-from casefinder.ui.shell import state
+from casefinder.ui.state import state
 
 ERA = config.ERAS["current"]
 
@@ -323,7 +324,7 @@ def test_narrowing_the_filters_puts_you_back_on_the_first_page(render, warehouse
     state.lists.offset = 150
 
     status = next(
-        e for e in tree.of_type("Select") if e._props.get("label") == "Status"
+        e for e in tree.of_type("Select") if e._props.get("aria-label") == "Status"
     )
     with tree.client:
         status.set_value(["Open"])
@@ -356,7 +357,7 @@ def test_switching_view_puts_you_back_on_the_first_page(render, warehouse):
     render(lists.render)
     state.lists.offset = 150
 
-    lists._apply_view(views.shared_views()[0])
+    ui_state.state.lists.apply(views.shared_views()[0])
 
     assert state.lists.offset == 0
 
@@ -475,7 +476,10 @@ def test_the_quoted_reply_header_is_not_the_preview():
 
     out = models.preview(body)
 
-    assert out.startswith("Summary: Linkage of a cancer registry extract")
+    # The label goes with it: `Summary:` opens nearly every description, so it
+    # is nine identical characters at the front of every row. What has to
+    # survive is the sentence after it.
+    assert out.startswith("Linkage of a cancer registry extract")
     assert "@" not in out
 
 
@@ -489,7 +493,7 @@ def test_a_forwarded_request_is_unwrapped_to_the_request():
         + " Summary: Bilirubin thresholds in late preterm infants"
     )
 
-    assert models.preview(body).startswith("Summary: Bilirubin thresholds")
+    assert models.preview(body).startswith("Bilirubin thresholds")
 
 
 @pytest.mark.parametrize(
@@ -549,23 +553,78 @@ def test_the_count_of_matching_messages_is_not_deduplicated():
     assert "35 messages" in hit.why_matched
 
 
+# Every value `Funding_Status__c` holds, with how many cases carry it. Counted
+# against the whole current era rather than sampled — they sum to all 1,714 —
+# which is what makes the shortening map exhaustive rather than a bucket.
+FUNDING_CORPUS = [
+    ("Unfunded", "Unfunded", 884),
+    (None, "—", 367),
+    ("Funded - Grant", "Grant", 325),
+    ("Funded - Departmental/Gift", "Dept/Gift", 69),
+    ("Seeking Funding", "Seeking", 25),
+    ("Funding Status Unknown", "Unknown", 22),
+    ("Funded - Industry", "Industry", 16),
+    ("Funded - Federal", "Federal", 5),
+    # The one case in the corpus where somebody typed a sentence. Not in the
+    # picklist, so it is shown exactly as stored and the cell ellipsises it.
+    ("asked about funding", "asked about funding", 1),
+]
+
+
 @pytest.mark.parametrize(
-    ("stored", "shown"),
-    [
-        ("Funded - Grant", "Grant"),
-        ("Funded - Departmental/Gift", "Departmental/Gift"),
-        ("Unfunded", "Unfunded"),
-        ("Seeking Funding", "Seeking Funding"),
-        ("asked about funding", "asked about funding"),
-        (None, "—"),
-    ],
+    ("stored", "shown"), [(row[0], row[1]) for row in FUNDING_CORPUS]
 )
 def test_the_funded_column_does_not_repeat_its_own_header(stored, shown):
     """`Funded - Grant` under a column headed `Funded` spends nine characters
     saying `Funded` again, and at a width that leaves the description any room
     those were the only nine that fitted — four different values all rendered
     as `Funded - …`. The values nobody prefixed are left alone."""
-    assert lists._funding(stored) == shown
+    assert list_columns._funding(stored) == shown
+
+
+# 104px of column, less 10px of padding each side, is 84px of text. At the
+# table's 13px type that is roughly thirteen characters — the number the three
+# shortened values were measured against, and the reason `Funding Status
+# Unknown` could never have been solved by widening the column.
+FUNDING_BUDGET = 13
+
+
+def test_every_picklist_value_fits_the_column_it_is_shown_in():
+    """A value that does not fit is not merely clipped, it is misread.
+
+    `Funded - Departmental/Gift` truncated to `Department…`, which reads as a
+    department name two columns from the Department column, and `Funding Status
+    Unknown` truncated to `Funding Sta…`, an ellipsised copy of the header, on
+    the one value whose whole meaning is that nothing is known.
+    """
+    for stored, shown, cases in FUNDING_CORPUS:
+        if stored == "asked about funding":
+            continue  # free text, and one case of it; the tooltip carries it
+        assert len(shown) <= FUNDING_BUDGET, (
+            f"{stored!r} shows as {shown!r} ({len(shown)} chars) "
+            f"and truncates on {cases:,} cases"
+        )
+
+
+def test_shortening_is_display_only_and_the_export_keeps_the_record():
+    """The boundary the map depends on. The CSV reads the row, not the cell, so
+    what leaves the process is what the warehouse stores — and `_SHORT` may
+    never become what a funding filter matches on, for the same reason."""
+    from casefinder.models import TriageRow
+
+    row = TriageRow.from_row(
+        {"case_number": "CASE-1", "funding": "Funded - Departmental/Gift"}
+    )
+    assert list_columns._funding(row.funding) == "Dept/Gift"
+    assert row.funding == "Funded - Departmental/Gift", "the row was rewritten"
+
+
+def test_a_value_outside_the_picklist_is_shown_exactly_as_stored():
+    """The map is a lookup, not a fallback bucket: anything it does not know is
+    passed through, so a new picklist value shows up as itself rather than
+    silently becoming something else."""
+    for unknown in ("Pending review", "Funded - Foundation", "n/a"):
+        assert list_columns._funding(unknown) == unknown.replace("Funded - ", "")
 
 
 def test_the_export_keeps_the_value_the_warehouse_stores(render, warehouse, monkeypatch):
@@ -844,9 +903,159 @@ def test_a_stranded_search_offset_falls_back_rather_than_saying_no_matches(
 
 
 def _select(tree, *, label=None, value=None):
+    """Find a filter chip by the dimension it filters on.
+
+    `aria-label` rather than `label`: the chip carries no Quasar label any
+    more, because a floating one is what made an empty control and a filled one
+    two different shapes. The accessible name is where the dimension lives now,
+    which makes it the right thing for a test to look it up by.
+    """
     for element in tree.of_type("Select"):
-        if label is not None and element._props.get("label") == label:
+        if label is not None and element._props.get("aria-label") == label:
             return element
         if value is not None and element.value == value:
             return element
     raise AssertionError(f"no Select with label={label!r} value={value!r}")
+
+
+# --------------------------------------------------------------------------
+# The fetch runs off the event loop, so it owns no UI state — finding #09
+# --------------------------------------------------------------------------
+
+
+def test_the_search_fetch_does_not_write_the_state_it_reads(warehouse):
+    """`_fetch` is handed to `run.io_bound`, so it runs in a worker thread while
+    `shell.state` belongs to the event loop. It reports the offset it settled on
+    and lets the drawing pass apply it, rather than reaching across the boundary
+    to correct a value the loop may be reading at the same moment."""
+    warehouse.stranded_past = 100
+    state.search.offset = 100
+
+    _page, offset = search._fetch(["omop"])
+
+    assert offset == 0, "the stranded page should fall back to the first one"
+    assert warehouse.kwargs["search"]["offset"] == 0, "and re-ask at the top"
+    assert state.search.offset == 100, "the worker thread wrote to shared state"
+
+
+def test_the_drawing_pass_is_what_applies_the_corrected_offset(warehouse):
+    """The other half of the same rule: nothing is lost by deferring it."""
+    warehouse.stranded_past = 100
+    state.search.offset = 100
+
+    search._found(["omop"], *search._fetch(["omop"]))
+
+    assert state.search.offset == 0
+
+
+# --------------------------------------------------------------------------
+# A preview is one line of prose — the escapes and the label go
+# --------------------------------------------------------------------------
+
+
+def test_a_snippet_does_not_show_the_escapes_the_form_stored():
+    """What the search results showed on every form-submitted case.
+
+    The intake form serialises into a case body as JSON, so a newline the
+    requester typed is stored as the two characters `\\` and `n`. `intake.parse`
+    decodes them on the case page; a snippet is cut out of the same body with
+    SUBSTR and never reaches the parser, so it arrived on screen with the
+    escapes showing in the middle of otherwise readable prose.
+    """
+    row = {
+        "turn_seq": 4,
+        "actor_role": "customer",
+        "text": (
+            "quality of care outcomes\\n\\nQuestion: Would like to request an "
+            "update to previously pulled Clarity tables. \\r\\n\\r\\n\\nAvailability:"
+        ),
+    }
+
+    text = models.Snippet.from_row(row).text
+
+    assert "\\n" not in text and "\\r" not in text
+    assert "outcomes Question: Would like to request an update" in text
+    assert "tables. Availability:" in text, "the runs collapsed to one space"
+
+
+def test_the_full_body_still_says_what_the_record_says():
+    """Only previews are tidied. Someone acting on a case has to be able to see
+    the literal text — a body that really does contain a backslash and an `n`,
+    such as pasted code, must still be telling the truth on the case page."""
+    raw = "SELECT 1 -- a path C:\\name\\rows\\n and a real\nbreak"
+
+    parsed = models.Comment.from_row({"turn_seq": 1, "body": raw})
+    assert parsed.body == raw, "the record was rewritten"
+
+
+def test_the_forms_own_field_name_is_not_the_preview():
+    """`Summary:` opens very nearly every description, so it was the first nine
+    characters of every row in the one column FR-LIST-4 refuses to drop."""
+    assert models.preview("Summary: Linkage of a registry extract") == (
+        "Linkage of a registry extract"
+    )
+    assert models.preview("Description:  We have an EHR-based foundation") == (
+        "We have an EHR-based foundation"
+    )
+
+
+def test_a_label_that_is_carrying_meaning_is_left_alone():
+    """An allowlist, not a general `Word:` rule. A description opening
+    `Question:` is answering something, and the label is what says what."""
+    for kept in (
+        "Question: can you refresh the extract?",
+        "Availability: weekday mornings",
+        "Requested For: Daniel Tawfik",
+    ):
+        assert models.preview(kept) == kept
+
+
+def test_a_description_that_is_only_a_label_keeps_it():
+    """Same rule `strip_attribution` follows: never strip to nothing. A record
+    like this is strange, and an empty cell is a worse answer than a strange
+    one."""
+    assert models.preview("Summary:") == "Summary:"
+    assert models.preview("Summary:   ") == "Summary:"
+
+
+def test_the_rendered_snippet_carries_no_escapes_through_to_the_page(searched):
+    """The whole path, not just the model: row → Snippet → escape → highlight.
+
+    The escaping in `search._snippet` runs over the snippet text, so a fix that
+    stopped at the model but left the drawing site reading the raw row would
+    still put `\\n` on the screen. This renders the card and reads it back.
+    """
+    warehouse = searched.warehouse
+    warehouse.hits = [
+        SearchHit.from_row(
+            {
+                "case_number": "CASE-056833",
+                "subject": "Development and Validation of a Prediction Model",
+                "status": "Open",
+                "turn_count": 30,
+                "matching_turns": 30,
+                "matched_case_fields": True,
+                "snippets": [
+                    {
+                        "turn_seq": 1,
+                        "actor_role": "customer",
+                        "text": (
+                            "quality of care outcomes\\n\\nQuestion: Would like to "
+                            "request an omop update.\\r\\n\\r\\n\\nAvailability:"
+                        ),
+                    }
+                ],
+            }
+        )
+    ]
+    warehouse.hit_total = 1
+
+    text = searched().text
+
+    assert "\\n" not in text and "\\r" not in text, "escapes reached the screen"
+    # Both sides of the break that used to read `outcomes\\n\\nQuestion:`, and
+    # the run of them before `Availability:`, now one flowing line.
+    assert "outcomes Question: Would like to request an" in text
+    assert "update. Availability:" in text
+    # And the term is still marked, which is the other thing this path does.
+    assert "<mark>omop</mark>" in text

@@ -23,7 +23,8 @@ import synthetic
 from nicegui import ui
 
 from casefinder.models import Comment
-from casefinder.ui import case_detail, lists
+from casefinder.ui import case_detail, lists, saved_views
+from casefinder.ui import state as ui_state
 from casefinder.ui.components import intake_form, loading
 from casefinder.ui.components import table as table_ui
 
@@ -134,11 +135,13 @@ def test_every_slow_tab_has_something_to_show_while_it_loads(render, warehouse, 
     tree = render(case_detail._tabs, warehouse.header)
     tabs = tree.of_type("Tabs")[0]
 
-    for name in ("Messages", "Timeline", "Files"):
+    for name in ("Timeline", "Files"):
         with tree.client:
             tabs.value = name
 
-    assert notes == ["Loading messages…", "Building the timeline…", "Looking for files…"]
+    # Two, not three: the conversation is prefetched and drawn without a
+    # spinner, and Messages is no longer a tab of its own.
+    assert notes == ["Building the timeline…", "Looking for files…"]
 
 
 def test_the_first_screen_of_a_session_says_it_is_connecting(render, warehouse, monkeypatch):
@@ -299,7 +302,7 @@ def test_selecting_text_in_a_row_does_not_open_it(name, render, warehouse):
     The guard is client-side, so the event never leaves the browser and the row
     keeps its one handler instead of growing a second to undo the first.
     """
-    from casefinder.ui import shell
+    from casefinder.ui import theme
 
     tree = _row_screen(name, warehouse, render)
 
@@ -308,7 +311,7 @@ def test_selecting_text_in_a_row_does_not_open_it(name, render, warehouse):
         for listener in element._event_listeners.values():
             if listener.type.split(".")[0] != "click":
                 continue
-            if listener.js_handler == shell.CLICK_UNLESS_SELECTING:
+            if listener.js_handler == theme.CLICK_UNLESS_SELECTING:
                 guarded += 1
             elif "cf-row" in element._classes:
                 raise AssertionError(f"{name}: a whole-row click target ignores selections")
@@ -330,7 +333,7 @@ def _row_screen(name: str, warehouse, render):
     if name == "open cases":
         return render(lists.render)
     if name == "saved views":
-        return render(lists.render_saved_views)
+        return render(saved_views.render)
     if name == "search results":
         warehouse.hits = [
             SearchHit.from_row(
@@ -438,11 +441,43 @@ def test_no_part_of_a_body_is_rendered_as_markup(render):
 
 def test_the_request_keeps_its_paragraphs_on_screen(render):
     """`pre-wrap` rather than the browser's default, which would collapse the
-    line breaks the requester typed into one paragraph."""
+    line breaks the requester typed into one paragraph.
+
+    Within a section now: the narrative is split under the prompts it was
+    written against, and the breaks that matter are the ones inside an answer.
+    """
+    narrative = (
+        "Summary: Registry linkage"
+        "\\n\\nDescription: First paragraph."
+        "\\n\\nStill the description, after a break."
+        "\\n\\nQuestion: Is this feasible?"
+    )
+    tree = render(intake_form.body, synthetic.intake_payload(narrative=narrative))
+
+    blocks = tree.with_class("cf-form-text")
+    assert len(blocks) == 3, "the request was not split under its prompts"
+    assert any("\n\n" in b.text for b in blocks), "a paragraph break was collapsed"
+
+
+def test_the_request_is_split_under_the_prompts_it_answers(render):
+    """Summary, Description and Question are three answers to three prompts,
+    and they arrive as one string. Run together, the question is the part that
+    disappears — and the question is what a support person is answering."""
     tree = render(intake_form.body, synthetic.intake_payload())
 
-    (block,) = tree.with_class("cf-form-text")
-    assert "\n\n" in block.text
+    labels = [e.text for e in tree.with_class("cf-metric-label")]
+    assert "Summary" in labels and "Description" in labels and "Question" in labels
+
+
+def test_the_contact_block_is_not_part_of_the_request(render):
+    """`Requested For`, `Contact E-mail` and `Phone` are the form restating its
+    own fields at the end of the narrative. They are the requester, and the
+    requester is shown once, beside the case."""
+    tree = render(intake_form.body, synthetic.intake_payload())
+
+    labels = [e.text for e in tree.with_class("cf-metric-label")]
+    assert "Requested for" not in labels and "Contact e-mail" not in labels
+    assert "Availability" not in labels, "an empty prompt was drawn"
 
 
 def test_a_comment_that_is_a_form_is_read_as_one(render, warehouse):
@@ -576,3 +611,157 @@ def test_the_table_wrapper_does_not_become_a_scroll_container():
     wrapper = table_ui._CSS.split(".cf-table-wrap")[1].split("}")[0]
 
     assert "overflow" not in wrapper
+
+
+# --------------------------------------------------------------------------
+# The rebuilt case page
+# --------------------------------------------------------------------------
+
+
+def _long_thread(warehouse, n: int = 60):
+    """A case with more entries than anyone reads top to bottom."""
+    import datetime as dt
+
+    from casefinder.models import Comment
+
+    warehouse.comments = [
+        Comment.from_row(
+            {
+                "turn_seq": i,
+                "turn_ts": dt.datetime(2026, 4 + i // 20, (i % 27) + 1, tzinfo=dt.timezone.utc),
+                "who": synthetic.OWNER if i % 2 else synthetic.REQUESTER,
+                "actor_role": "agent" if i % 2 else "customer",
+                "direction": "outbound" if i % 2 else "inbound",
+                "source_object": "EmailMessage",
+                "subject": "Re: extract",
+                "body": f"Reply number {i}.",
+                "body_len": 16,
+            }
+        )
+        for i in range(n)
+    ]
+    return warehouse
+
+
+def test_a_long_thread_shows_both_ends_and_folds_the_middle(render, warehouse):
+    """Oldest-first and flat optimises for reading a case from the beginning,
+    which is the rarest thing anyone does with an active one. The opening says
+    how it arrived and who picked it up; the tail is where the case is now."""
+    _long_thread(warehouse, 60)
+
+    tree = render(case_detail.comment_stream, warehouse.header)
+    text = tree.text
+
+    assert "Reply number 0." in text, "the opening is missing"
+    assert "Reply number 59." in text, "the latest is missing"
+    assert "Reply number 30." not in text, "the middle was not folded"
+    folded = 60 - case_detail.THREAD_HEAD - case_detail.THREAD_TAIL
+    assert f"{folded:,} earlier replies" in text
+
+
+def test_a_short_thread_is_not_folded(render, warehouse):
+    """A fold that hides fewer entries than it shows is one more control
+    saying nothing."""
+    _long_thread(warehouse, case_detail.FOLD_ABOVE)
+
+    text = render(case_detail.comment_stream, warehouse.header).text
+
+    assert "earlier replies" not in text
+    assert "Reply number 0." in text and f"Reply number {case_detail.FOLD_ABOVE - 1}." in text
+
+
+def test_the_months_are_marked(render, warehouse):
+    """The cheapest orientation a long thread can be given: on a case that ran
+    from April to September it turns a scroll position into a date."""
+    _long_thread(warehouse, 60)
+
+    text = render(case_detail.comment_stream, warehouse.header).text
+
+    assert "Apr 2026" in text
+    assert "Jun 2026" in text, "the tail did not say where it resumes"
+
+
+def test_the_request_is_pinned_and_not_repeated_as_a_turn(render, warehouse):
+    """The intake form arrives as the description *and* as the first turn — the
+    same payload, stored twice by the integration, and the longest thing on the
+    case. Pinned once, above the thread."""
+    import datetime as dt
+
+    from casefinder.models import CaseHeader, Comment
+
+    payload = synthetic.intake_payload()
+    warehouse.header = CaseHeader.from_row(
+        {"case_id": "1", "case_number": "CASE-1", "subject": "Registry linkage",
+         "description": payload, "status": "Open"}
+    )
+    warehouse.comments = [
+        Comment.from_row({"turn_seq": 1, "turn_ts": dt.datetime(2026, 4, 23), "body": payload,
+                          "who": synthetic.SUPPORT_ALIAS, "source_object": "EmailMessage"}),
+        Comment.from_row(
+            {"turn_seq": 2, "turn_ts": dt.datetime(2026, 4, 24), "who": synthetic.OWNER,
+             "body": "Picking this up.", "source_object": "CaseComment"}
+        ),
+    ]
+
+    tree = render(case_detail.comment_stream, warehouse.header)
+
+    assert "The request" in tree.text, "the request is not pinned"
+    assert "1 entries" in tree.text or "1 entry" in tree.text.replace("1 entries", "1 entry"), (
+        "the turn repeating the request stayed in the thread"
+    )
+    assert "Picking this up." in tree.text
+
+
+def test_the_conversation_reads_at_two_densities(render, warehouse):
+    """What used to be the Messages tab, and its own scan of the body column."""
+    _long_thread(warehouse, 6)
+
+    full = render(case_detail.comment_stream, warehouse.header).text
+    assert "Reply number 3." in full
+
+    ui_state.state.comments_compact = True
+    compact = render(case_detail.comment_stream, warehouse.header)
+    assert "Re: extract" in compact.text, "the compact reading lost the subject"
+    assert compact.with_class("cf-turn-line"), "the compact reading is not one line a turn"
+
+
+def test_the_written_request_comes_before_the_ticked_boxes(render):
+    """The narrative is the request; the fields that survive reconciliation are
+    answers to checkbox prompts beside it. Leading with them buried the three
+    paragraphs anybody actually opened the case to read."""
+    tree = render(intake_form.body, synthetic.intake_payload())
+
+    wanted = {"cf-form-text", "cf-form-grid"}
+    order = [e for e in tree.elements if wanted & set(getattr(e, "_classes", []))]
+    kinds = ["text" if "cf-form-text" in e._classes else "grid" for e in order]
+    assert kinds, "the request drew neither prose nor fields"
+    assert kinds.index("text") < kinds.index("grid"), "the checkboxes came first"
+
+
+def test_the_pinned_request_says_who_filed_it_and_when(render, warehouse):
+    """Lifting the submission out of the thread takes its author and timestamp
+    with it, and those are the first things a reader checks against the replies
+    below."""
+    import datetime as dt
+
+    from casefinder.models import CaseHeader, Comment
+
+    warehouse.header = CaseHeader.from_row(
+        {"case_id": "1", "case_number": "CASE-1", "subject": "Registry linkage",
+         "status": "Open", "description": "On Apr 23, 2026 Dana wrote: see below."}
+    )
+    warehouse.comments = [
+        Comment.from_row(
+            {"turn_seq": 1, "who": synthetic.SUPPORT_ALIAS,
+             "turn_ts": dt.datetime(2026, 4, 23, tzinfo=dt.timezone.utc),
+             "body": synthetic.intake_payload()}
+        ),
+    ]
+
+    text = render(case_detail.comment_stream, warehouse.header).text
+
+    # The requester's own name, not the support alias the integration files
+    # these submissions under.
+    assert synthetic.REQUESTER in text
+    assert "web intake" in text
+    assert "Apr 23, 2026" in text

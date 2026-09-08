@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **522 passing**, ~1.8 s, no network access required |
+| Automated tests | **616 passing**, ~2.7 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery, ~54 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
@@ -45,37 +45,43 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-7,417 lines across 27 modules.
+8,995 lines across 33 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
-| `queries.py` | 784 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
-| `ui/lists.py` | 601 | §6.2 — triage lists, filters, saved views, paging, CSV. |
-| `models.py` | 590 | Typed rows; the single place that decides how a missing value is displayed. |
+| `queries.py` | 786 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
+| `models.py` | 710 | Typed rows; the single place that decides how a missing value is displayed. |
 | `ui/reconnect.py` | 566 | What the window says, and offers, when the program behind it stops answering (D20, D21). |
-| `ui/shell.py` | 503 | §3.1 — rail, content region, era indicator, error surfaces. |
-| `ui/case_detail.py` | 499 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
-| `ui/search.py` | 425 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
-| `data.py` | 320 | The UI↔query seam: builder + cache + model, one function per page need. |
+| `ui/case_detail.py` | 750 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
+| `ui/lists.py` | 444 | §6.2 — the triage list, its filters, its paging and its CSV. |
+| `bq.py` | 469 | One client, byte caps, cost estimates, and the two-stage read-only guard. |
+| `ui/search.py` | 434 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
+| `data.py` | 350 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 297 | Saved views, and the allowlist of what may be persisted. |
-| `bq.py` | 261 | One client, byte caps, cost estimates, the read-only guard. |
-| `ask.py` | 231 | §6.5 — question in, SQL out; nothing else in the prompt. |
-| `intake.py` | 225 | Reads the serialised intake form out of a case body (D15). Pure. |
+| `ask.py` | 248 | §6.5 — question in, SQL out; nothing else in the prompt. |
+| `ui/theme.py` | 346 | §3.3 — the visual language, and the two ways a stylesheet reaches a page. |
+| `cache.py` | 302 | TTL cache with no disk backend, deliberately. Bounded, reaped, single-flight. |
+| `intake.py` | 449 | Reads the serialised intake form out of a case body (D15). Pure. |
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
-| `ui/ask_page.py` | 214 | §6.5 UI — generate, review, then run. |
-| `ui/components/filters.py` | 203 | The compact filter row and its disclosure. |
-| `config.py` | 202 | Every environment variable and its default. |
+| `config.py` | 216 | Every environment variable and its default. |
+| `ui/ask_page.py` | 215 | §6.5 UI — generate, review, then run. |
+| `ui/components/filters.py` | 295 | The compact filter row and its disclosure. |
+| `ui/sql_page.py` | 192 | §6.6 — free-form SQL with a priced dry run. |
 | `window.py` | 192 | What the native window can still do once the server behind it has gone (D21). |
-| `ui/sql_page.py` | 190 | §6.6 — free-form SQL with a priced dry run. |
-| `ui/settings.py` | 168 | §6.7 — era, connection, Ask availability, about. |
-| `main.py` | 161 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
-| `cache.py` | 110 | TTL cache with no disk backend, deliberately. |
+| `main.py` | 183 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
+| `ui/settings.py` | 182 | §6.7 — era, connection, Ask availability, about. |
+| `ui/shell.py` | 156 | §3.1 — the navigation rail, the content region, and the connection gate. |
+| `ui/list_columns.py` | 140 | What a list row shows, and the order columns give way in (D16). |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
-| `ui/components/intake_form.py` | 97 | Draws what `intake.py` parsed — as labels, never as HTML. |
+| `ui/components/intake_form.py` | 176 | Draws what `intake.py` parsed — as labels, never as HTML. |
+| `ui/state.py` | 100 | §4.5 — what the reader has asked for, held between renders. |
 | `ui/components/pager.py` | 88 | The range line and its two arrows; one pager for every paged screen. |
-| `ui/components/metadata.py` | 69 | The flat metadata strip that replaced five metric cards. |
+| `ui/saved_views.py` | 76 | §6.2 — the Saved Views screen, reachable from the selector not the rail. |
+| `ui/components/metadata.py` | 101 | The flat metadata strip that replaced five metric cards. |
+| `ui/components/actions.py` | 66 | The action vocabulary; `primary()` is the only filled button in the app. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
 | `ui/components/freshness.py` | 38 | The stale-snapshot banner. |
+| `ui/errors.py` | 36 | §12 — one plain sentence, with the raw text one disclosure away. |
 
 ### The layering rule
 
@@ -129,7 +135,7 @@ added without invariant coverage cannot pass silently.
 | Losing the window's own connection to the app | D20 | `ui/reconnect.py`, `main.py` | `test_reconnect.py` |
 | Getting out of a window whose app has gone | D21 | `window.py`, `ui/reconnect.py`, `main.py` | `test_window.py`, `test_reconnect.py` |
 | Ask: layout, Enter, no case data, review, guards, availability | FR-ASK-1..7 | `ask.py`, `ui/ask_page.py` | `test_ask.py` |
-| SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` | `test_read_only.py` |
+| SQL: layout, read-only, errors | FR-SQL-1..4 | `ui/sql_page.py`, `bq.assert_read_only` + `bq.plan` | `test_read_only.py`, `test_bq.py` |
 | Settings | §6.7 | `ui/settings.py` | `test_visual.py` |
 
 ### Lean UI — Appendix B
@@ -171,7 +177,7 @@ process.
 | IAM is the gate (§9.2) | the app adds no authorisation logic of its own |
 | No PHI at rest (§9.3) | `cache.py` has no disk backend; CSV is metadata-only; nothing to Gemini but the question and a static schema |
 | Saved-view rule (§9.3) | `views.py` serialises from an explicit field allowlist and rejects unknown keys |
-| Read-only (§9.4) | every submitted query passes `assert_read_only`, including generated SQL |
+| Read-only (§9.4) | every submitted query passes `assert_read_only`, and every query the app did not write is then refused unless BigQuery's own dry-run `statement_type` is `SELECT` — including generated SQL. See D23. |
 | Escape-then-highlight (§9.5) | snippets are HTML-escaped, then marked; tested with markup in the search term |
 | Loopback only (§9.6) | `127.0.0.1` on a free port; no `0.0.0.0`, no on-air, no tunnel in launch code |
 | Bounded spend (§8, §12) | 4 GiB scanned and 120 s of runtime per job, both enforced by BigQuery rather than by the app |
@@ -191,8 +197,8 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Fourteen departures from the specification. Each names what the spec says, what
-was built, and why.
+Thirty-one departures from the specification. Each names what the spec says,
+what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
 
@@ -296,7 +302,9 @@ release screenshots on both platforms stays a manual release step.
 **Spec:** §9.4 orders the checks: strip comments, reject empty, reject
 multi-statement, **require `SELECT` or `WITH`**, **reject mutation keywords**.
 
-**Built:** the last two are inverted — keyword check before shape check.
+**Built:** the last two are inverted — keyword check before shape check. The
+whole scan later became a pre-filter in front of BigQuery's own verdict; see
+D23.
 
 **Why:** §12 requires that mutation SQL be rejected *naming the offending
 keyword*. In the specified order, `DELETE FROM dim_case` fails the shape check
@@ -357,11 +365,11 @@ enforced by BigQuery, so the job is genuinely cancelled.
 to 120 seconds; the ceiling only ever fires on free-form or generated SQL, which
 is where the spec already expects guardrails to be visible.
 
-### D9 — four environment variables beyond the §10 table
+### D9 — seven environment variables beyond the §10 table
 
 **Spec:** §10 tabulates the configuration surface.
 
-**Built:** four additions.
+**Built:** seven additions.
 
 | Variable | Default | Why |
 |---|---|---|
@@ -369,8 +377,11 @@ is where the spec already expects guardrails to be visible.
 | `CASEFINDER_FACET_CACHE_TTL` | 3600 | Filter values change on the warehouse's load cadence, not on the 15-minute result cadence. Re-querying them every 15 minutes buys nothing and costs a visible pause on the filter row. |
 | `CASEFINDER_PERSONAL_VIEWS_PATH` | per-OS app data dir | §11.5 requires the personal saved-view file to be documented and separable for uninstall. Overriding its location is what makes that testable without writing to a real user profile. |
 | `CASEFINDER_ASK` | false | Whether the natural-language mode is offered at all — see D14. |
+| `CASEFINDER_CACHE_MAX_ENTRIES` | 150 | The ceiling on the result cache — see D24. Entries rather than bytes, because sizing a Python object graph is expensive and inaccurate. |
+| `CASEFINDER_FACET_CACHE_MAX_ENTRIES` | 32 | The same ceiling for the facet cache, which holds one entry per era and scope. |
+| `CASEFINDER_CACHE_REAP_SECONDS` | 60 | How long a value that may no longer be served stays in memory — see D24. `0` disables the sweep. |
 
-Both have working defaults; neither needs to be set.
+Every one has a working default; none needs to be set.
 
 ### D10 — pages warm independent queries concurrently
 
@@ -813,9 +824,9 @@ Three things it touched that the other five did not:
   1248px window, and at 1220 it silently wrapped onto a second line. A wrapped
   row is worse than the disclosure FR-LIST-7 provides for exactly this, so
   `NARROW_PX` moved from 1180 to 1260 with the control that caused it.
-- The jump goes through `_apply_view` rather than writing the filters directly,
-  because `lists.render` re-applies the default view whenever the column list is
-  empty — which it is until Lists has been visited once in a session. Setting
+- The jump goes through `ListState.apply` rather than writing the filters
+  directly, because `lists.render` re-applies the default view whenever the
+  column list is empty — which it is until Lists has been visited once in a session. Setting
   the filters by hand would have worked on every visit but the first.
 
 **Effect on requirements:** FR-LIST-6's count is now six; nothing else in it
@@ -829,6 +840,373 @@ typed into a case. It is called out in `views._PERSISTABLE` rather than waved
 through, and if that judgement is ever revisited, dropping `"owners"` from
 `_PERSISTABLE_FILTERS` makes existing files stop honouring it on load — which is
 the withdrawal path §9.3 asks for, and which has a test.
+
+### D23 — the read-only guard asks BigQuery rather than only the text
+
+**Spec:** §9.4 defines the guard as a scan of the query text: strip comments,
+reject empty, reject multi-statement, reject mutation keywords, require a
+`SELECT` or `WITH` prefix.
+
+**Built:** that scan, plus a second check that decides. `run(preflight=True)`
+already pays for a dry run to price the query; a dry-run job also reports
+`statement_type`, which is BigQuery's own reading of what was submitted.
+Anything that is not `SELECT` is refused, and `bq.plan` is the single entry
+point that does both so neither check can be acquired without the other. The
+text scan stayed, as a pre-filter: it refuses a pasted `DELETE FROM dim_case`
+without a round trip to a warehouse holding a writable credential, and it names
+the keyword, which a parser verdict cannot.
+
+**Why:** scanning text for keywords cannot tell a statement from a string that
+contains its name. The guard refused
+`WHERE STRPOS(LOWER(body_clean), 'update') > 0` — a search for the word
+"update", which on a corpus of support cases is an ordinary thing to want — and
+`status = 'Call scheduled'`, and any literal holding a semicolon. It was worse
+on the Ask page, whose prompt tells the model to write exactly that shape: the
+application generated valid SQL and then rejected its own output as a mutation,
+which reads to a user as the model being broken.
+
+Blanking literals before the scan fixes the false positives, and `_scrub` does
+that in the same left-to-right pass that removes comments, because neither
+ordering works alone — comments can contain quotes and strings can contain
+`--`. It also learned `#`, which GoogleSQL accepts and the old scan did not, so
+`SELECT 1 # update later` was refused too.
+
+The parser check is what stops the next such gap from mattering, and it closes
+one the regex never covered: a multi-statement script reaches BigQuery as a
+single job whose statement type is `SCRIPT`.
+
+**Effect on requirements:** §9.4's step order is unchanged and still tested;
+what changes is that it is no longer the last word. A client that reports no
+statement type falls back to it, so an unavailable verdict is not a failing one.
+
+### D24 — the cache deletes what it expires, and is bounded
+
+**Spec:** §9.3 requires results to live in process memory only, with no disk
+backend.
+
+**Built:** that, and three properties it did not have. Expired entries are
+removed — by a reaper on a timer as well as on the next read of the key — rather
+than checked on read and otherwise left in the dictionary. Entries are capped
+and evicted least-recently-used first. A load already in flight for a key is
+shared rather than started again.
+
+**Why:** "no disk backend" was true and not sufficient. The retention policy
+this application states is the process lifetime, and expiry was only shadowing:
+a case body whose fifteen minutes had passed hours ago was still resident, and
+so was still reachable in a swap file or a crash dump. "Will not be served" and
+"has been deleted" are different promises, and the second is the one §9.3 is
+making. The reaper is a daemon thread started from `main` rather than a NiceGUI
+timer, because the case it exists for is an idle window.
+
+The cap is a separate concern with the same owner: a desktop window is open all
+day, every case opened adds entries, and nothing removed them. It counts
+entries rather than bytes — sizing a Python object graph is expensive and
+inaccurate, and a predictable ceiling is worth more here than a precise one.
+
+Single-flight was the cheapest of the three. The loader still runs outside the
+lock, so a slow query does not serialise the app; what the lock now holds is the
+*claim* on the key, so two clicks on the same case cost one 237 MB scan.
+
+### D25 — a cached page says so instead of replaying what it cost
+
+**Spec:** §5.4 asks for query cost to be shown when it is worth saying.
+
+**Built:** `Page` carries `served_from_memory`, set on the way out of the cache
+for the reader that got a hit. `is_trivial_cost` counts it as nothing worth
+saying, so the cost line disappears on a cached page rather than misreporting —
+the same treatment a BigQuery cache hit already got. `cost_note` answers
+"already loaded this session — free" for any caller that asks anyway, because a
+property that reports cost must not lie about it.
+
+**Why:** the Page is stored whole, including `bytes_processed`, so every
+revisit inside the TTL window reported *scanned 245 MB* at a reader who had just
+been handed a value out of a dictionary. That overstates the spend, and it makes
+a working cache look like it is not there — which is precisely the evidence
+anyone would use to decide whether the caching is worth keeping.
+
+`bytes_processed` still describes the query that produced the rows. The new
+field describes this request. Once a Page is cached the two are not the same
+thing, and the fix was to stop conflating them.
+
+### D26 — cache keys are read off the filter dataclass
+
+**Spec:** §7.2 requires each distinct question to have its own cache entry.
+
+**Built:** `data._filters_key`, which walks the dataclass with
+`dataclasses.astuple`, replacing the hand-written field lists in `triage` and
+`search`.
+
+**Why:** `triage` spelled out all seven `TriageFilters` fields under a comment
+explaining that a dimension missing from the list is not a stale entry but the
+wrong list under the right title — two owners sharing one key, and the second
+served the first one's rows. That is a correctness bug in an operational tool,
+and the mitigation was a test standing guard over a mistake the code invited.
+Deriving the key removes the opportunity: a field added to the dataclass is part
+of the key the moment it exists. The test now walks both filter classes and
+asserts the property rather than the field list.
+
+### D27 — the shell was four modules wearing one name
+
+**Spec:** §3.1 gives the shell the rail, the content region and the error
+surfaces.
+
+**Built:** `ui/theme.py` (the visual language and the two stylesheet
+installers), `ui/state.py` (§4.5 session state, and `ListState.apply`),
+`ui/errors.py` (§12), `ui/components/actions.py` (the button vocabulary), and
+`ui/shell.py` reduced to the rail, the layout and the connection gate.
+`ui/lists.py` likewise gave up its column catalogue to `ui/list_columns.py` and
+the Saved Views screen to `ui/saved_views.py`.
+
+**Why:** every other module in the project does one thing, which is what made
+these two conspicuous. The practical cost was in the imports: a component that
+wanted a colour, or a page that wanted a button, imported the navigation rail to
+get it, and `ui/lists.py` held two unrelated screens sharing nothing but an
+import list. `ListState.apply` moved with the state it writes — two screens open
+a saved view, and the second should not import the first to do it.
+
+**Effect on requirements:** none. The rules these modules enforce are unchanged
+and their tests are the same assertions against the same rendered trees; UX-T1
+still counts `cf-primary`, and the rail still refuses to grow a fifth
+destination.
+
+---
+
+### D28 — a preview is one line of prose, not a slice of the record
+
+**Spec:** FR-LIST-4 puts a description in the list, "truncated if width allows".
+§6.3 puts a matched snippet under each search result.
+
+**Built:** both go through `models.flatten` and `models.strip_leading_label`
+before they are shown. Full bodies do not.
+
+**Why:** two things were reaching the screen that say nothing about any case.
+
+The intake form serialises itself into a case body as JSON, so every newline
+the requester typed is stored as the two characters `\` and `n`. `intake.py`
+decodes them when it recognises the payload, which is why a case page reads
+correctly — but a search snippet is cut out of the middle of that same body
+with `SUBSTR` and never reaches the parser. Every snippet from a form-submitted
+case arrived with `...quality of care outcomes\n\nQuestion: Would like to
+request an update...` on screen, escapes and all, in prose that is otherwise
+perfectly readable. Found by looking at the running application; nothing in the
+suite drew a snippet from a real body.
+
+And `Summary:` opens very nearly every description in the corpus, so the first
+nine characters of the Description column were identical on every row — in the
+one column FR-LIST-4 refuses to let drop at narrow widths, which makes them the
+most expensive nine characters on the screen. The strip is an allowlist of the
+form's own field names rather than a general `Word:` rule, because a
+description opening `Question:` or `Availability:` is answering something and
+the label is the only thing that says what. Like `strip_attribution`, it never
+strips to nothing.
+
+**Effect on requirements:** none, and the line is deliberate. A preview is one
+flowing line and may be tidied; the body on the case page is left exactly as
+the record has it, so a body that really does contain a backslash and an `n` —
+pasted code, a Windows path — is still telling the truth where someone might
+act on it.
+
+---
+
+### D29 — the Funded column shortens a closed picklist to fit
+
+**Spec:** FR-LIST-4 lists funding status as a column, and the one column that
+may disappear at narrow widths.
+
+**Built:** `list_columns._SHORT`, three entries, on top of the existing
+`Funded - ` prefix strip.
+
+**Why:** measured before it was changed. `Funding_Status__c` holds eight values
+across the current era — 884 Unfunded, 367 not recorded, 325 Grant, 69
+Departmental/Gift, 25 Seeking Funding, 22 Funding Status Unknown, 16 Industry,
+5 Federal — plus a single free-text answer, summing to all 1,714 cases. It is a
+closed picklist, not the free-text field it looked like from the screen, and
+that is what makes an exhaustive map honest where a bucket would not be.
+
+Three of the eight did not fit 104px, and for two of them truncation produced
+something worse than a blank cell rather than merely shorter. `Departmental/
+Gift` became `Department…`, which reads as a department name two columns away
+from the Department column. `Funding Status Unknown` became `Funding Sta…`, an
+ellipsised copy of the column header, on the one value whose entire meaning is
+that nothing is known — the reader cannot tell it from a rendering fault. No
+width solves the second one; 22 characters was never going to fit a column the
+spec allows to be dropped entirely.
+
+**Effect on requirements:** none, and the boundary is deliberate. The map is
+display only: `_export_csv` reads the row rather than the cell, so the metadata
+CSV still carries `Funded - Departmental/Gift`; the cell's `title` carries the
+full value on hover; and `TriageFilters.funding` still matches the stored
+strings. Funding remains the dimension without a control (FR-LIST-6, pending
+SR-13) — when it gains one, the control has to offer the raw values, because a
+label that does not match the value it filters on is a lie about the list, and
+a test says so.
+
+The single free-text case is left exactly as stored. Constraining the intake
+form so a ninth value cannot be typed is a data-team change, not an app one.
+
+---
+
+### D30 — the filter chips are styled against Quasar, not on top of it
+
+**Spec:** §3.3 sets the visual language; FR-LIST-7 asks for one compact filter
+row.
+
+**Built:** the chip stylesheet rewritten — every selector three classes deep,
+the border and focus ring moved onto Quasar's own pseudo-elements, the floating
+label dropped for an accent state, the menu capped, and the tooltip moved above
+the control.
+
+**Why:** the row had five defects and only one of them was visible as a defect.
+They were found by photographing the rendered controls rather than by reading
+the file, which is the only way three of them could have been found at all.
+
+*The declared size was not the rendered size.* `.cf-select .q-field__control`
+is two classes, and so is Quasar's `.q-field--dense .q-field__control`; its
+stylesheet is served second, so every tie went to Quasar. The chip declared
+30px and rendered at 40px — while `.q-field__marginal`, which Quasar does not
+set for dense fields, kept the 30px it asked for, leaving the clear and
+dropdown icons five pixels above the centre of the control. Nothing errored and
+nothing looked wrong in isolation; the numbers in the file simply were not the
+numbers on the screen.
+
+*And sizing the control was not enough.* With the chip finally 30px, the text
+still sat low in it. `.q-field--dense .q-field__native` carries its own
+`min-height:40px`, which the rule styling the chip's text never touched — so
+the text box hung ten pixels out of the bottom of the control, and its own
+`align-items:center` centred the label in that box rather than in the pill.
+Every label in the row rendered five pixels below centre. The same class of
+mistake as the one above and a separate instance of it, which is why the test
+pins the text box and the control separately.
+
+*The palette was not being used.* Quasar paints an outlined field's border on
+`:before` and its focus ring on `:after`, so the `border` set on the control
+itself sat underneath both and was never seen. The row was outlined in
+`rgba(0,0,0,.24)` and focused in Quasar's blue — neither of which appears
+anywhere else in this application.
+
+*An empty chip and a filled one were different widgets.* With a value chosen,
+Quasar lifts the label into the border and stacks the value beneath it. There
+is nowhere for a label to go in a 30px pill with a 999px radius, so it landed
+on the curve. The label is gone; a chip now reads the dimension when nothing is
+chosen and the choice when something is, one line either way, and carries the
+accent treatment the rail already uses for "you are here". The dimension
+survives in `aria-label`, which is also what the tests look chips up by.
+
+*The menu was not the size of anything.* Left to itself it is as wide as its
+widest option, and one PI in this corpus is an entire study title — so a 170px
+chip opened a 438px menu that escaped the content area. Capped at 340px and
+wrapped rather than ellipsised, because the reader is choosing between these
+and has to be able to tell them apart.
+
+*The tooltip covered the menu it belonged to.* A tooltip under a control that
+opens its menu directly underneath lands on the menu's first option, and did:
+`Filter by pi` sat on top of the first PI in the list. It anchors above now,
+with a delay so it does not fire on the way to a click. The text also stopped
+lowercasing the label — the two labels that are acronyms, `PI` and `IRB /
+protocol`, are exactly the two a mechanical rule gets wrong.
+
+**Effect on requirements:** none. FR-LIST-7's row and disclosure are unchanged,
+and UX-INV-5's quiet status is better served: an active filter is now legible
+without reading its text. `test_visual.py` pins the specificity rule, the
+text-box height, the palette, the focus state, the menu cap and the tooltip
+anchor, and each of those assertions was checked by reintroducing the defect it
+describes.
+
+---
+
+### D31 — the case page is rebuilt around what a reader came for
+
+**Spec:** section 6.4 and FR-CASE-1..11 describe the case page as a header, a
+metadata grid, four tabs and a related-cases list, in that order.
+
+**Built:** the same content, reorganised around the question a support person
+arrives with rather than around where the data came from.
+
+**Why:** the old order was the order the data arrives — case fields, comments,
+messages, timeline, files, related — and every complaint about the page came
+out of that one decision.
+
+*The same payload rendered three times.* The web form arrives inside the case
+body, so Comments parsed it into a grid, the duplicate turn beside it parsed it
+again, and Timeline printed the raw JSON as the most prominent thing on the
+tab. `intake_form.body` is now the one reader every body goes through, the
+duplicate turn is dropped by `models.without_repeats`, and the turn that *is*
+the request is dropped by `_without_the_request` because the request is pinned
+above the thread instead.
+
+*And it was not always in the description.* The first version of this looked
+for the form there, which is where it sits on some cases and not on others —
+on a good many the description is pasted email and the form arrives as the
+first turn. Those cases kept the request exactly where it had always been:
+entry one of a hundred and fifteen. `_submission` now takes the first thing
+that parses, description first, wherever the integration filed it.
+
+*Seven more of its fields described the person, not the request.* A name split
+across two fields, an address, a telephone number, a rank, a department. They
+are in the rail now, under `Requester`, and `intake.mark_requester` stops the
+grid drawing them — the same fold, for the same reason, applied to the fields
+the case does not itself show.
+
+*And the request arrived as one paragraph.* Summary, Description and Question
+are three answers to three prompts and the integration concatenates them, with
+the requester's contact details appended after. `intake.sections` splits them
+back apart and drops the contact block, which the form has already collected in
+its own fields. Run together, the question is the part that disappears — and
+the question is what a support person is answering.
+
+*Nine of its fields were already on the page.* Subject was the title, PI name
+the PI, funding status the funding, origin "came in via". Five more were
+duplicated inside the form — an address as `Email` and `ContactEmail`, a SUNet
+id on both objects, a department under three names, two byte-identical queue
+blobs. `intake.reconcile` folds those away with a count and keeps the payload
+whole behind `Original record`. Twenty-eight fields become about ten.
+
+*And one of them was not a duplicate at all.* The form says the IRB protocol is
+`TBD`; the case says `41288`, approved. The requester filled the form before
+the protocol existed. Shown flat and hundreds of pixels apart, that read as the
+page repeating itself; it is now the one thing on the form that is marked.
+
+*A hundred and fifteen entries with no way through them.* Oldest-first and flat
+optimises for reading a case from the beginning, which is the rarest thing
+anyone does with an active one. The opening and the latest are drawn, the
+middle folds behind its own count and date span, and each change of month is
+marked — which on a case running April to September is the difference between
+a scroll position and a date.
+
+*Related cases below all of it.* Twenty-three of them after the thread, ranked
+by recency with the reason printed at the end of the row. They are in the rail
+now, grouped by relationship strength, strongest group open.
+
+**Effect on requirements:** three changes, all deliberate.
+
+FR-CASE-5 and FR-CASE-7 become one surface. Comments and Messages were the same
+rows at two densities — same table, same order, differing by a subject and a
+character count — and the second tab paid for its own ~256 MB scan of the body
+column to fetch them. `comments_stream` now carries both, `case_messages` is
+gone, and the density is a control inside the conversation. A reader who
+switches to the index reading pays nothing.
+
+FR-CASE-10 ranks by strength rather than recency, and moves to the rail.
+
+FR-CASE-3's em dashes are gone from the rail. That rule is right for the grid
+it was written for — four attributes across a reading column, in fixed
+positions, where a blank cell and a missing row look different. A rail is one
+column with no fixed positions, so an unrecorded Type costs a whole line of a
+panel that also has to hold the related cases, and Type and Reason are
+unrecorded on most cases in this corpus. Nothing is hidden: the values are
+still on the case, and there were none.
+
+FR-CASE-2's metric strip is gone. Status, owner and age moved to an identity
+bar that stays put at every scroll position, which is where they are actually
+needed on a long thread; the rest is in the rail. UX-INV-6 still holds — the
+rail is one column of label/value pairs, and `test_ui_actions` still asserts
+that nothing on the page is a card.
+
+UX-INV-4 holds too, on the thread column rather than on the page: the page is
+now two things, prose that has to stay narrow and a rail that is chrome. Below
+1180px the rail folds above the thread, the same move the filter row makes at
+its own breakpoint, because a 1024px window less a 280px rail is not a reading
+measure.
 
 ---
 

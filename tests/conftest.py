@@ -170,11 +170,11 @@ def render(no_warehouse, no_vertex) -> Callable[..., Tree]:
 def fresh_ui_state():
     """Reset the UI singleton between tests.
 
-    `shell.state` is a module-level object other modules imported by value, so
-    it is reset in place rather than replaced — rebinding the name would leave
-    every page holding the old one.
+    `ui.state.state` is a module-level object other modules imported by value,
+    so it is reset in place rather than replaced — rebinding the name would
+    leave every page holding the old one.
     """
-    from casefinder.ui.shell import State, state
+    from casefinder.ui.state import State, state
 
     saved = dict(state.__dict__)
     state.__dict__.update(State().__dict__)
@@ -221,6 +221,10 @@ def no_vertex(monkeypatch):
     monkeypatch.setattr(ask, "_CLIENT", None)
     monkeypatch.setattr(ask, "_MODEL_NAME", None)
     monkeypatch.setattr(ask, "_PROBE_FAILURE", "Vertex AI is not reachable from this test.")
+    # Retry and "Clear cached results" now forget the probe, which is the point
+    # of `ask.reset`. In a test that would clear the failure set above and send
+    # the next `available()` at the real network, so the reset is a no-op here.
+    monkeypatch.setattr(ask, "reset", lambda: None)
 
 
 # --------------------------------------------------------------------------
@@ -303,7 +307,6 @@ class FakeWarehouse:
         self.stranded_past: int | None = None
         self.header: Any = _header()
         self.comments: list[Any] = []
-        self.messages: list[Any] = []
         self.timeline: list[Any] = []
         self.attachments: list[Any] = []
         self.related: list[Any] = []
@@ -393,7 +396,6 @@ class FakeWarehouse:
         monkeypatch.setattr(data, "corpus_size", record("corpus_size", 1714))
         monkeypatch.setattr(data, "case_header", record("case_header", lambda: self.header))
         monkeypatch.setattr(data, "comments", record("comments", lambda: self.comments))
-        monkeypatch.setattr(data, "messages", record("messages", lambda: self.messages))
         monkeypatch.setattr(data, "timeline", record("timeline", lambda: self.timeline))
         monkeypatch.setattr(
             data, "attachments", record("attachments", lambda: self.attachments)

@@ -22,7 +22,7 @@ What is actually true underneath, because the advice has to match it:
 * NiceGUI keeps a disconnected client for `reconnect_timeout` (3s by default)
   and then deletes its element tree. Reconnecting after that fails the
   handshake, and `nicegui.js` reloads the page. Also fine: page state lives in
-  `shell.state`, which is process-global, so the reload lands back where it was.
+  `ui/state.py`'s singleton, which is process-global, so the reload lands back where it was.
 * If the server process is gone, none of that can ever succeed. In native mode
   the window is a `daemon=True` child of the server process, and a daemon child
   only dies with a parent that exits cleanly — kill the server and the window is
@@ -555,7 +555,7 @@ def install() -> None:
     """Put the notice in the head of every page, once per process.
 
     Shared rather than per-client, and at startup rather than on first draw,
-    for the reason `shell.register_css` spells out: a client's own head is
+    for the reason `theme.register_css` spells out: a client's own head is
     composed when its page function returns, and this has to be in the document
     that gets served, not sent down the socket that is the thing at risk.
     """

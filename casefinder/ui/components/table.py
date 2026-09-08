@@ -21,7 +21,7 @@ from typing import Any
 
 from nicegui import ui
 
-from ..shell import ACCENT, CLICK_UNLESS_SELECTING, LINE, MUTED, register_css
+from ..theme import ACCENT, CLICK_UNLESS_SELECTING, LINE, MUTED, register_css
 
 
 @dataclass(frozen=True)

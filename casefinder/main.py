@@ -21,8 +21,17 @@ import socket
 
 from nicegui import app, ui
 
-from . import config, window
-from .ui import ask_page, case_detail, lists, reconnect, search, settings, sql_page
+from . import cache, config, window
+from .ui import (
+    ask_page,
+    case_detail,
+    lists,
+    reconnect,
+    saved_views,
+    search,
+    settings,
+    sql_page,
+)
 from .ui.shell import gated
 
 HOST = "127.0.0.1"
@@ -49,8 +58,8 @@ def lists_page() -> None:
 
 
 @ui.page("/views")
-def saved_views() -> None:
-    gated("lists", lists.render_saved_views)
+def saved_views_route() -> None:
+    gated("lists", saved_views.render)
 
 
 @ui.page("/case/{case_number}")
@@ -103,7 +112,7 @@ def _window_args() -> dict[str, object]:
     Copy summary, which copies the entire case, or retyping it.
 
     The place to fix it is here rather than in CSS. Being a rule appended late
-    to the head, it wins on source order against anything `shell.theme` writes,
+    to the head, it wins on source order against anything `ui.theme` writes,
     so a stylesheet could only argue with `!important` — and losing that
     argument is silent.
 
@@ -128,6 +137,11 @@ def main() -> None:
     # one part of the application that has to survive the socket going down, so
     # it cannot be something a page sends over that socket — see `ui/reconnect`.
     reconnect.install()
+    # Expired entries hold case bodies until something deletes them, and an
+    # idle window never asks for anything that would. Started here rather than
+    # at import so that neither the tests nor the native window subprocess —
+    # both of which import the package — quietly gain a thread.
+    cache.start_reaper()
     # Read before the window process is spawned, so that process does not
     # inherit a promise only this one can keep. If we were started by a window
     # whose own server had died, that window is still on screen holding the
@@ -141,6 +155,14 @@ def main() -> None:
         # and a client connecting is exactly that.
         app.on_connect(lambda: window.announce(token))
     app.native.window_args.update(_window_args())
+    # `window_size` is passed only in native mode, and that is not tidiness.
+    # NiceGUI reads a window size as a request for a window: `ui_run` sets
+    # `native = True` whenever `window_size` is given, whatever the `native`
+    # argument says. Passing it unconditionally meant `CASEFINDER_NATIVE=0`
+    # still opened the platform webview — so the one documented escape hatch
+    # for a machine whose webview is broken led straight back into it, which is
+    # the failure it exists to route around. `test_window` pins this.
+    sizing = {"window_size": config.WINDOW_SIZE} if config.NATIVE else {}
     ui.run(
         host=HOST,
         port=_free_port(),
@@ -148,10 +170,10 @@ def main() -> None:
         native=config.NATIVE,
         reload=False,
         show=not config.NATIVE,
-        window_size=config.WINDOW_SIZE,
         favicon="🔎",
         dark=False,
         storage_secret=None,
+        **sizing,
     )
 
 

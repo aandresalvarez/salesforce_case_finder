@@ -23,12 +23,14 @@ from ..config import ERAS
 from ..data import Page
 from ..models import SearchHit, Snippet, show
 from ..queries import SORTS, Filters, parse_terms
-from . import shell
+from . import errors, theme
 from .components import filters as filter_ui
 from .components import loading
 from .components import pager as pager_ui
+from .components.actions import muted
 from .components.empty_state import empty
-from .shell import MUTED, muted, state
+from .state import state
+from .theme import MUTED
 
 CASE_NUMBER = re.compile(r"^\s*(CASE-\d+)\s*$", re.IGNORECASE)
 
@@ -167,7 +169,7 @@ def _idle() -> None:
             "Loading filters…",
             _facets,
             lambda _: idle_controls(),
-            on_error=shell.error_region,
+            on_error=errors.error_region,
             center=True,
         )
         muted(
@@ -210,8 +212,8 @@ def results() -> None:
     loading.while_loading(
         "Searching…",
         lambda: _fetch(terms),
-        lambda page: _found(terms, page),
-        on_error=shell.error_region,
+        lambda found: _found(terms, *found),
+        on_error=errors.error_region,
     )
 
 
@@ -229,30 +231,37 @@ def _ask(terms: list[str], offset: int) -> Page:
     )
 
 
-def _fetch(terms: list[str]) -> Page:
+def _fetch(terms: list[str]) -> tuple[Page, int]:
     """Every warehouse call the result needs, made off the event loop.
 
     The corpus size is in here and not left to `_boilerplate_warning` because
     that runs while the page is being drawn, and a round trip there is a round
     trip with nothing on the screen to say so. It goes out alongside the search
     rather than after it, so the two cost one wait between them.
+
+    Returns the page *and* the offset it was actually read at, rather than
+    writing that offset back to `state`. This function runs in a worker thread
+    — `loading.while_loading` hands it to `run.io_bound` — and the session `state` is
+    owned by the event loop. Whoever draws the result applies it there, in the
+    same pass that renders the pager describing it.
     """
-    search = state.search
+    offset = state.search.offset
     data.prefetch(
-        lambda: _ask(terms, search.offset),
+        lambda: _ask(terms, offset),
         lambda: data.corpus_size(state.era),
     )
 
-    page = _ask(terms, search.offset)
-    if not page.rows and search.offset:
+    page = _ask(terms, offset)
+    if not page.rows and offset:
         # Same fallback the lists page makes: a page past the end of a result
         # that moved is a first page, not an empty search.
-        search.offset = 0
-        page = _ask(terms, 0)
-    return page
+        offset = 0
+        page = _ask(terms, offset)
+    return page, offset
 
 
-def _found(terms: list[str], page: Page) -> None:
+def _found(terms: list[str], page: Page, offset: int) -> None:
+    state.search.offset = offset
     if not page.rows:
         quoted = " and ".join(f"“{t}”" for t in terms) if terms else "these filters"
         empty(
@@ -372,11 +381,11 @@ def _result_card(hit: SearchHit) -> None:
     button here.
     """
     with ui.column().classes("w-full cf-row").style(
-        "gap:3px; padding:13px 12px; border-bottom:1px solid " + shell.LINE
+        "gap:3px; padding:13px 12px; border-bottom:1px solid " + theme.LINE
     ).on(
         "click",
         lambda: ui.navigate.to(f"/case/{hit.case_number}"),
-        js_handler=shell.CLICK_UNLESS_SELECTING,
+        js_handler=theme.CLICK_UNLESS_SELECTING,
     ):
         with ui.row().classes("w-full items-baseline justify-between").style("gap:12px"):
             ui.label(hit.case_number).classes("cf-casenum")

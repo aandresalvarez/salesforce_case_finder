@@ -8,6 +8,10 @@ Two rules hold everywhere in this module:
 2. Every job carries `maximum_bytes_billed`. If a query would scan more than the
    cap, BigQuery refuses to start it. A mistake then costs nothing rather than
    an unbounded amount.
+3. Query text the app did not write is judged read-only by BigQuery's own
+   parser, not by a regex over the text. See `assert_read_only` and
+   `_assert_is_a_query` for why the regex alone was both too strict and, in
+   principle, too weak.
 """
 
 from __future__ import annotations
@@ -151,10 +155,52 @@ def _job_config(
     return cfg
 
 
-def estimate_bytes(sql: str, params: Sequence[ScalarQueryParameter] | None = None) -> int:
-    """Return bytes a query would scan, without running it. Costs nothing."""
+@dataclass(frozen=True)
+class DryRun:
+    """What BigQuery says about a query it has planned but not run.
+
+    Two answers come back from the same free round trip, and both are needed
+    before free-form text is allowed to execute: how much it would scan, and
+    what kind of statement BigQuery parsed it as.
+    """
+
+    bytes_processed: int
+    statement_type: str | None
+
+
+def dry_run(sql: str, params: Sequence[ScalarQueryParameter] | None = None) -> DryRun:
+    """Plan a query without running it. Costs nothing and scans nothing.
+
+    Safe to call on text that has not been proved read-only: a dry run parses
+    and plans, and does not execute — which is what makes it usable as the
+    read-only check rather than only as the cost check.
+    """
     job = get_client().query(sql, job_config=_job_config(params, dry_run=True))
-    return int(job.total_bytes_processed or 0)
+    return DryRun(
+        bytes_processed=int(job.total_bytes_processed or 0),
+        # `getattr` rather than attribute access: the field is populated by the
+        # API, and a client old enough not to surface it should degrade to the
+        # syntactic guard rather than crash.
+        statement_type=getattr(job, "statement_type", None),
+    )
+
+
+def plan(sql: str, params: Sequence[ScalarQueryParameter] | None = None) -> DryRun:
+    """Dry-run query text the app did not write, and refuse a non-query.
+
+    The single entry point for untrusted SQL: one free round trip that answers
+    both questions the caller has to ask before executing it. `run(preflight=)`
+    and the SQL page's cost button both come through here, so neither can
+    acquire the cost check without the read-only check.
+
+    `dry_run` is the unguarded half and stays that way on purpose — it is how
+    the app measures the cost of queries it wrote itself, where there is
+    nothing to guard against. Nothing should reach it with text a user typed;
+    that is what this function is for.
+    """
+    planned = dry_run(sql, params)
+    _assert_is_a_query(planned.statement_type)
+    return planned
 
 
 def run(
@@ -174,11 +220,15 @@ def run(
     query text is not one we wrote.
     """
     if preflight:
-        planned = estimate_bytes(sql, params)
-        if planned > config.MAX_BYTES_BILLED:
+        # `plan` refuses a non-query before the cost is even considered. Both
+        # outcomes stop the job, but "this is not a query" is the more specific
+        # thing we know, and a mutation that happened to be large should not be
+        # reported to the user as an expense.
+        planned = plan(sql, params)
+        if planned.bytes_processed > config.MAX_BYTES_BILLED:
             raise CostError(
-                f"This query would scan {planned / 1024**3:,.1f} GB, over the "
-                f"{config.MAX_BYTES_BILLED / 1024**3:,.1f} GB safety cap. "
+                f"This query would scan {planned.bytes_processed / 1024**3:,.1f} GB, "
+                f"over the {config.MAX_BYTES_BILLED / 1024**3:,.1f} GB safety cap. "
                 "Narrow it with a date range or a more specific filter."
             )
 
@@ -220,22 +270,61 @@ def _looks_like_timeout(exc: Exception) -> bool:
 # --------------------------------------------------------------------------
 # Read-only enforcement for query text the app did not write
 # --------------------------------------------------------------------------
+#
+# Two checks, in this order, because they answer different questions:
+#
+#   `assert_read_only`   — syntactic, free, and runs before anything is sent.
+#                          Its job is to refuse the obvious with a message that
+#                          names the problem, without a round trip.
+#   `_assert_is_a_query` — authoritative. BigQuery parses the statement during
+#                          the dry run `run(preflight=True)` already pays for,
+#                          and reports what it parsed. That verdict decides.
+#
+# The syntactic check used to be the only one, and scanning raw text for
+# keywords cannot tell a statement from a string that merely contains its name.
+# It refused `WHERE STRPOS(LOWER(body_clean), 'update') > 0` — a search for the
+# word "update", which on a support-case corpus is an ordinary thing to want —
+# and `status = 'Call scheduled'`, and any literal holding a semicolon. Worse
+# for the Ask page, whose prompt tells the model to write exactly that shape:
+# the app generated valid SQL and then refused its own output as a mutation.
+#
+# Blanking literals before the scan fixes those. Handing the final say to the
+# parser is what stops the next such gap from mattering — and it closes one the
+# regex never covered, since a multi-statement script reaches BigQuery as a
+# single job whose statement type is SCRIPT rather than SELECT.
 
+# Every one of these begins a statement in GoogleSQL and none of them is also
+# the name of a function, which is the test for belonging here. `REPLACE` used
+# to be on the list and is not a statement at all: it is a string function, and
+# a modifier of `SELECT *`. It refused `SELECT REPLACE(body_clean, 'x', 'y')`
+# and `SELECT * REPLACE (LOWER(status) AS status) FROM t`, neither of which
+# blanking literals helps with, because the keyword is genuinely in the
+# statement. `CREATE OR REPLACE ...` is still refused, on the `CREATE`.
 _FORBIDDEN = re.compile(
     r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|"
-    r"REPLACE|EXPORT|LOAD|CALL|BEGIN|COMMIT|ROLLBACK)\b",
+    r"EXPORT|LOAD|CALL|BEGIN|COMMIT|ROLLBACK)\b",
     re.IGNORECASE,
 )
 
+# The characters that may precede a quote and still belong to the literal:
+# `r` for raw, `b` for bytes, in either case and either order.
+_STRING_PREFIX = "rbRB"
+
 
 def assert_read_only(sql: str) -> None:
-    """Reject anything that is not a single read.
+    """Reject anything that is not a single read, cheaply and before sending.
 
     The credentials the app runs under may well be able to write. Nothing in
     this app ever should, so mutations are refused here rather than relying on
     every user having read-only grants.
+
+    This is a pre-filter, not the verdict — `_assert_is_a_query` has the last
+    word once BigQuery has parsed the text. Keeping the cheap check means a
+    pasted `DELETE FROM dim_case` is refused without a round trip to a
+    warehouse holding a writable credential, and with a message naming the
+    keyword rather than quoting a parser.
     """
-    stripped = _strip_sql_comments(sql).strip().rstrip(";").strip()
+    stripped = _scrub(sql).strip().rstrip(";").strip()
     if not stripped:
         raise ValueError("Empty query.")
     if ";" in stripped:
@@ -254,8 +343,127 @@ def assert_read_only(sql: str) -> None:
         raise ValueError("Only SELECT queries are allowed.")
 
 
-def _strip_sql_comments(sql: str) -> str:
-    """Remove comments so keywords cannot be smuggled past the check inside them."""
-    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-    sql = re.sub(r"--[^\n]*", " ", sql)
-    return sql
+def _assert_is_a_query(statement_type: str | None) -> None:
+    """Refuse anything BigQuery did not parse as a query.
+
+    `statement_type` comes back from the dry run, so this costs nothing and is
+    exact where the keyword scan is an approximation: BigQuery is the only
+    party here that actually parses SQL.
+
+    `None` is not a failing verdict. It means the client did not report a type,
+    and the syntactic guard has already passed by the time this runs — so an
+    unavailable answer falls back to that rather than refusing a query for a
+    reason nobody can see.
+    """
+    if statement_type is None or statement_type.upper() == "SELECT":
+        return
+    kind = statement_type.replace("_", " ").upper()
+    raise ValueError(
+        f"BigQuery reads that as a {kind} statement rather than a query — "
+        "this app is read-only."
+    )
+
+
+def _scrub(sql: str) -> str:
+    """Blank out comments, string literals and quoted identifiers in one pass.
+
+    What comes back has the same statement *shape* and none of the content, so
+    a keyword or a semicolon still visible in it is really part of the
+    statement. Only ever used for inspection — the text sent to BigQuery is
+    untouched.
+
+    One pass rather than two regex passes, because comments and strings can
+    each contain the other's opening marker and neither ordering is right.
+    Stripping comments first cuts a legal one-line string that ends in a `--`
+    into a statement and a comment; blanking strings first reads the apostrophe
+    in `-- it's fine` as a quote and swallows the line after it. A scanner that
+    takes whichever construct starts first has no such ordering to get wrong.
+
+    An unterminated quote or backtick ends the scan: everything from it to the
+    end of the input is emitted verbatim, so every keyword and separator after
+    it stays visible to the checks. Continuing to scan would be worse than
+    useless — a later `#` would be read as a comment and would hide the rest of
+    the text, which is how `SELECT * FROM `t#a ; DROP TABLE u` slipped past.
+    Text with an unbalanced quote is not valid SQL anyway; the only question is
+    which way the guard fails on it, and this way is towards refusing.
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    while i < n:
+        if sql.startswith("/*", i):
+            end = sql.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+            out.append(" ")
+            continue
+        # `#` is a line comment in GoogleSQL as well as `--`, and was not
+        # handled before: `SELECT 1 # update later` was refused as an UPDATE.
+        # Ended by either newline character, because a lone `\r` ends a line on
+        # anything that came off a Windows editor via a clipboard.
+        if sql.startswith("--", i) or sql[i] == "#":
+            end = _end_of_line(sql, i)
+            i = n if end == -1 else end
+            out.append(" ")
+            continue
+        if sql[i] == "`":
+            end = sql.find("`", i + 1)
+            if end == -1:
+                out.append(sql[i:])
+                break
+            out.append("``")
+            i = end + 1
+            continue
+        if sql[i] in "'\"" or _looks_like_a_prefixed_string(sql, i):
+            end = _end_of_string(sql, i)
+            if end is None:
+                out.append(sql[i:])
+                break
+            out.append("''")
+            i = end
+            continue
+        out.append(sql[i])
+        i += 1
+    return "".join(out)
+
+
+def _end_of_line(sql: str, start: int) -> int:
+    """Index of the next line break of either kind, or -1."""
+    breaks = [sql.find(ch, start) for ch in ("\n", "\r")]
+    found = [i for i in breaks if i != -1]
+    return min(found) if found else -1
+
+
+def _looks_like_a_prefixed_string(sql: str, i: int) -> bool:
+    """Whether a literal with an r/b prefix starts here, e.g. `r'...'`."""
+    j = i
+    while j < i + 2 and j < len(sql) and sql[j] in _STRING_PREFIX:
+        j += 1
+    return j > i and j < len(sql) and sql[j] in "'\""
+
+
+def _end_of_string(sql: str, start: int) -> int | None:
+    """Index just past the string literal beginning at `start`, or None.
+
+    Triple quotes are tested before single ones, so a triple-quoted literal
+    containing a lone quote is read as one literal rather than as an empty one
+    followed by loose text. A backslash escapes the next character unless the
+    literal is raw, which is exactly when BigQuery says it does not.
+    """
+    i = start
+    while i < start + 2 and i < len(sql) and sql[i] in _STRING_PREFIX:
+        i += 1
+    if i >= len(sql) or sql[i] not in "'\"":
+        return None
+    raw = "r" in sql[start:i].lower()
+    quote = sql[i]
+    delimiter = quote * 3 if sql.startswith(quote * 3, i) else quote
+    j = i + len(delimiter)
+    while j < len(sql):
+        if sql[j] == "\\" and not raw:
+            j += 2
+            continue
+        if len(delimiter) == 1 and sql[j] in "\n\r":
+            return None  # a singly-quoted literal cannot span lines
+        if sql.startswith(delimiter, j):
+            return j + len(delimiter)
+        j += 1
+    return None  # unterminated
