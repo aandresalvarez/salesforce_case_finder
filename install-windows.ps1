@@ -13,6 +13,12 @@
 #>
 
 $ErrorActionPreference = 'Stop'
+# PowerShell 7.4 turned native-command exit codes into terminating errors under
+# `Stop`. This script's last act is to run the self-check and then say what its
+# result means, so on 7.4 a self-check that reported a problem would throw
+# before the advice printed — the same trap `set -e` set for the mac installer.
+# Exit codes are checked explicitly here instead; this keeps them codes.
+$PSNativeCommandUseErrorActionPreference = $false
 Set-Location -Path $PSScriptRoot
 
 function Write-Head($text) { Write-Host "`n$text" -ForegroundColor White }
@@ -92,11 +98,23 @@ if (Test-Path $adc) {
     Write-Ok 'application default credentials are present'
 } else {
     Write-Warn 'no application default credentials on this machine'
-    $reply = Read-Host '    Sign in now? [Y/n]'
-    if ($reply -match '^[Nn]') {
-        Write-Warn "skipped - run 'gcloud auth application-default login' before first use"
+    # Read-Host has no non-interactive form: run this script from a scheduled
+    # task or a pipe and it blocks forever on a prompt nobody can see. The mac
+    # installer already guarded its equivalent with `[ -t 0 ]`; this is that.
+    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+        $reply = Read-Host '    Sign in now? [Y/n]'
+        if ($reply -match '^[Nn]') {
+            Write-Warn "skipped - run 'gcloud auth application-default login' before first use"
+        } else {
+            # Cancelling the browser prompt exits non-zero, which is a choice
+            # and not an error. The self-check below reports it either way.
+            gcloud auth application-default login
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn 'sign-in did not complete - the self-check below will say so'
+            }
+        }
     } else {
-        gcloud auth application-default login
+        Write-Warn 'run this before first use:  gcloud auth application-default login'
     }
 }
 
@@ -105,48 +123,12 @@ if (Test-Path $adc) {
 # ---------------------------------------------------------------------------
 Write-Head '5. Self-check'
 
-# The webview runtime is the part of a Windows install most likely to be
-# missing, and it fails at window-open time rather than at install time — which
-# is exactly the failure the spec asks this script to catch early. On Windows
-# pywebview draws through Microsoft Edge WebView2, which ships with Windows 11
-# and current Windows 10 but not with older images.
-$check = @'
-import sys
-
-failures = 0
-
-try:
-    from webview.platforms import winforms  # noqa: F401
-    print("  [ok]   Windows WebView2 backend available")
-except Exception as exc:
-    failures += 1
-    print(f"  [fail] Windows WebView2 backend unavailable: {type(exc).__name__}: {exc}")
-    print("         Install the Microsoft Edge WebView2 Evergreen Runtime:")
-    print("         https://developer.microsoft.com/microsoft-edge/webview2/")
-    print("         Until then the app still runs in a browser tab:")
-    print("             set CASEFINDER_NATIVE=0 && run-windows.bat")
-
-from casefinder import config
-print(f"  [ok]   Case Finder {config.VERSION} imports cleanly")
-
-try:
-    from casefinder import bq
-    ok, message = bq.check_access()
-except Exception as exc:  # noqa: BLE001
-    ok, message = False, str(exc)
-
-if ok:
-    print(f"  [ok]   {message}")
-else:
-    failures += 1
-    print("  [warn] BigQuery is not reachable yet:")
-    for line in message.strip().splitlines():
-        print(f"         {line}")
-
-sys.exit(1 if failures else 0)
-'@
-
-$check | uv run --frozen python -
+# The checks themselves live in `casefinder/selfcheck.py` rather than here, so
+# that they also exist on a machine that installed the app from a wheel and
+# never saw this script. That matters most on Windows: the WebView2 Evergreen
+# Runtime is the single most likely thing to be missing on an otherwise healthy
+# machine, and the URL that fixes it used to exist only inside this file.
+uv run --frozen casefinder --check
 $status = $LASTEXITCODE
 
 Write-Host ''

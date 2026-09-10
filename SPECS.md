@@ -22,12 +22,13 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **615 passing**, ~2.8 s, no network access required |
+| Automated tests | **636 passing**, ~2.6 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks. Not re-run route-by-route since the project moved to `som-nero-phi-naras-ric`; the warehouse suite passes there and every query the routes issue is covered by it — see D32. |
 | Native window | `python -m casefinder.main` opens a pywebview window on `127.0.0.1` with an OS-assigned port |
 | macOS installer | `./install-mac.sh` completes on a clean path, exit 0, self-check reports BigQuery reachable |
+| Wheel | Built, then installed into a throwaway tool directory and exercised there: `--version` and `--check` correct, all 7 checks `ok`, presets resolved from `site-packages`, and the console script reports `init_main_from_name: casefinder.main` — see D33 |
 | Ask | End-to-end against Vertex on both eras; generated SQL passed the read-only guard and dry-ran under cap |
 
 Tests requiring credentials are marked `warehouse` and excluded by default. The
@@ -45,7 +46,7 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-8,995 lines across 33 modules.
+9,297 lines across 34 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
@@ -63,13 +64,14 @@ makes the contract explicit and the whole suite finishes in a second.
 | `cache.py` | 302 | TTL cache with no disk backend, deliberately. Bounded, reaped, single-flight. |
 | `intake.py` | 449 | Reads the serialised intake form out of a case body (D15). Pure. |
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
-| `config.py` | 216 | Every environment variable and its default. |
+| `config.py` | 252 | Every environment variable and its default. |
 | `ui/ask_page.py` | 215 | §6.5 UI — generate, review, then run. |
 | `ui/components/filters.py` | 295 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 192 | §6.6 — free-form SQL with a priced dry run. |
-| `window.py` | 192 | What the native window can still do once the server behind it has gone (D21). |
-| `main.py` | 183 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
-| `ui/settings.py` | 182 | §6.7 — era, connection, Ask availability, about. |
+| `window.py` | 194 | What the native window can still do once the server behind it has gone (D21). |
+| `selfcheck.py` | 194 | `casefinder --check` — seven prerequisites, one line each, on any machine the app is installed on (D34). |
+| `main.py` | 245 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
+| `ui/settings.py` | 185 | §6.7 — era, connection, Ask availability, about. |
 | `ui/shell.py` | 156 | §3.1 — the navigation rail, the content region, and the connection gate. |
 | `ui/list_columns.py` | 140 | What a list row shows, and the order columns give way in (D16). |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
@@ -197,7 +199,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirty-two departures from the specification. Each names what the spec says,
+Thirty-five departures from the specification. Each names what the spec says,
 what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -1254,6 +1256,134 @@ The one thing that changed shape rather than size is the funding census — see
 D29. The warehouse suite's own bounds are deliberately loose (`1_500 <= current
 <= 3_000`) so that a batch load does not fail the build; they were left loose,
 and only the "documented as" text in the failure message was updated.
+
+---
+
+### D33 — a wheel is offered alongside the source folder
+
+**Spec:** §11.1 fixes distribution at "source folder + setup script, not a signed
+binary", and §11.5 defines uninstall as deleting that folder.
+
+**Built:** both. The installer scripts are unchanged in kind, and `uv build`
+additionally produces `casefinder-<version>-py3-none-any.whl` with a `casefinder`
+console script. `uv tool uninstall casefinder` removes that copy.
+
+**Why:** the spec's reasons for refusing a binary — no admin rights, no Apple
+Developer certificate, no Authenticode, a reproducible `uv.lock` — are reasons
+against *signed native binaries*, and a pure-Python wheel gives up none of them.
+What it removes is the part of the source-folder model that was never a design
+decision: handing a support analyst a folder of source, a `.gitignore` and a test
+suite in order to install an application, and asking them not to move it,
+because `run-mac.sh` resolves everything relative to where it sits.
+
+**Effect on requirements:** none removed. §11.2 and §11.3 remain exactly as
+specified for the checkout path.
+
+The mechanism has one sharp edge, and it is the reason this entry is long.
+NiceGUI's native mode opens the window in a *second process*
+(`multiprocessing.Process` in `native_mode.activate`), and the window's
+arguments — `text_select`, `min_size`, and the `js_api` object that puts the
+**Restart Case Finder** button on the dead-window notice — are not pickled and
+sent. They are read out of `app.native.window_args` by the child, after the child
+has re-imported `__main__` for itself.
+
+How the child re-imports `__main__` depends on `sys.modules["__main__"].__spec__`.
+Run as `python -m casefinder.main` there is a spec, `spawn` records
+`init_main_from_name`, and the child imports the module — reaching `main()` under
+the `__mp_main__` half of the entry guard, which is why that guard names both
+spellings. **A console script has no spec.** `spawn` records
+`init_main_from_path` pointing at the shim in `~/.local/bin`, the child runs the
+shim under the name `__mp_main__`, the shim's own `__main__` guard is false,
+nothing sets the window arguments, and the window opens with an empty
+dictionary.
+
+Nothing raises. The app starts and draws, and is simply missing text selection,
+its minimum size, and its only way out of a dead window — the failure mode this
+project has already spent a commit on.
+
+So `main.cli`, the console-script entry point, assigns
+`importlib.util.find_spec("casefinder.main")` onto `__main__` before launching.
+`main()` itself deliberately does not: it is called directly by `test_window` and
+`test_reconnect` under pytest's own `__main__`, and pinning there would rewrite
+it mid-suite. `test_packaging.py` asserts the switch against the real
+`multiprocessing.spawn.get_preparation_data` rather than describing it, and
+separately asserts that `cli` calls the helper — a test of the helper alone would
+pass with the call site deleted, which is the only way this can regress.
+
+Verified on the built artifact, not inferred: installed from the wheel into a
+throwaway tool directory, the console script reports `init_main_from_name:
+casefinder.main`.
+
+---
+
+### D34 — the self-check is a command in the app, not a step in the installer
+
+**Spec:** §11.2.5 asks `install-mac.sh` for "a minimal native-window self-check
+if practical"; §11.3 requires the Windows installer to check the webview runtime
+and surface a remediation message.
+
+**Built:** `casefinder --check`, seven checks — python, app, webview, presets,
+gcloud, credentials, BigQuery — printing one line each with indented remedies,
+exiting non-zero if any failed. Both installers now call it instead of carrying
+their own copy.
+
+**Why:** the checks were two heredocs, one per installer, and the installers are
+not part of the wheel. Everything they knew would have left with them — above all
+the WebView2 Evergreen Runtime URL, which existed nowhere else in the product and
+is the single most likely thing a Windows user needs. A check that only runs at
+install time is also the wrong shape: the machine it describes changes afterwards,
+and "it worked last week" is when someone actually needs it.
+
+It deliberately does not open a window, which would be a better check and a worse
+tool — it could not run over SSH, or in the terminal a user has just been asked to
+paste from, and it would leave a window someone has to close. Importing the
+platform backend is what the installers already did, and it distinguishes "the
+runtime is missing" from "the window opened grey". Known limitation 7 says so.
+
+**Effect on requirements:** §11.2.5 and §11.3 are satisfied more completely than
+specified, on more machines than the installers reach.
+
+Every path it prints goes through `config.tilde`, which collapses the home
+directory to `~`. The output is designed to be pasted into a support request, and
+an absolute path names the person whose machine it is. Settings does the same, for
+the same reason.
+
+---
+
+### D35 — the shared presets live inside the package
+
+**Spec:** §7.4 and §16 describe a "distributed `views.json`" / "app `views.json`",
+which in a source folder means the file beside the application.
+
+**Built:** `casefinder/views.json`, force-included in the wheel.
+`CASEFINDER_VIEWS_PATH` overrides it exactly as specified.
+
+**Why:** "beside the app" has no referent once the app is a wheel — the package's
+parent is `site-packages`. The distinction is invisible in a checkout, where the
+repository root and the package's parent are the same directory, which is what
+makes it worth an entry: resolving one level too high is correct everywhere it is
+tested and wrong everywhere it is installed.
+
+The failure is silent. `views.shared_views` treats an unreadable file as "no
+shared views" and returns `builtin_views()` without saying so, so a wheel built
+without the file starts up perfectly and is missing presets nobody thinks to look
+for. Three things now catch it: the `presets` line of `--check`, a test asserting
+that `Unassigned queues` — the one preset in the file and not in the code — is
+actually loaded, and `release.sh` refusing to publish a wheel the file is not in.
+
+**Effect on requirements:** none. Overriding the presets is now
+`CASEFINDER_VIEWS_PATH` rather than editing the shipped file, which is the better
+instruction for an installed copy in any case, since `uv tool install --force`
+overwrites it.
+
+A related hole opened with packaging, and is closed by
+`test_every_file_in_the_package_is_tracked_by_git`. Hatchling chooses what to
+package by asking git what is *ignored*; `tests/corpus_guard.py` scans what git is
+*tracking*. An untracked scratch file under `casefinder/` sits between those two
+questions — it ships in the wheel, and neither the guard nor the pre-commit hook
+can see it. Under the source-folder model nothing was ever shipped, so this is an
+exposure the wheel creates, and it is a PHI control rather than hygiene. The test
+caught a real untracked file on its first run.
 
 ---
 

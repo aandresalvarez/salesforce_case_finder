@@ -48,9 +48,11 @@ from pathlib import Path
 # will be gone by the time anyone asks.
 READY_ENV = "CASEFINDER_READY_FILE"
 
-# The same thing `run-mac.sh` runs, minus uv. `sys.executable` in the window
-# process is the virtualenv's interpreter, and the package imports from any
-# working directory, so this does not depend on where the app was started from.
+# Restart re-launches by module name rather than by re-running whatever started
+# us. `sys.executable` in the window process is the interpreter the app is
+# installed against — the virtualenv's in a checkout, the tool environment's in
+# a wheel install — and the package imports from any working directory, so this
+# one spelling covers both and depends on neither a script nor a cwd.
 _LAUNCH = "casefinder.main"
 
 

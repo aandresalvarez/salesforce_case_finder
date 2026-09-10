@@ -32,10 +32,11 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 615 automated
+**Status: complete and verified against the live warehouse.** 636 automated
 tests, plus 31 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
-through on a clean path.
+through on a clean path, and the distributable wheel installs and self-checks
+clean on a machine that has never seen the source.
 
 ---
 
@@ -122,18 +123,25 @@ independent queries now issue them concurrently.
 
 ## How it gets to people
 
-Source folder plus a setup script — not a signed binary. No admin rights, no
-Apple Developer certificate, no Authenticode signing, no IT ticket.
+One file, and not a signed binary. No admin rights, no Apple Developer
+certificate, no Authenticode signing, no IT ticket.
 
 ```bash
-./install-mac.sh     # or: powershell -File .\install-windows.ps1
+uv tool install "./casefinder-2.1.0-py3-none-any.whl"
+casefinder --check
+casefinder
 ```
 
-The script installs `uv` into the user profile if it is missing, builds the
-environment from a locked dependency set, checks for the Google Cloud CLI, offers
-to sign the user in, and then runs a self-check that reports whether the desktop
-window and BigQuery are *actually* reachable on this machine rather than assuming
-they are. Uninstalling is deleting the folder.
+`--check` is the part worth pointing at. It reports, one line each, whether this
+machine has Python, the drawing engine the desktop window needs, the team
+presets, the Google Cloud CLI, credentials, and BigQuery — and tells the reader
+how to fix any that are not ready. It names no paths belonging to the person
+running it, so its output can be pasted straight into a support request.
+Uninstalling is `uv tool uninstall casefinder`.
+
+People who work on the app clone it instead and run `./install-mac.sh` or
+`install-windows.ps1`, which do the same thing to a checkout and finish with the
+same self-check.
 
 Packaging a real `.app` and `.exe` later is possible and would remove the
 terminal from the install story. It is not required, and it introduces code
@@ -148,14 +156,14 @@ proven itself, not before.
 |---|---|
 | Read-only; no edits back to Salesforce | Enforced in code on every query, including generated SQL |
 | Triage list: owner, status, PI, dept, IRB, description, last activity, funding | Default columns on Lists |
-| Personal and shared filtered views | Saved views; shared presets in `views.json`, personal ones outside the repo |
+| Personal and shared filtered views | Saved views; shared presets ship with the app, personal ones outside the repo |
 | 4–5 priority filters to start | Status, owner, department, date, open-only — with the rest behind disclosure |
 | Case detail with IRB, PI, department, comments | Case page; comments is the default tab |
 | Don't make people open individual emails | Comments stream is the default; individual messages are a separate tab |
 | Search by case number; find related cases | Typing `CASE-…` navigates directly; Related is a tab on every case |
 | Default 2022+, older archive optional | Era switch in Settings, defaulting to 2022+ |
 | Copyable text for ServiceNow handoff | **Copy summary** on every case |
-| macOS and Windows | Both, from one source tree; installers for each |
+| macOS and Windows | Both, from one source tree; one wheel installs on either |
 | No attachment migration — use Box | Files tab lists pointers and says so |
 | Column sorting and filtering | Both, on Lists |
 | Warehouse freshness surfaced honestly | A banner appears when the snapshot is over a week old |
@@ -171,8 +179,9 @@ appears nowhere in the warehouse — not as a status, not as an owner, not as a
 queue name. The shipped **Data Broker Triage** preset is a placeholder filtering
 on `status = 'Data Queue'`, which currently matches 3 open cases, and it is
 labelled provisional in the app. Someone who knows the operational meaning needs
-to tell us what the real filter is; changing it is a one-line edit to
-`views.json` and needs no release.
+to tell us what the real filter is; changing it is a one-line edit to the shared
+presets file and needs no code change — and a team that does not want to wait
+for the next build can point `CASEFINDER_VIEWS_PATH` at its own copy today.
 
 **2. Which of the legacy Salesforce filters actually matter?** (SR-4)
 

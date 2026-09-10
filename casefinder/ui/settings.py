@@ -138,10 +138,13 @@ def _saved_views() -> None:
     _section("Saved views")
     shared = views.shared_views()
     personal = views.personal_views()
+    # Through `config.tilde` because these two lines are the ones people
+    # screenshot when asking where their views went, and an absolute path names
+    # the person whose machine it is. Same reason `selfcheck` does it.
     _rows(
         [
-            ("Shared presets", f"{len(shared)} · {config.VIEWS_PATH}"),
-            ("Your views", f"{len(personal)} · {config.personal_views_path()}"),
+            ("Shared presets", f"{len(shared)} · {config.tilde(config.VIEWS_PATH)}"),
+            ("Your views", f"{len(personal)} · {config.tilde(config.personal_views_path())}"),
         ]
     )
     muted(

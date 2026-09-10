@@ -1,7 +1,12 @@
 [project]
 name = "casefinder"
-version = "2.1.0"
+# Read from `casefinder/config.py` rather than written here. The application
+# already had to know its own version — Settings shows it — so declaring it in
+# both places meant two facts that could disagree, and they did: this file said
+# 2.1.0 while `casefinder/__init__.py` said 1.0.0 for several releases.
+dynamic = ["version"]
 description = "Search the historical Salesforce support-case archive in BigQuery, from a local desktop window."
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "nicegui>=2.0,<3",
@@ -24,14 +29,25 @@ ask = ["google-genai>=1.0"]
 dev = ["pytest>=8", "playwright>=1.40", "ruff>=0.6"]
 
 [project.scripts]
-casefinder = "casefinder.main:main"
+# `cli`, not `main`. The console script is the only caller that has to read
+# argv and pin the main module for the window subprocess; `main` stays the
+# argv-free entry point the tests call. See `casefinder/main.py`.
+casefinder = "casefinder.main:cli"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "casefinder/config.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["casefinder"]
+# Hatchling selects files by asking git what is ignored, so `casefinder/data/`
+# would be silently dropped by the bare `data/` rule in .gitignore. The shared
+# presets live at `casefinder/views.json` for that reason; this says so out
+# loud, so a build that stops shipping them fails here rather than in the app.
+force-include = { "casefinder/views.json" = "casefinder/views.json" }
 
 [tool.ruff]
 line-length = 100

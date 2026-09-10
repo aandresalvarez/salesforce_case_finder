@@ -6,6 +6,9 @@ data to disk.
 
 **Version 2.1.0** · macOS and Windows · [full specification](SPECS.md)
 
+Everything through **Uninstall** is for people who use the app. Everything after
+it is for people who change it.
+
 ---
 
 ## What it does
@@ -34,36 +37,109 @@ Two slices of the archive are available, switchable in Settings:
 You need a Google account that has been granted BigQuery access to the data
 project. No admin rights, no service-account key, nothing to configure.
 
-### macOS
+There are two ways in. Which one you want depends on what you were given.
+
+### You were handed `casefinder-2.1.0-py3-none-any.whl`
+
+That one file is the app. It also lists what it needs, which the install fetches
+for you, so there is nothing else to download.
+
+**Step 1 — install `uv`,** the tool that does the installing. Skip this if you
+already have it.
+
+On macOS, open Terminal:
 
 ```bash
-./install-mac.sh
-./run-mac.sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Windows
+On Windows, open **PowerShell** — the older `cmd.exe` prompt will not run these:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
-.\run-windows.bat
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+Then **close that window and open a new one.** The installer edits your shell
+profile, and a window that was already open does not see the change. Skipping
+this is the one reason the next step says `uv: command not found`.
+
+**Step 2 — install Case Finder,** assuming the `.whl` is in `Downloads`:
+
+```bash
+cd ~/Downloads && uv tool install "./casefinder-2.1.0-py3-none-any.whl"
+```
+
+```powershell
+cd ~\Downloads; uv tool install ".\casefinder-2.1.0-py3-none-any.whl"
+```
+
+**Step 3 — check the machine, then start it:**
+
+```bash
+casefinder --check
+```
+
+That prints a line per prerequisite — Python, the desktop window's drawing
+engine, the shared presets, `gcloud`, your credentials, and BigQuery itself —
+and tells you how to fix any that are not ready. It is also the right thing to
+paste into a support request; it names no paths belonging to you. When it is
+happy:
+
+```bash
+casefinder
+```
+
+Leave that terminal window open. Closing it closes the app with it.
+
+**If `casefinder --check` says the command is not found,** the install worked but
+your shell has not been told where it went. Run `uv tool update-shell`, then open
+a new window.
+
+To install a newer version later, or to re-run an install that failed partway,
+add `--force`. To include the optional natural-language mode, ask for the `ask`
+extra — the quotes are required, because a bare `[ask]` means something else to
+the shell:
+
+```bash
+uv tool install --force "./casefinder-2.1.0-py3-none-any.whl[ask]"
+```
+
+That installs the mode without switching it on; see `CASEFINDER_ASK` below.
+
+### You have the source checkout
+
+```bash
+./install-mac.sh     # then ./run-mac.sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1   # then .\run-windows.bat
 ```
 
 The installer puts `uv` in your user profile if it is missing, builds `./.venv`
 from `uv.lock`, checks for the Google Cloud CLI, offers to sign you in, and
-finishes with a self-check that tells you whether the desktop window and
-BigQuery are both actually reachable. Run it again any time; it is idempotent.
+finishes with the same self-check. Run it again any time; it is idempotent.
 
 ### If the desktop window will not open
 
 Native mode draws through the platform webview — WebKit on macOS, the Edge
 WebView2 runtime on Windows — and that is the one part of the install that can
-be missing on an otherwise healthy machine. The app runs in a browser tab
-instead:
+be missing on an otherwise healthy machine. `casefinder --check` says so by
+name, and links the Windows runtime download. Until it is fixed, the app runs in
+a browser tab instead:
 
 ```bash
-CASEFINDER_NATIVE=0 ./run-mac.sh          # macOS
-set CASEFINDER_NATIVE=0 && run-windows.bat  # Windows
+CASEFINDER_NATIVE=0 casefinder             # macOS
 ```
+
+```powershell
+$env:CASEFINDER_NATIVE=0; casefinder       # Windows
+```
+
+From a source checkout, put the same variable in front of `./run-mac.sh` or
+`run-windows.bat`. Every setting in [Configuration](#configuration) is set this
+way; a variable set like that lasts for the one command, and setting it in your
+shell profile makes it stick.
 
 The server still binds to `127.0.0.1` on a random port either way. Nothing is
 ever exposed to the network.
@@ -183,7 +259,7 @@ Everything is an environment variable, and every one has a working default.
 | `CASEFINDER_ASK` | false | `1` offers the Ask destination; off, it is hidden entirely |
 | `CASEFINDER_VERTEX_LOCATION` | `us-central1` | Vertex AI region for Ask |
 | `CASEFINDER_VERTEX_MODEL` | unset | Pin one Gemini model instead of probing |
-| `CASEFINDER_VIEWS_PATH` | `./views.json` | Shared team presets |
+| `CASEFINDER_VIEWS_PATH` | the packaged `views.json` | Shared team presets; point it at your own file to override them |
 | `CASEFINDER_PERSONAL_VIEWS_PATH` | per-OS app data | Your own saved views |
 | `CASEFINDER_NATIVE` | true | `0` runs in a browser tab instead |
 
@@ -191,10 +267,23 @@ Everything is an environment variable, and every one has a working default.
 
 ## Team presets
 
-`views.json` next to the app holds the shared presets everyone sees. It contains
-filter definitions only. To add one: save a view in the app, use **Copy
-definition** in its overflow menu, and paste the JSON object into the list. The
-file is read on every page load, so no rebuild is needed.
+The shared presets everyone sees ship inside the app, as `casefinder/views.json`.
+The file holds filter definitions only, and Settings shows the exact path it was
+read from.
+
+Editing it in place works from a source checkout and is a bad idea in an
+installed copy, where the next `uv tool install --force` overwrites it. Point
+`CASEFINDER_VIEWS_PATH` at a file of your own instead:
+
+```bash
+CASEFINDER_VIEWS_PATH=~/team-views.json casefinder
+```
+
+To add a preset to either file: save a view in the app, use **Copy definition**
+in its overflow menu, and paste the JSON object into the list. The file is read
+on every page load, so no rebuild is needed — and if it is missing or
+unreadable, the app quietly falls back to its built-in presets, which is what
+the `presets` line of `casefinder --check` is there to tell you.
 
 Your own saved views go somewhere else and are never shared:
 
@@ -206,9 +295,18 @@ Your own saved views go somewhere else and are never shared:
 
 ## Uninstall
 
-Delete this folder. Then delete the personal views file above if you made one —
-it holds filter choices, not case data, but it is yours and nothing else will
-remove it.
+If you installed the `.whl`:
+
+```bash
+uv tool uninstall casefinder
+```
+
+If you have the source checkout, delete the folder.
+
+Either way, delete the personal views file above if you made one — it holds
+filter choices, not case data, but it is yours and nothing else will remove it.
+Your Google credentials are `gcloud`'s and are left alone; `gcloud auth
+application-default revoke` is the command if you want them gone too.
 
 ---
 
@@ -216,9 +314,9 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 615 tests, no credentials needed, ~3 s
+uv run pytest              # 636 tests, no credentials needed, ~3 s
 uv run ruff check .
-uv run python -m casefinder.main
+uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
 ```
 
@@ -245,6 +343,7 @@ uv run pytest -m warehouse   # 31 tests, ~55 s
 | `test_pagination.py` | Paging on lists and search: offsets, tiebreaks, and when the offset resets |
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
 | `test_no_corpus_data.py` | No live case data is committed — this repo is public and the corpus is not |
+| `test_packaging.py` | What is true of the wheel but not of a checkout: packaged presets, the console script, nothing untracked shipping |
 | `test_warehouse.py` | Semantics only real data can prove — opt-in, marked `warehouse` |
 
 UI tests render real NiceGUI pages into an isolated client and assert against
@@ -275,6 +374,25 @@ git config core.hooksPath .githooks
 
 Names are the part no regular expression can settle, which is exactly why the
 roster exists: one place to look, and no reason to reach for a real one.
+
+### Releasing
+
+```bash
+./release.sh
+```
+
+Produces `dist/casefinder-<version>-py3-none-any.whl` — the file people are
+handed — and `dist/requirements-lock.txt`, the exact versions this release was
+tested against, for a site that has to pin them. Neither is committed.
+
+It refuses to build over a dirty working tree, which is the same rule as the
+pre-commit hook seen from the other side: the build packages the *working tree*,
+so an uncommitted file is one the corpus guard has never scanned, and the wheel
+is the artifact that leaves the machine.
+
+The version lives in one place, `casefinder/config.py`; `pyproject.toml` reads
+it from there and `casefinder.__version__` re-exports it. Bump it there and
+nowhere else.
 
 ### Layout
 
@@ -315,7 +433,8 @@ actions, and never build SQL.
 5. Generated SQL can be valid and still answer the wrong question. Read it.
 6. Attachments are pointers. Box remains the operational file source.
 7. Native mode depends on the platform webview, which has to be re-validated on
-   both operating systems each release.
+   both operating systems each release. `casefinder --check` reports whether the
+   backend imports, which is not the same as proving a window draws.
 8. A local desktop app does not protect against a compromised laptop, or against
    an authorised user taking a screenshot.
 

@@ -137,8 +137,16 @@ def _model():
     try:
         from google import genai
     except ImportError as exc:  # pragma: no cover - depends on optional extra
+        # Two commands, because there are two ways to have this app. A user who
+        # installed the published wheel has no checkout to run `uv sync` in,
+        # and telling them to run it in their home directory produces an error
+        # about a missing pyproject.toml that reads like a broken install.
         _PROBE_FAILURE = (
-            "The natural-language extra is not installed. Install it with:\n"
+            "The natural-language extra is not installed.\n\n"
+            "If you installed Case Finder from a file, re-install it with the\n"
+            "extra included — note the [ask] on the end:\n"
+            '    uv tool install --force "./casefinder-<version>-py3-none-any.whl[ask]"\n\n'
+            "If you are running from a source checkout:\n"
             "    uv sync --extra ask"
         )
         raise VertexUnavailable(_PROBE_FAILURE) from exc

@@ -33,6 +33,13 @@ Claude outputs/
 # else's business.
 personal_views.json
 
+# Build output. `uv build` writes the wheel a release is shipped as; nothing in
+# here is source. Note that hatchling selects the files it packages by asking
+# git what is ignored, so anything added to this file is also absent from the
+# wheel — which is the intent for these two and a trap for anything else.
+dist/
+build/
+
 # Local tooling
 .DS_Store
 .pytest_cache/

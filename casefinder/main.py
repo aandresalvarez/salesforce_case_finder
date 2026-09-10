@@ -17,11 +17,13 @@ process, which would open a second window and a second BigQuery client.
 
 from __future__ import annotations
 
+import importlib.util
 import socket
+import sys
 
 from nicegui import app, ui
 
-from . import cache, config, window
+from . import cache, config, selfcheck, window
 from .ui import (
     ask_page,
     case_detail,
@@ -177,7 +179,67 @@ def main() -> None:
     )
 
 
+def _pin_main_module() -> None:
+    """Give the spawned window process a module name to import, not a path.
+
+    NiceGUI opens the native window in a `multiprocessing` child, and that child
+    rebuilds `__main__` from whatever `__main__.__spec__` says. Run as
+    `python -m casefinder.main` there is a spec, spawn records
+    `init_main_from_name: casefinder.main`, the child re-imports this module,
+    and `main()` runs there because the guard below accepts `__mp_main__`.
+
+    Run as the installed `casefinder` console script there is no spec — a
+    console script is a generated file executed by path — so spawn falls back to
+    `init_main_from_path` pointing at the generated shim. The child re-runs the
+    shim under the name `__mp_main__`, the shim's own `if __name__ ==
+    "__main__"` is therefore false, `main()` never runs in the window process,
+    and `app.native.window_args` is empty there.
+
+    Empty window args is not a crash. The window opens, and what is missing is
+    the three things set in `_window_args`: text selection (so the whole
+    application is unselectable again — the bug that function exists to fix),
+    the minimum window size, and `js_api`, which is the reconnect notice's
+    Restart button and the only part of the app that still works once the
+    server is gone.
+
+    Pointing `__spec__` at this module is enough to put spawn back on the
+    by-name path. Called from `cli` and not from `main` so that the tests, which
+    call `main` directly under pytest's own `__main__`, are never handed a
+    rewritten spec.
+    """
+    main_module = sys.modules.get("__main__")
+    if main_module is None or getattr(main_module, "__spec__", None) is not None:
+        return
+    spec = importlib.util.find_spec(__name__)
+    if spec is not None:
+        main_module.__spec__ = spec
+
+
+def cli(argv: list[str] | None = None) -> int:
+    """Console-script entry point: the flags, then the window.
+
+    `main` is deliberately left taking no arguments and reading no argv. Two
+    tests call it directly to assert on what it passes to `ui.run`, and they run
+    under pytest's own command line — a `main` that parsed `sys.argv` would see
+    pytest's flags and fail on them.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--version" in args:
+        print(f"{config.APP_NAME} {config.VERSION}")
+        return 0
+    if "--check" in args:
+        return selfcheck.run()
+    unknown = [a for a in args if a.startswith("-")]
+    if unknown:
+        print(f"unrecognised option: {unknown[0]}\nusage: casefinder [--check] [--version]")
+        return 2
+    _pin_main_module()
+    main()
+    return 0
+
+
 # NiceGUI's native mode re-imports the module in the webview process, so the
-# guard has to accept both spellings.
+# guard has to accept both spellings. `main` and not `cli`: reaching here means
+# the module was run by name, which is the case `cli` exists to arrange.
 if __name__ in {"__main__", "__mp_main__"}:
     main()

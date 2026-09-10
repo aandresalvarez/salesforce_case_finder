@@ -9,7 +9,13 @@
 # goes into ~/.local/bin and the Python environment into ./.venv, so removing
 # the app is deleting this folder.
 
-set -euo pipefail
+# `-e` is deliberately absent. This script's last act is to run the self-check
+# and then tell the user what its result means, and under `-e` a self-check that
+# reported a problem killed the script on the spot — so the one run that most
+# needed the closing advice was the only run that never printed it. The same
+# applied to the sign-in step: cancelling the browser prompt aborted the whole
+# install. Failures are checked where they happen instead.
+set -uo pipefail
 
 cd "$(dirname "$0")"
 
@@ -51,6 +57,10 @@ if [ -f uv.lock ]; then
 else
   uv sync --extra ask
 fi
+if [ $? -ne 0 ]; then
+  fail "could not install dependencies — nothing below this point will work"
+  exit 1
+fi
 ok "dependencies installed into ./.venv"
 
 # --------------------------------------------------------------------------
@@ -91,7 +101,10 @@ else
     read -r reply
     case "${reply:-y}" in
       [Nn]*) warn "skipped — run 'gcloud auth application-default login' before first use" ;;
-      *)     gcloud auth application-default login ;;
+      # Cancelling the browser prompt exits non-zero, which is a choice and not
+      # an error. The self-check below reports it either way.
+      *)     gcloud auth application-default login || \
+               warn "sign-in did not complete — the self-check below will say so" ;;
     esac
   else
     warn "run this before first use:  gcloud auth application-default login"
@@ -103,42 +116,13 @@ fi
 # --------------------------------------------------------------------------
 bold "5. Self-check"
 
-# The webview backend is checked by importing it rather than by opening a
-# window. Known limitation 13 is that native mode adds a platform-webview
-# surface that did not exist in the browser build; on macOS that surface is the
-# pyobjc bridge to WebKit, and if it imports here it will load at runtime.
-uv run --frozen python - <<'PY'
-import sys
-
-failures = 0
-
-try:
-    from webview.platforms import cocoa  # noqa: F401
-    print("  \033[32m✓\033[0m macOS webview backend available")
-except Exception as exc:
-    failures += 1
-    print(f"  \033[31m✗\033[0m macOS webview backend unavailable: {type(exc).__name__}: {exc}")
-    print("      The app can still run in a browser tab:  CASEFINDER_NATIVE=0 ./run-mac.sh")
-
-from casefinder import config
-print(f"  \033[32m✓\033[0m Case Finder {config.VERSION} imports cleanly")
-
-try:
-    from casefinder import bq
-    ok, message = bq.check_access()
-except Exception as exc:  # noqa: BLE001
-    ok, message = False, str(exc)
-
-if ok:
-    print(f"  \033[32m✓\033[0m {message}")
-else:
-    failures += 1
-    print("  \033[33m!\033[0m BigQuery is not reachable yet:")
-    for line in message.strip().splitlines():
-        print(f"      {line}")
-
-sys.exit(1 if failures else 0)
-PY
+# The checks themselves live in `casefinder/selfcheck.py` rather than here, so
+# that they also exist on a machine that installed the app from a wheel and
+# never saw this script. It checks more than this heredoc used to — gcloud and
+# the credentials file are re-tested at the end, and the packaged team presets
+# are new — and it checks the webview the same way, by importing the backend
+# rather than opening a window.
+uv run --frozen casefinder --check
 status=$?
 
 echo

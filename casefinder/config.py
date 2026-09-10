@@ -192,10 +192,46 @@ NATIVE = _flag("CASEFINDER_NATIVE", True)
 WINDOW_SIZE = (1280, 800)
 MIN_WINDOW_SIZE = (1024, 700)
 
+def tilde(path: Path | str) -> str:
+    """Render a path with the home directory collapsed to `~`.
+
+    Not cosmetic. Every path this application shows a user is a path that ends
+    up in a screenshot or a pasted support request, and an absolute home path
+    names its owner and usually their employer's directory layout.
+    `tests/corpus_guard.py` rejects one on sight for exactly that reason.
+    """
+    text = str(path)
+    home = str(Path.home())
+    if text == home:
+        return "~"
+    if text.startswith(home + os.sep):
+        return "~" + text[len(home) :]
+    return text
+
+
+def _resolve_views_path(env: str | None = None) -> Path:
+    """Where the shared team presets live.
+
+    Inside the package, not beside it. The distinction is invisible in a
+    checkout — the repository root and the package's parent are the same
+    directory — and decides the feature in an installed wheel, where the
+    package's parent is `site-packages`. Resolving one level too high there
+    finds nothing, and `views.shared_views` treats "no file" as "use the
+    built-ins" without saying so, so the presets would simply be absent.
+
+    A function rather than a module-level expression so a test can point it
+    somewhere else without reimporting this module. Reloading is not an option:
+    `Era` is a frozen dataclass compared by identity and used as a cache key, so
+    a second copy of the module means two eras that are never equal.
+    """
+    override = env if env is not None else os.environ.get("CASEFINDER_VIEWS_PATH")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / "views.json"
+
+
 # Shared team presets ship with the app and are read-only from the UI.
-VIEWS_PATH = Path(
-    os.environ.get("CASEFINDER_VIEWS_PATH", Path(__file__).resolve().parent.parent / "views.json")
-)
+VIEWS_PATH = _resolve_views_path()
 
 
 def personal_views_path() -> Path:
