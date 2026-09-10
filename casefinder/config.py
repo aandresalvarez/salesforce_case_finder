@@ -26,7 +26,7 @@ def _flag(name: str, default: bool) -> bool:
 # The project that is billed for queries and that holds the datasets. Both can
 # be overridden by environment variable so a different site can reuse the app
 # without editing code.
-PROJECT = os.environ.get("CASEFINDER_PROJECT", "som-rit-phi-starr-dev")
+PROJECT = os.environ.get("CASEFINDER_PROJECT", "som-nero-phi-naras-ric")
 BILLING_PROJECT = os.environ.get("CASEFINDER_BILLING_PROJECT", PROJECT)
 
 # Salesforce's own User object, used to resolve the author of internal notes.
@@ -125,25 +125,25 @@ ERAS: dict[str, Era] = {
         label="2022 onward (full detail)",
         dataset="salesforce_current",
         blurb=(
-            "1,714 cases from 2022 onward. Includes the audit trail and file "
+            "1,721 cases from 2022 onward. Includes the audit trail and file "
             "attachments as well as the conversation."
         ),
         has_history=True,
         has_attachments=True,
-        approx_cases=1714,
+        approx_cases=1721,
     ),
     "archive": Era(
         key="archive",
         label="Everything ever (conversation only)",
         dataset="salesforce_marts",
         blurb=(
-            "All 41,526 cases back to the beginning. Conversation and case "
+            "All 41,533 cases back to the beginning. Conversation and case "
             "fields only — the audit trail and attachments were not retained "
             "for the older era."
         ),
         has_history=False,
         has_attachments=False,
-        approx_cases=41526,
+        approx_cases=41533,
     ),
 }
 

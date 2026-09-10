@@ -46,7 +46,7 @@ ROWS_PER_PAGE = (25, 50, 100)
 # Spec FR-SEARCH-11: never retrieve more than this in one fetch, however the
 # page size is set. It caps the fetch and not the result — paging past row 500
 # is allowed, and is the point of paging. The cap is there so a single request
-# cannot turn into a 41,526-row response; a reader walking to result 501 has
+# cannot turn into a 41,533-row response; a reader walking to result 501 has
 # asked for it a page at a time.
 MAX_RETRIEVAL = 500
 

@@ -53,7 +53,7 @@ def test_no_corpus_data_is_tracked_in_this_repository():
             "the same thing on Windows",
         ),
         (
-            "credentials = loader@som-rit-phi-starr-dev.iam.gserviceaccount.com",
+            "credentials = loader@som-nero-phi-naras-ric.iam.gserviceaccount.com",
             "a service account built on the live project id",
         ),
     ],

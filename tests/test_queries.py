@@ -224,7 +224,7 @@ TRIAGE_FIELDS = ("PI_Name__c", "Project_Department__c", "IRB_Protocol__c", "Fund
 def test_raw_case_fields_are_always_null_normalised(era):
     """Salesforce stores an unset text field as '' rather than NULL.
 
-    33,821 of 41,526 cases have `Project_Department__c = ''`. A bare reference
+    33,821 of 41,533 cases have `Project_Department__c = ''`. A bare reference
     would put a blank entry at the top of every filter dropdown and render as an
     empty cell that looks like a bug, so every use goes through NULLIF(TRIM()).
     """

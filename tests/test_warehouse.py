@@ -101,8 +101,8 @@ def test_the_two_eras_are_the_sizes_the_documentation_claims():
     """
     current = data.corpus_size(CURRENT)
     archive = data.corpus_size(ARCHIVE)
-    assert 1_500 <= current <= 3_000, f"current era is {current}, documented as ~1,714"
-    assert 38_000 <= archive <= 50_000, f"archive is {archive}, documented as ~41,526"
+    assert 1_500 <= current <= 3_000, f"current era is {current}, documented as ~1,721"
+    assert 38_000 <= archive <= 50_000, f"archive is {archive}, documented as ~41,533"
     assert archive > current, "the archive must be a superset of the current era"
 
 

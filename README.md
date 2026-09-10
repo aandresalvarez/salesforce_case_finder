@@ -23,8 +23,8 @@ number and you land on the case; type anything else and you get results.
 
 Two slices of the archive are available, switchable in Settings:
 
-- **2022 onward** (default) — 1,714 cases, with the audit trail and attachment records.
-- **Everything ever** — all 41,526 cases, conversation and case fields only. The
+- **2022 onward** (default) — 1,721 cases, with the audit trail and attachment records.
+- **Everything ever** — all 41,533 cases, conversation and case fields only. The
   audit trail and attachment records were not retained for the older era.
 
 ---
@@ -169,7 +169,7 @@ Everything is an environment variable, and every one has a working default.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CASEFINDER_PROJECT` | `som-rit-phi-starr-dev` | Project holding the datasets |
+| `CASEFINDER_PROJECT` | `som-nero-phi-naras-ric` | Project holding the datasets |
 | `CASEFINDER_BILLING_PROJECT` | same as above | Project billed for queries |
 | `CASEFINDER_MAX_BYTES` | 4 GiB | Hard cap on bytes scanned per query |
 | `CASEFINDER_QUERY_TIMEOUT` | 120 | Hard cap on how long a query may run, seconds |
@@ -216,7 +216,7 @@ remove it.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 522 tests, no credentials needed, ~2 s
+uv run pytest              # 615 tests, no credentials needed, ~3 s
 uv run ruff check .
 uv run python -m casefinder.main
 git config core.hooksPath .githooks   # once, per clone — see below

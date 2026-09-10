@@ -402,7 +402,7 @@ def test_an_identity_is_only_claimed_when_it_is_known(monkeypatch):
     place is not an identity, and printing it would name the wrong account."""
 
     class NoEmail:
-        quota_project_id = "som-rit-phi-starr-dev"
+        quota_project_id = "som-nero-phi-naras-ric"
 
     class WithEmail:
         service_account_email = "loader@example.iam.gserviceaccount.com"

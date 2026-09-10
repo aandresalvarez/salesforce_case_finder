@@ -111,11 +111,11 @@ def _term_params(terms: list[str]) -> list[ScalarQueryParameter]:
 # support staff actually triage on — who the PI is, which IRB protocol, which
 # department, whether it is funded — were never modelled, so every operational
 # query joins back to the raw Salesforce Case object on `case_id = Case.Id`.
-# That join is 1:1 and complete: 1,714 of 1,714 current-era cases resolve.
+# That join is 1:1 and complete: 1,721 of 1,721 current-era cases resolve.
 #
 # Each attribute is wrapped in NULLIF(TRIM(...), '') because Salesforce stores
 # an unset text field as the empty string, not NULL. Without it, 33,821 of the
-# 41,526 cases would report a department that renders as a blank cell, and
+# 41,533 cases would report a department that renders as a blank cell, and
 # every filter dropdown would open with an empty first entry.
 
 _RAW_JOIN = f"LEFT JOIN `{config.CASE_TABLE}` rc ON rc.Id = c.case_id"

@@ -6,7 +6,7 @@
 
 ## The problem, restated
 
-41,526 support cases and 280,001 conversation messages are in BigQuery. The
+41,533 support cases and 280,505 conversation messages are in BigQuery. The
 answer to "has anyone hit this before?" is usually in there. Getting it out
 currently requires three things at once: SQL, the schema, and the knowledge that
 the useful text lives in `fct_conversation_turn.body_clean` rather than in the
@@ -32,8 +32,8 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 522 automated
-tests, plus 30 more that run against live BigQuery to check the things a test
+**Status: complete and verified against the live warehouse.** 615 automated
+tests, plus 31 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path.
 

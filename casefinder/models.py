@@ -8,7 +8,7 @@ particular flavours of "missing".
 
 That normalisation matters more than it sounds. `dim_case` uses NULL for an
 absent value, but the raw Salesforce Case object uses the empty string — 33,821
-of 41,526 cases have `Project_Department__c = ''` rather than NULL. Treating
+of 41,533 cases have `Project_Department__c = ''` rather than NULL. Treating
 those as present would fill the triage list with blank cells that look like a
 rendering bug, and would put an empty entry at the top of every filter dropdown.
 """

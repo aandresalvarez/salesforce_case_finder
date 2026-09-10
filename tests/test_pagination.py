@@ -9,7 +9,7 @@ all to reach result 101.
 
 Paging is done in SQL rather than by slicing a fetched window, for the reason
 sorting already was: a window is not the result set, and `page 3 of 7` computed
-over the first 500 rows of 41,526 is a lie. The tests here are mostly about the
+over the first 500 rows of 41,533 is a lie. The tests here are mostly about the
 two ways that goes wrong — a total that counts the page instead of the result,
 and an offset that outlives the filter it was taken under.
 """
@@ -164,7 +164,7 @@ def test_every_filter_dimension_reaches_the_cache_key(monkeypatch):
         (0, 50, 334, "1–50 of 334 cases"),
         (50, 50, 334, "51–100 of 334 cases"),
         (300, 34, 334, "301–334 of 334 cases"),
-        (0, 50, 41526, "1–50 of 41,526 cases"),
+        (0, 50, 41533, "1–50 of 41,533 cases"),
     ],
 )
 def test_the_range_line_says_where_you_are(offset, shown, total, expected):
@@ -554,20 +554,17 @@ def test_the_count_of_matching_messages_is_not_deduplicated():
 
 
 # Every value `Funding_Status__c` holds, with how many cases carry it. Counted
-# against the whole current era rather than sampled — they sum to all 1,714 —
+# against the whole current era rather than sampled — they sum to all 1,721 —
 # which is what makes the shortening map exhaustive rather than a bucket.
 FUNDING_CORPUS = [
-    ("Unfunded", "Unfunded", 884),
+    ("Unfunded", "Unfunded", 888),
     (None, "—", 367),
-    ("Funded - Grant", "Grant", 325),
-    ("Funded - Departmental/Gift", "Dept/Gift", 69),
+    ("Funded - Grant", "Grant", 332),
+    ("Funded - Departmental/Gift", "Dept/Gift", 66),
     ("Seeking Funding", "Seeking", 25),
-    ("Funding Status Unknown", "Unknown", 22),
+    ("Funding Status Unknown", "Unknown", 23),
     ("Funded - Industry", "Industry", 16),
-    ("Funded - Federal", "Federal", 5),
-    # The one case in the corpus where somebody typed a sentence. Not in the
-    # picklist, so it is shown exactly as stored and the cell ellipsises it.
-    ("asked about funding", "asked about funding", 1),
+    ("Funded - Federal", "Federal", 4),
 ]
 
 
@@ -598,8 +595,6 @@ def test_every_picklist_value_fits_the_column_it_is_shown_in():
     the one value whose whole meaning is that nothing is known.
     """
     for stored, shown, cases in FUNDING_CORPUS:
-        if stored == "asked about funding":
-            continue  # free text, and one case of it; the tooltip carries it
         assert len(shown) <= FUNDING_BUDGET, (
             f"{stored!r} shows as {shown!r} ({len(shown)} chars) "
             f"and truncates on {cases:,} cases"

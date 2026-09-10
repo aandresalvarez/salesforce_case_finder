@@ -22,10 +22,10 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **616 passing**, ~2.7 s, no network access required |
-| Warehouse tests | **31 passing** against live BigQuery, ~54 s, ~2¢ (opt-in: `pytest -m warehouse`) |
+| Automated tests | **615 passing**, ~2.8 s, no network access required |
+| Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
-| Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks |
+| Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks. Not re-run route-by-route since the project moved to `som-nero-phi-naras-ric`; the warehouse suite passes there and every query the routes issue is covered by it — see D32. |
 | Native window | `python -m casefinder.main` opens a pywebview window on `127.0.0.1` with an OS-assigned port |
 | macOS installer | `./install-mac.sh` completes on a clean path, exit 0, self-check reports BigQuery reachable |
 | Ask | End-to-end against Vertex on both eras; generated SQL passed the read-only guard and dry-ran under cap |
@@ -197,7 +197,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirty-one departures from the specification. Each names what the spec says,
+Thirty-two departures from the specification. Each names what the spec says,
 what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -467,7 +467,7 @@ so a reader can page to result 501 and beyond, one page at a time.
 whose offsets stop at 500 is pagination that hides the tail of any result larger
 than 500, which is the problem pagination exists to solve. Read as "no single
 response may be unbounded", both halves hold: the largest page offered is 100,
-no request can turn into a 41,526-row response, and reaching result 501 takes a
+no request can turn into a 41,533-row response, and reaching result 501 takes a
 deliberate act per page rather than one accidental query.
 
 **Effect on requirements:** FR-SEARCH-9's truncation state is gone, because
@@ -1017,11 +1017,17 @@ may disappear at narrow widths.
 `Funded - ` prefix strip.
 
 **Why:** measured before it was changed. `Funding_Status__c` holds eight values
-across the current era — 884 Unfunded, 367 not recorded, 325 Grant, 69
-Departmental/Gift, 25 Seeking Funding, 22 Funding Status Unknown, 16 Industry,
-5 Federal — plus a single free-text answer, summing to all 1,714 cases. It is a
-closed picklist, not the free-text field it looked like from the screen, and
-that is what makes an exhaustive map honest where a bucket would not be.
+across the current era — 888 Unfunded, 367 not recorded, 332 Grant, 66
+Departmental/Gift, 25 Seeking Funding, 23 Funding Status Unknown, 16 Industry
+and 4 Federal, summing to all 1,721 cases. It is a closed picklist, not the
+free-text field it looked like from the screen, and that is what makes an
+exhaustive map honest where a bucket would not be.
+
+Re-counted on `som-nero-phi-naras-ric` (D32). The shape of the argument is
+unchanged and no new value appeared, but the census lost an entry: the single
+free-text answer this corpus does not contain. The fall-through that rendered
+it is still there and now has a test of its own, because the field is a
+picklist by intent rather than by constraint.
 
 Three of the eight did not fit 104px, and for two of them truncation produced
 something worse than a blank cell rather than merely shorter. `Departmental/
@@ -1207,6 +1213,47 @@ now two things, prose that has to stay narrow and a rail that is chrome. Below
 1180px the rail folds above the thread, the same move the filter row makes at
 its own breakpoint, because a 1024px window less a 280px rail is not a reading
 measure.
+
+### D32 — the default project is `som-nero-phi-naras-ric`
+
+**Spec:** §9.1 and §11 name `som-rit-phi-starr-dev` as the default data project,
+overridable with `CASEFINDER_PROJECT`.
+
+**Built:** the same override, with `som-nero-phi-naras-ric` as the default.
+
+**Why:** the corpus moved. The mechanism the spec describes is untouched — one
+environment variable, one line in `config.py`, and `Era.table()` remains the
+only place a table reference is assembled — so this is a change of value rather
+than of design.
+
+**Effect on requirements:** none. Verified against the new project rather than
+assumed — `pytest -m warehouse`, 31 passed in 59.9 s.
+
+The dataset layout is identical: `salesforce_current`, `salesforce_marts`, and
+the `salesforce_raw.Case` / `salesforce_raw.User` join all resolve under the new
+project with no code change beyond the id, and the join is still 1:1 and
+complete at 1,721 of 1,721.
+
+The corpus is the same corpus, seven cases further on. Both eras gained exactly
+seven — 1,714 → 1,721 and 41,526 → 41,533 — which is a fresher batch load and
+not a different archive. Three measured figures were re-counted and are carried
+into the places that quote them:
+
+| Figure | Was | Now |
+|---|---:|---:|
+| Current era cases | 1,714 | 1,721 |
+| Archive era cases | 41,526 | 41,533 |
+| Conversation turns, archive | 280,001 | 280,505 |
+| Cases with no department, archive | 33,821 | 33,821 |
+
+The department figure did not move: all seven new cases have one. Its
+denominator did, so `queries.py`, `models.py` and `test_queries.py` now read
+"33,821 of 41,533".
+
+The one thing that changed shape rather than size is the funding census — see
+D29. The warehouse suite's own bounds are deliberately loose (`1_500 <= current
+<= 3_000`) so that a batch load does not fail the build; they were left loose,
+and only the "documented as" text in the failure message was updated.
 
 ---
 

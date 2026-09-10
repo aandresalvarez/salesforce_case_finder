@@ -99,10 +99,16 @@ COLUMNS = {
 # What the `Funded` column shows, and why it is not what the warehouse stores.
 #
 # `Funding_Status__c` is a closed picklist. Counted over the whole current era —
-# 884 Unfunded, 367 with nothing recorded, 325 Grant, 69 Departmental/Gift, 25
-# Seeking Funding, 22 Funding Status Unknown, 16 Industry, 5 Federal, and one
-# free-text answer, summing to all 1,714 cases — so the map below is exhaustive
-# rather than a bucket that quietly loses a tail.
+# 888 Unfunded, 367 with nothing recorded, 332 Grant, 66 Departmental/Gift, 25
+# Seeking Funding, 23 Funding Status Unknown, 16 Industry and 4 Federal, summing
+# to all 1,721 cases — so the map below is exhaustive rather than a bucket that
+# quietly loses a tail.
+#
+# The census used to carry a ninth entry: one case where somebody had typed a
+# sentence into the field instead of picking from it. It is not in this corpus.
+# The map is still a lookup rather than a bucket, and `_funding` still passes an
+# unrecognised value through unchanged, because "closed picklist" describes the
+# field's intent rather than a constraint the warehouse enforces.
 #
 # Two shortenings, for two different reasons.
 #

@@ -5,7 +5,7 @@ forces:
 
 Sorting is server-side. A list is capped at 500 rows, so sorting the page in
 the browser would order the wrong set — click "Owner" on a 500-row window of
-1,714 open cases and a grid would sort those 500, not re-ask for the first 500
+1,721 open cases and a grid would sort those 500, not re-ask for the first 500
 by owner. Header clicks therefore call back and re-run `triage_list`, which
 means the header needs a real click handler rather than a grid's built-in.
 
