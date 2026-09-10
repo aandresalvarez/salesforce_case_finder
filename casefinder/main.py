@@ -229,9 +229,19 @@ def cli(argv: list[str] | None = None) -> int:
         return 0
     if "--check" in args:
         return selfcheck.run()
+    if "--update" in args:
+        # Imported here rather than at module scope: it is the one module that
+        # opens a socket to somewhere other than BigQuery, and launching the app
+        # should not load it at all.
+        from . import update
+
+        return update.run()
     unknown = [a for a in args if a.startswith("-")]
     if unknown:
-        print(f"unrecognised option: {unknown[0]}\nusage: casefinder [--check] [--version]")
+        print(
+            f"unrecognised option: {unknown[0]}\n"
+            "usage: casefinder [--check] [--update] [--version]"
+        )
         return 2
     _pin_main_module()
     main()

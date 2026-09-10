@@ -150,9 +150,47 @@ def _check_bigquery() -> tuple[str, str, list[str]]:
     return FAILED, "BigQuery is not reachable", message.strip().splitlines()
 
 
+def _check_update() -> tuple[str, str, list[str]]:
+    """Is there a newer release than the one running?
+
+    Here because `casefinder --update` is a command nobody runs unprompted.
+    Without a line that mentions it, a team installs 2.1.0 once and stays on it
+    until somebody happens to send another email — which is the situation the
+    whole release-asset arrangement exists to end.
+
+    Never `FAILED`, in any branch. Being one version behind is not a broken
+    machine, and neither is a laptop that cannot reach github.com; both still
+    run the app against the warehouse perfectly. A red line here would send
+    someone chasing a problem they do not have.
+    """
+    from . import update
+
+    if update.running_from_checkout():
+        # Short-circuits before the network call, so working in the repository
+        # never involves one.
+        return OK, f"{config.VERSION} from a checkout — `git pull` to update", []
+    if not config.UPDATE_CHECK:
+        return OK, f"{config.VERSION} (CASEFINDER_UPDATE_CHECK is off)", []
+    try:
+        release = update.latest(timeout=update.CHECK_TIMEOUT)
+    except update.UpdateError as exc:
+        return WARN, f"could not check for a newer release — {exc}", []
+    if update.is_newer(release.version, config.VERSION):
+        return (
+            WARN,
+            f"{release.version} has been released — this is {config.VERSION}",
+            ["Update in place:", "    casefinder --update"],
+        )
+    return OK, f"nothing newer than {config.VERSION} has been released", []
+
+
 # Ordered so that a failure explains the failures under it: no gcloud means no
 # credentials, and no credentials means no BigQuery. A reader who fixes the
 # first line usually fixes the rest.
+#
+# `update` sits last despite being a fact about the app rather than the machine,
+# because it is the only check that can sit there waiting on a timeout, and a
+# list that stalls at its end reads better than one that stalls in its middle.
 CHECKS = (
     ("python", _check_python),
     ("app", lambda: (OK, f"{config.APP_NAME} {config.VERSION} imports cleanly", [])),
@@ -161,6 +199,7 @@ CHECKS = (
     ("gcloud", _check_gcloud),
     ("credentials", _check_adc),
     ("bigquery", _check_bigquery),
+    ("update", _check_update),
 )
 
 

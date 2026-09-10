@@ -1,6 +1,6 @@
 # Case Finder — as-built specification
 
-**Version 2.1.0 · 3 September 2026**
+**Version 2.1.1 · 10 September 2026**
 
 The normative specification is
 [`CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md`](CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md),
@@ -22,13 +22,13 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **636 passing**, ~2.6 s, no network access required |
+| Automated tests | **672 passing**, ~3.1 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
 | Native window | Opens a pywebview window on `127.0.0.1` with an OS-assigned port, from `python -m casefinder.main` and from the `casefinder` console script. `lsof` confirms the listening socket is bound to loopback and nothing else. |
 | macOS installer | `./install-mac.sh` completes on a clean path, exit 0, self-check reports BigQuery reachable |
-| Wheel | Built, then installed into a throwaway tool directory and exercised there: `--version` and `--check` correct, all 7 checks `ok`, presets resolved from `site-packages`, and the console script reports `init_main_from_name: casefinder.main` — see D33 |
+| Wheel | Built, then installed into a throwaway tool directory and exercised there: `--version` and `--check` correct, all 8 checks `ok`, presets resolved from `site-packages`, `--update` reaching the live releases API, and the console script reporting `init_main_from_name: casefinder.main` — see D33, D36 |
 | Ask | End-to-end against Vertex on both eras; generated SQL passed the read-only guard and dry-ran under cap |
 
 Tests requiring credentials are marked `warehouse` and excluded by default. The
@@ -46,7 +46,7 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-9,297 lines across 34 modules.
+9,582 lines across 35 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
@@ -64,13 +64,14 @@ makes the contract explicit and the whole suite finishes in a second.
 | `cache.py` | 302 | TTL cache with no disk backend, deliberately. Bounded, reaped, single-flight. |
 | `intake.py` | 449 | Reads the serialised intake form out of a case body (D15). Pure. |
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
-| `config.py` | 252 | Every environment variable and its default. |
+| `config.py` | 263 | Every environment variable and its default. |
 | `ui/ask_page.py` | 215 | §6.5 UI — generate, review, then run. |
 | `ui/components/filters.py` | 295 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 192 | §6.6 — free-form SQL with a priced dry run. |
 | `window.py` | 194 | What the native window can still do once the server behind it has gone (D21). |
-| `selfcheck.py` | 194 | `casefinder --check` — seven prerequisites, one line each, on any machine the app is installed on (D34). |
-| `main.py` | 245 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
+| `selfcheck.py` | 233 | `casefinder --check` — eight prerequisites, one line each, on any machine the app is installed on (D34). |
+| `update.py` | 225 | `casefinder --update` — which release is newest, and installing it over this one (D36). |
+| `main.py` | 255 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
 | `ui/settings.py` | 185 | §6.7 — era, connection, Ask availability, about. |
 | `ui/shell.py` | 156 | §3.1 — the navigation rail, the content region, and the connection gate. |
 | `ui/list_columns.py` | 140 | What a list row shows, and the order columns give way in (D16). |
@@ -199,7 +200,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirty-five departures from the specification. Each names what the spec says,
+Thirty-six departures from the specification. Each names what the spec says,
 what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -1331,10 +1332,10 @@ casefinder.main`.
 if practical"; §11.3 requires the Windows installer to check the webview runtime
 and surface a remediation message.
 
-**Built:** `casefinder --check`, seven checks — python, app, webview, presets,
-gcloud, credentials, BigQuery — printing one line each with indented remedies,
-exiting non-zero if any failed. Both installers now call it instead of carrying
-their own copy.
+**Built:** `casefinder --check`, eight checks — python, app, webview, presets,
+gcloud, credentials, BigQuery, and whether a newer release exists (D36) —
+printing one line each with indented remedies, exiting non-zero if any failed.
+Both installers now call it instead of carrying their own copy.
 
 **Why:** the checks were two heredocs, one per installer, and the installers are
 not part of the wheel. Everything they knew would have left with them — above all
@@ -1393,6 +1394,91 @@ questions — it ships in the wheel, and neither the guard nor the pre-commit ho
 can see it. Under the source-folder model nothing was ever shipped, so this is an
 exposure the wheel creates, and it is a PHI control rather than hygiene. The test
 caught a real untracked file on its first run.
+
+---
+
+### D36 — updating is a command in the app, because the obvious one cannot work
+
+**Spec:** silent. §16 covers getting the app onto a machine and says nothing
+about getting a later version onto the same machine, which was reasonable while
+the answer was "pull the repository".
+
+**Built:** `casefinder --update`, and a line in `casefinder --check` that says
+when a newer release exists. `release.sh --publish` is the other end of it.
+
+**Why:** D33 made the unit of distribution a wheel attached to a GitHub release,
+installed with `uv tool install <url>`. That URL names one exact version, and uv
+records it verbatim in the install receipt:
+
+```toml
+requirements = [{ name = "casefinder", url = ".../casefinder-2.1.0-...whl" }]
+```
+
+So `uv tool upgrade casefinder` — the command anybody would reach for, and the
+one a reader would assume works — re-resolves that pinned URL, finds it
+unchanged, and prints `Nothing to upgrade`. It will print that on every machine
+in the team forever, however many releases have happened. That was measured
+before any of this was written: install 2.1.0 from the release URL into a
+throwaway tool directory, ask uv to upgrade it, read the answer.
+
+No spelling of the install line avoids it. A wheel's filename has to carry a PEP
+440 version for uv to install it at all, so there can be no stable
+`casefinder-latest-py3-none-any.whl` for a permanent URL to point at, and the
+alternative — an index uv could resolve against — is a server, which is the one
+thing §9.1 exists to avoid.
+
+Left alone, this is the whole distribution story quietly failing: a fix gets
+released, nobody's copy changes, and the maintainer is back to emailing files,
+which is what D33 was for.
+
+So `update.py` asks GitHub's public releases API which release is newest,
+compares it, and runs `uv tool install --force` on the wheel from that release.
+Three details are load-bearing and each has a test:
+
+- **The wheel is filtered out of the assets**, not indexed. A release also
+  carries `requirements-lock.txt`, and handing that to `uv tool install` fails
+  in a way that reads like a corrupt download.
+- **`[ask]` survives.** `uv tool install --force <url>` installs the base
+  package, so a machine set up with the extra would lose the Ask screen on its
+  first update — the app would start, and one of five screens would be gone.
+  Whether the extra is installed is asked of the environment rather than
+  remembered.
+- **A checkout is told to `git pull`.** Running the wheel path against a
+  developer's repository would replace work in progress with the last release.
+
+The `--check` line exists because `--update` is a command nobody runs
+unprompted. It is `warn` and never `FAILED`, in every branch including an
+unreachable github.com: a laptop that is one version behind, or offline, runs
+the app against the warehouse perfectly, and a red line would send someone
+chasing a problem they do not have. `CASEFINDER_UPDATE_CHECK=0` switches it off
+for a network where it can only ever time out.
+
+The request is unauthenticated and carries nothing but a user-agent naming the
+version — which is already in the URL of whichever wheel that machine
+downloaded. This is the only code in the app that contacts anything other than
+BigQuery.
+
+`packaging` became a declared dependency for one comparison. It was already
+present as a dependency of `google-cloud-bigquery`, but an undeclared import
+works right up until the package that actually pulled it in stops needing it.
+The alternative was comparing versions as text, and `"2.10.0" > "2.9.0"` is
+False.
+
+**Effect on requirements:** none. Nothing about what the app reads, shows or
+stores changes. §9.1 is unaffected: the update path installs a public artifact
+under the user's own account and grants no access to anything.
+
+**The other end.** `release.sh --publish` tags, pushes, creates the release, and
+then — with `curl`, carrying none of `gh`'s credentials — downloads the
+published asset and installs it into a throwaway tool directory to check it
+reports the right version. That last step proves the *link* rather than the
+wheel, which is a different claim and the one the README makes; for 2.1.0 it was
+done by hand. The script refuses to move a tag that already exists, locally or
+on origin: a published tag is one somebody may have installed from, and
+re-pointing it changes what a URL means. It also refuses when the install URLs
+printed in `README.md` and `PROPOSAL.md` name a different version than the one
+being released — nothing regenerates those, so without the check they go stale
+silently and the command people copy installs the version before this one.
 
 ---
 

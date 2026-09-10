@@ -18,6 +18,13 @@ dependencies = [
     # release; the pin is what makes that validation mean anything.
     "pywebview>=5.4,<6",
     "google-cloud-bigquery>=3.20",
+    # For one comparison, in `update.py`: is the newest release newer than this
+    # one? Declared even though it is already in the tree as a dependency of
+    # google-cloud-bigquery, because an undeclared import works right up until
+    # the package that actually pulled it in stops needing it. Hand-rolling the
+    # comparison instead was the alternative, and `"2.10.0" > "2.9.0"` is False
+    # as strings.
+    "packaging>=23",
 ]
 
 [project.optional-dependencies]

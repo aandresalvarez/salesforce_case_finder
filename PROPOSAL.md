@@ -32,7 +32,7 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 636 automated
+**Status: complete and verified against the live warehouse.** 672 automated
 tests, plus 31 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path, and the distributable wheel installs and self-checks
@@ -128,7 +128,7 @@ certificate, no Authenticode signing, no IT ticket, and nothing to email around
 — the same three lines work on macOS and Windows:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
 casefinder --check
 casefinder
 ```
@@ -139,6 +139,12 @@ presets, the Google Cloud CLI, credentials, and BigQuery — and tells the reade
 how to fix any that are not ready. It names no paths belonging to the person
 running it, so its output can be pasted straight into a support request.
 Uninstalling is `uv tool uninstall casefinder`.
+
+Later versions do not need another email. `casefinder --check` says when a newer
+release exists and `casefinder --update` installs it, so the answer to "how do
+we get a fix to thirty laptops" is a sentence rather than a project. Publishing
+that fix is one command on this end, and it refuses to run over anything that
+has not passed the full test suite.
 
 People who work on the app clone it instead and run `./install-mac.sh` or
 `install-windows.ps1`, which do the same thing to a checkout and finish with the

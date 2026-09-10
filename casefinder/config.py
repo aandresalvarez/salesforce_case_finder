@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Case Finder"
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -191,6 +191,17 @@ NATIVE = _flag("CASEFINDER_NATIVE", True)
 
 WINDOW_SIZE = (1280, 800)
 MIN_WINDOW_SIZE = (1024, 700)
+
+# Whether `casefinder --check` also asks GitHub which release is newest. On by
+# default because an update nobody hears about is an update nobody installs, and
+# `--check` is the one command the README tells every user to run.
+#
+# Switchable off for the machine where it is not wanted: a locked-down network
+# where the call can only ever time out, or a user who would rather the app not
+# reach the internet for anything but the warehouse. Turning it off costs the
+# notice and nothing else — `casefinder --update` still works on demand.
+UPDATE_CHECK = _flag("CASEFINDER_UPDATE_CHECK", True)
+
 
 def tilde(path: Path | str) -> str:
     """Render a path with the home directory collapsed to `~`.

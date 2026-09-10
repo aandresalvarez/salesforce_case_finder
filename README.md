@@ -4,7 +4,7 @@ A small desktop app for searching the historical Salesforce support-case archive
 in BigQuery. It runs on your own laptop, signs in as you, and never copies case
 data to disk.
 
-**Version 2.1.0** · macOS and Windows · [full specification](SPECS.md)
+**Version 2.1.1** · macOS and Windows · [full specification](SPECS.md)
 
 Everything through **Uninstall** is for people who use the app. Everything after
 it is for people who change it.
@@ -64,13 +64,13 @@ this is the one reason the next step says `uv: command not found`.
 is nothing to download first:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
 ```
 
 If someone handed you the `.whl` file directly instead, point at the file:
 
 ```bash
-cd ~/Downloads && uv tool install "./casefinder-2.1.0-py3-none-any.whl"
+cd ~/Downloads && uv tool install "./casefinder-2.1.1-py3-none-any.whl"
 ```
 
 **Step 3 — check the machine, then start it:**
@@ -95,24 +95,43 @@ Leave that terminal window open. Closing it closes the app with it.
 your shell has not been told where it went. Run `uv tool update-shell`, then open
 a new window.
 
-To move to a newer version later, or to re-run an install that failed partway,
-add `--force` and use that release's URL. Every version is listed on the
-[releases page](https://github.com/aandresalvarez/salesforce_case_finder/releases).
-
 To include the optional natural-language mode, ask for the `ask` extra. From a
 URL that is the `name[extra] @ url` form; from a file it goes on the end. The
 quotes are required either way, because a bare `[ask]` means something else to
 the shell:
 
 ```bash
-uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
+uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
 ```
 
 ```bash
-uv tool install --force "./casefinder-2.1.0-py3-none-any.whl[ask]"
+uv tool install --force "./casefinder-2.1.1-py3-none-any.whl[ask]"
 ```
 
 That installs the mode without switching it on; see `CASEFINDER_ASK` below.
+
+### Keep it up to date
+
+Not `uv tool upgrade`. The install line above names one exact version and `uv`
+remembers it, so `uv tool upgrade casefinder` answers `Nothing to upgrade` — and
+will keep answering that no matter how many releases go by. Use the app's own
+command:
+
+```bash
+casefinder --update
+```
+
+It asks GitHub which release is newest, installs it if it is newer than yours,
+and tells you if it is not. An install made with `[ask]` keeps `[ask]`. Restart
+the app afterwards to be running the new one.
+
+You do not have to remember to check: `casefinder --check` says when a newer
+release exists. If you would rather it did not reach out, set
+`CASEFINDER_UPDATE_CHECK=0` — `--update` still works when you ask for it.
+
+Every release is listed on the
+[releases page](https://github.com/aandresalvarez/salesforce_case_finder/releases),
+and each one carries the install line for that version.
 
 ### Work on it
 
@@ -272,6 +291,7 @@ Everything is an environment variable, and every one has a working default.
 | `CASEFINDER_VIEWS_PATH` | the packaged `views.json` | Shared team presets; point it at your own file to override them |
 | `CASEFINDER_PERSONAL_VIEWS_PATH` | per-OS app data | Your own saved views |
 | `CASEFINDER_NATIVE` | true | `0` runs in a browser tab instead |
+| `CASEFINDER_UPDATE_CHECK` | true | `0` stops `--check` asking GitHub whether a newer release exists |
 
 ---
 
@@ -324,7 +344,7 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 636 tests, no credentials needed, ~3 s
+uv run pytest              # 672 tests, no credentials needed, ~4 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -354,6 +374,7 @@ uv run pytest -m warehouse   # 31 tests, ~55 s
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
 | `test_no_corpus_data.py` | No live case data is committed — this repo is public and the corpus is not |
 | `test_packaging.py` | What is true of the wheel but not of a checkout: packaged presets, the console script, nothing untracked shipping |
+| `test_update.py` | Finding the newest release and installing over this one, without touching the network |
 | `test_warehouse.py` | Semantics only real data can prove — opt-in, marked `warehouse` |
 
 UI tests render real NiceGUI pages into an isolated client and assert against
@@ -387,22 +408,42 @@ roster exists: one place to look, and no reason to reach for a real one.
 
 ### Releasing
 
+Bump `VERSION` in `casefinder/config.py` — the only place it lives;
+`pyproject.toml` reads it from there and `casefinder.__version__` re-exports it
+— update the install URLs in this file and `PROPOSAL.md` to match, commit, push,
+then:
+
 ```bash
-./release.sh
+./release.sh --publish
 ```
 
-Produces `dist/casefinder-<version>-py3-none-any.whl` — the file people are
-handed — and `dist/requirements-lock.txt`, the exact versions this release was
-tested against, for a site that has to pin them. Neither is committed.
+Without `--publish` it stops after building, which is the right thing when you
+want to look at the wheel. With it, one command does all of:
 
-It refuses to build over a dirty working tree, which is the same rule as the
-pre-commit hook seen from the other side: the build packages the *working tree*,
-so an uncommitted file is one the corpus guard has never scanned, and the wheel
-is the artifact that leaves the machine.
+1. refuses a dirty working tree;
+2. `ruff` and the full suite;
+3. builds the wheel and checks `views.json` is inside it;
+4. checks the install URLs in the docs name the version being released;
+5. writes `dist/requirements-lock.txt` — the exact versions this release was
+   tested against, for a site that has to pin them;
+6. tags, pushes the tag, and creates the GitHub release with both files
+   attached;
+7. downloads the published asset with no credentials and installs it into a
+   throwaway directory, so the link in the README is known to work rather than
+   assumed to.
 
-The version lives in one place, `casefinder/config.py`; `pyproject.toml` reads
-it from there and `casefinder.__version__` re-exports it. Bump it there and
-nowhere else.
+Neither built file is committed. The wheel is a release asset because a binary
+in git history is permanent: every clone fetches every version ever committed
+and a force-push does not remove it, which is the same reasoning as the corpus
+rule.
+
+The dirty-tree refusal is the pre-commit hook seen from the other side. The
+build packages the *working tree*, so an uncommitted file is one the corpus
+guard has never scanned, and the wheel is the artifact that leaves the machine.
+
+It will not move a tag that already exists, locally or on origin. A published
+tag is one somebody may have installed from, and re-pointing it changes what a
+URL means; the way to release again is a new version.
 
 ### Layout
 
@@ -418,6 +459,8 @@ casefinder/
   ask.py         question in, SQL out, no case data in the prompt
   intake.py      reads the serialised intake form out of a case body
   main.py        routes, and the loopback-only native window
+  selfcheck.py   `--check`: is this machine ready, and if not, what to do
+  update.py      `--update`: which release is newest, and installing it
   ui/            one module per screen, plus:
     theme.py       the visual language — one stylesheet, two installers
     state.py       what the reader has asked for, held between renders
