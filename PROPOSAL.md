@@ -123,11 +123,12 @@ independent queries now issue them concurrently.
 
 ## How it gets to people
 
-One file, and not a signed binary. No admin rights, no Apple Developer
-certificate, no Authenticode signing, no IT ticket.
+A link, and not a signed binary. No admin rights, no Apple Developer
+certificate, no Authenticode signing, no IT ticket, and nothing to email around
+— the same three lines work on macOS and Windows:
 
 ```bash
-uv tool install "./casefinder-2.1.0-py3-none-any.whl"
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
 casefinder --check
 casefinder
 ```

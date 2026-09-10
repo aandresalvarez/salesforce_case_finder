@@ -111,5 +111,13 @@ uv export --frozen --no-emit-project --no-hashes --extra ask --quiet \
 ok "requirements-lock.txt ($(grep -c '==' dist/requirements-lock.txt) pinned)"
 
 echo
-bold "Ready to publish:"
+bold "Built:"
 printf '  %s\n' dist/*
+echo
+# A release asset rather than a commit. A wheel in git history is permanent —
+# every clone fetches every version ever committed, and a force-push does not
+# remove it, which is the same reason the corpus rule says what it says.
+version=$(uv run --frozen casefinder --version | awk '{print $NF}')
+echo "Publish with:"
+echo "  git tag v$version && git push origin v$version"
+echo "  gh release create v$version dist/* --title \"Case Finder $version\""

@@ -37,12 +37,9 @@ Two slices of the archive are available, switchable in Settings:
 You need a Google account that has been granted BigQuery access to the data
 project. No admin rights, no service-account key, nothing to configure.
 
-There are two ways in. Which one you want depends on what you were given.
+There are two ways in: install it to use it, or clone it to work on it.
 
-### You were handed `casefinder-2.1.0-py3-none-any.whl`
-
-That one file is the app. It also lists what it needs, which the install fetches
-for you, so there is nothing else to download.
+### Use it
 
 **Step 1 — install `uv`,** the tool that does the installing. Skip this if you
 already have it.
@@ -63,14 +60,17 @@ Then **close that window and open a new one.** The installer edits your shell
 profile, and a window that was already open does not see the change. Skipping
 this is the one reason the next step says `uv: command not found`.
 
-**Step 2 — install Case Finder,** assuming the `.whl` is in `Downloads`:
+**Step 2 — install Case Finder.** One command, the same on both systems; there
+is nothing to download first:
+
+```bash
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
+```
+
+If someone handed you the `.whl` file directly instead, point at the file:
 
 ```bash
 cd ~/Downloads && uv tool install "./casefinder-2.1.0-py3-none-any.whl"
-```
-
-```powershell
-cd ~\Downloads; uv tool install ".\casefinder-2.1.0-py3-none-any.whl"
 ```
 
 **Step 3 — check the machine, then start it:**
@@ -95,10 +95,18 @@ Leave that terminal window open. Closing it closes the app with it.
 your shell has not been told where it went. Run `uv tool update-shell`, then open
 a new window.
 
-To install a newer version later, or to re-run an install that failed partway,
-add `--force`. To include the optional natural-language mode, ask for the `ask`
-extra — the quotes are required, because a bare `[ask]` means something else to
+To move to a newer version later, or to re-run an install that failed partway,
+add `--force` and use that release's URL. Every version is listed on the
+[releases page](https://github.com/aandresalvarez/salesforce_case_finder/releases).
+
+To include the optional natural-language mode, ask for the `ask` extra. From a
+URL that is the `name[extra] @ url` form; from a file it goes on the end. The
+quotes are required either way, because a bare `[ask]` means something else to
 the shell:
+
+```bash
+uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.0/casefinder-2.1.0-py3-none-any.whl"
+```
 
 ```bash
 uv tool install --force "./casefinder-2.1.0-py3-none-any.whl[ask]"
@@ -106,7 +114,9 @@ uv tool install --force "./casefinder-2.1.0-py3-none-any.whl[ask]"
 
 That installs the mode without switching it on; see `CASEFINDER_ASK` below.
 
-### You have the source checkout
+### Work on it
+
+Clone the repository, then run the setup script for your system:
 
 ```bash
 ./install-mac.sh     # then ./run-mac.sh

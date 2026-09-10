@@ -1268,6 +1268,15 @@ binary", and §11.5 defines uninstall as deleting that folder.
 additionally produces `casefinder-<version>-py3-none-any.whl` with a `casefinder`
 console script. `uv tool uninstall casefinder` removes that copy.
 
+The wheel is attached to a GitHub release rather than committed. A binary in git
+history is permanent — every clone fetches every version ever committed, and a
+force-push does not remove it, which is the reasoning of the corpus rule applied
+to a different kind of file. It also means `uv` installs from the release URL
+directly, so there is no file to send anyone and no download step. The asset is
+public because the repository is: it contains only what the repository already
+contains, ships no credential, and reaches no data — BigQuery IAM is the gate,
+so a copy in the wrong hands opens on the Connect screen and stops there.
+
 **Why:** the spec's reasons for refusing a binary — no admin rights, no Apple
 Developer certificate, no Authenticode, a reproducible `uv.lock` — are reasons
 against *signed native binaries*, and a pure-Python wheel gives up none of them.
