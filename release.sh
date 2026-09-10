@@ -77,11 +77,21 @@ fi
 # The presets are force-included rather than picked up as package data, and a
 # wheel missing them installs and runs perfectly while quietly having no team
 # views. Cheaper to assert here than to discover on someone's laptop.
-if ! unzip -l "$wheel" | grep -q 'casefinder/views.json'; then
-  fail "views.json is not in the wheel — the team presets would be missing"
-  exit 1
-fi
-ok "$(basename "$wheel") ($(unzip -l "$wheel" | tail -1 | awk '{print $2}') files, presets included)"
+#
+# Listed once into a variable and matched with `case` rather than piped into
+# `grep -q`. Under `pipefail` that pipeline reports failure even on a match:
+# `grep -q` exits the moment it finds one, `unzip` writes into the closed pipe
+# and dies of SIGPIPE, and the pipeline takes its status from that. Which is to
+# say this check failed on a wheel that was correct, the first time it ran.
+listing=$(unzip -l "$wheel")
+case "$listing" in
+  *"casefinder/views.json"*) ;;
+  *)
+    fail "views.json is not in the wheel — the team presets would be missing"
+    exit 1
+    ;;
+esac
+ok "$(basename "$wheel") ($(printf '%s\n' "$listing" | tail -1 | awk '{print $2}') files, presets included)"
 
 # --------------------------------------------------------------------------
 # 4. Lock file
