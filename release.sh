@@ -103,7 +103,10 @@ bold "4. Lock file"
 # the right subset on each. `--extra ask` so the optional feature's dependencies
 # are pinned too — someone installing with `[ask]` is installing more, and a
 # lock file that stops at the base install would not cover it.
-uv export --frozen --no-emit-project --no-hashes --extra ask \
+# `--quiet` because without it `uv export` echoes all ninety lines to the
+# terminal as well as writing them, which buries every other line this script
+# prints.
+uv export --frozen --no-emit-project --no-hashes --extra ask --quiet \
   -o dist/requirements-lock.txt || { fail "export failed"; exit 1; }
 ok "requirements-lock.txt ($(grep -c '==' dist/requirements-lock.txt) pinned)"
 
