@@ -25,8 +25,8 @@ nobody checked.
 | Automated tests | **636 passing**, ~2.6 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
-| Live warehouse | All 7 routes return HTTP 200 against `som-rit-phi-starr-dev` with no tracebacks. Not re-run route-by-route since the project moved to `som-nero-phi-naras-ric`; the warehouse suite passes there and every query the routes issue is covered by it — see D32. |
-| Native window | `python -m casefinder.main` opens a pywebview window on `127.0.0.1` with an OS-assigned port |
+| Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
+| Native window | Opens a pywebview window on `127.0.0.1` with an OS-assigned port, from `python -m casefinder.main` and from the `casefinder` console script. `lsof` confirms the listening socket is bound to loopback and nothing else. |
 | macOS installer | `./install-mac.sh` completes on a clean path, exit 0, self-check reports BigQuery reachable |
 | Wheel | Built, then installed into a throwaway tool directory and exercised there: `--version` and `--check` correct, all 7 checks `ok`, presets resolved from `site-packages`, and the console script reports `init_main_from_name: casefinder.main` — see D33 |
 | Ask | End-to-end against Vertex on both eras; generated SQL passed the read-only guard and dry-ran under cap |
