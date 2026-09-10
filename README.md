@@ -125,6 +125,10 @@ It asks GitHub which release is newest, installs it if it is newer than yours,
 and tells you if it is not. An install made with `[ask]` keeps `[ask]`. Restart
 the app afterwards to be running the new one.
 
+**If you are on 2.1.0** — check with `casefinder --version` — that release came
+out before this command existed, so it answers `unrecognised option: --update`.
+Run the install line above one last time. Every version after it updates itself.
+
 You do not have to remember to check: `casefinder --check` says when a newer
 release exists. If you would rather it did not reach out, set
 `CASEFINDER_UPDATE_CHECK=0` — `--update` still works when you ask for it.

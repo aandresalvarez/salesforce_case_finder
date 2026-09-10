@@ -1464,6 +1464,18 @@ works right up until the package that actually pulled it in stops needing it.
 The alternative was comparing versions as text, and `"2.10.0" > "2.9.0"` is
 False.
 
+Exercised against the published 2.1.1 release rather than against fakes: a real
+installed copy, with the version recorded inside it edited down so that it would
+be behind, was shown the `warn` line, told to update, and came back reporting
+2.1.1 with the line gone. Only "this copy is old" is synthetic — the release it
+found, the wheel it fetched and the install it performed were the real ones.
+
+The one machine this cannot reach is a machine running 2.1.0, which predates the
+command and answers `unrecognised option: --update`. Getting off 2.1.0 takes the
+install line one final time; every release after it updates itself. That is the
+cost of the arrangement having been designed one release late, and it is paid
+once.
+
 **Effect on requirements:** none. Nothing about what the app reads, shows or
 stores changes. §9.1 is unaffected: the update path installs a public artifact
 under the user's own account and grants no access to anything.
