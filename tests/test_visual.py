@@ -82,7 +82,13 @@ def _populate(warehouse) -> None:
     ]
     warehouse.timeline = [
         TimelineEvent.from_row(
-            {"seq": 1, "kind": "message", "what": "Email from requester", "who": "Requester"}
+            {
+                "seq": 1,
+                "kind": "message",
+                "what": "Email from requester",
+                "who": "Requester",
+                "body": "Please see the attached file.",
+            }
         ),
         TimelineEvent.from_row(
             {"seq": 2, "kind": "field change", "what": "Status", "detail": "New → Open"}

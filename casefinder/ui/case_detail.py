@@ -589,7 +589,8 @@ def _timeline_row(event: TimelineEvent, shown: dict[str, str] | None = None) -> 
                 # print the serialised intake payload verbatim — the whole
                 # form, as one unbroken line of JSON, as the most prominent
                 # thing on the screen.
-                intake_form.body(event.body, shown=shown).style("margin-top:4px")
+                with ui.element("div").classes("w-full").style("margin-top:4px"):
+                    intake_form.body(event.body, shown=shown)
 
 
 # --------------------------------------------------------------------------

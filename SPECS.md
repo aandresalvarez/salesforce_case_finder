@@ -1,6 +1,6 @@
 # Case Finder — as-built specification
 
-**Version 2.1.1 · 10 September 2026**
+**Version 2.1.2 · 17 September 2026**
 
 The normative specification is
 [`CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md`](CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md),

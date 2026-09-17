@@ -4,7 +4,7 @@ A small desktop app for searching the historical Salesforce support-case archive
 in BigQuery. It runs on your own laptop, signs in as you, and never copies case
 data to disk.
 
-**Version 2.1.1** · macOS and Windows · [full specification](SPECS.md)
+**Version 2.1.2** · macOS and Windows · [full specification](SPECS.md)
 
 Everything through **Uninstall** is for people who use the app. Everything after
 it is for people who change it.
@@ -64,13 +64,13 @@ this is the one reason the next step says `uv: command not found`.
 is nothing to download first:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
 ```
 
 If someone handed you the `.whl` file directly instead, point at the file:
 
 ```bash
-cd ~/Downloads && uv tool install "./casefinder-2.1.1-py3-none-any.whl"
+cd ~/Downloads && uv tool install "./casefinder-2.1.2-py3-none-any.whl"
 ```
 
 **Step 3 — check the machine, then start it:**
@@ -101,11 +101,11 @@ quotes are required either way, because a bare `[ask]` means something else to
 the shell:
 
 ```bash
-uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
+uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
 ```
 
 ```bash
-uv tool install --force "./casefinder-2.1.1-py3-none-any.whl[ask]"
+uv tool install --force "./casefinder-2.1.2-py3-none-any.whl[ask]"
 ```
 
 That installs the mode without switching it on; see `CASEFINDER_ASK` below.

@@ -128,7 +128,7 @@ certificate, no Authenticode signing, no IT ticket, and nothing to email around
 — the same three lines work on macOS and Windows:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.1/casefinder-2.1.1-py3-none-any.whl"
+uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
 casefinder --check
 casefinder
 ```

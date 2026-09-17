@@ -22,7 +22,7 @@ import pytest
 import synthetic
 from nicegui import ui
 
-from casefinder.models import Comment
+from casefinder.models import Comment, TimelineEvent
 from casefinder.ui import case_detail, lists, saved_views
 from casefinder.ui import state as ui_state
 from casefinder.ui.components import intake_form, loading
@@ -504,6 +504,38 @@ def test_a_description_that_is_a_form_is_read_the_same_way(render, warehouse):
 
     tree = render(metadata_ui.description_block, synthetic.intake_payload())
 
+    assert "Funding status" in tree.texts()
+
+
+def test_a_timeline_event_with_a_body_renders(render):
+    """FR-CASE-8: a timeline event carrying an email or comment body renders
+    through intake_form.body without throwing AttributeError on style chaining.
+    """
+    event = TimelineEvent.from_row(
+        {
+            "seq": 1,
+            "kind": "message",
+            "what": "Email from requester",
+            "who": "Requester",
+            "body": "Here is the timeline message body.",
+        }
+    )
+    tree = render(case_detail._timeline_row, event)
+    assert "Here is the timeline message body." in tree.texts()
+
+
+def test_a_timeline_event_with_an_intake_form_body_renders_as_one(render):
+    """FR-CASE-8: an intake form in a timeline event is formatted as a form."""
+    event = TimelineEvent.from_row(
+        {
+            "seq": 1,
+            "kind": "message",
+            "what": "Email from requester",
+            "who": "Requester",
+            "body": synthetic.intake_payload(),
+        }
+    )
+    tree = render(case_detail._timeline_row, event)
     assert "Funding status" in tree.texts()
 
 
