@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import io
 import json
+import ssl
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
-from casefinder import config, main, selfcheck, update
+from casefinder import cli, config, selfcheck, update
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +33,17 @@ def no_network(monkeypatch):
         raise AssertionError("a test tried to contact GitHub")
 
     monkeypatch.setattr(urllib.request, "urlopen", explode)
+
+
+_CAN_REPLACE_ITSELF = update.can_replace_itself
+
+
+@pytest.fixture(autouse=True)
+def posix(monkeypatch):
+    """Every test here answers as a POSIX machine unless it says otherwise, so
+    the suite means the same thing on the Windows laptop of someone working on
+    the app. The Windows tests below set it back to False themselves."""
+    monkeypatch.setattr(update, "can_replace_itself", lambda: True)
 
 
 @pytest.fixture
@@ -71,10 +84,11 @@ def _answers(monkeypatch, payload):
         def __exit__(self, *exc):
             self.close()
 
-    def fake(request, timeout=None):
+    def fake(request, timeout=None, context=None):
         seen["url"] = request.full_url
         seen["headers"] = request.headers
         seen["timeout"] = timeout
+        seen["context"] = context
         return _Response(json.dumps(payload).encode())
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
@@ -82,7 +96,7 @@ def _answers(monkeypatch, payload):
 
 
 def _raises(monkeypatch, exc):
-    def fake(request, timeout=None):
+    def fake(request, timeout=None, context=None):
         raise exc
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
@@ -148,7 +162,9 @@ def test_a_response_that_is_not_json_is_reported(monkeypatch):
             self.close()
 
     monkeypatch.setattr(
-        urllib.request, "urlopen", lambda request, timeout=None: _Response(b"<html>nope")
+        urllib.request,
+        "urlopen",
+        lambda request, timeout=None, context=None: _Response(b"<html>nope"),
     )
     with pytest.raises(update.UpdateError, match="not JSON"):
         update.latest()
@@ -288,7 +304,7 @@ def test_a_newer_release_is_installed_from_its_wheel_url(monkeypatch, installed,
     _answers(monkeypatch, _payload())
     assert update.run(io.StringIO()) == 0
     assert uv.argv[1:4] == ["tool", "install", "--force"]
-    assert uv.argv[4].endswith("casefinder-2.2.0-py3-none-any.whl")
+    assert uv.argv[-1].endswith("casefinder-2.2.0-py3-none-any.whl")
 
 
 def test_the_ask_extra_survives_an_update(monkeypatch, installed, uv):
@@ -298,7 +314,7 @@ def test_the_ask_extra_survives_an_update(monkeypatch, installed, uv):
 
     update.run(io.StringIO())
 
-    assert uv.argv[4].startswith("casefinder[ask] @ https://")
+    assert uv.argv[-1].startswith("casefinder[ask] @ https://")
 
 
 def test_without_the_extra_the_bare_url_is_installed(monkeypatch, installed, uv):
@@ -307,7 +323,142 @@ def test_without_the_extra_the_bare_url_is_installed(monkeypatch, installed, uv)
 
     update.run(io.StringIO())
 
-    assert uv.argv[4].startswith("https://")
+    assert uv.argv[-1].startswith("https://")
+
+
+def _python_of(argv):
+    assert "--python" in argv, "uv was left to choose the Python, and it chooses the newest"
+    return argv[argv.index("--python") + 1]
+
+
+def test_an_update_stays_on_the_python_it_is_running_on(monkeypatch, installed, uv):
+    """Leaving `--python` out is not neutral. `uv tool install --force` rebuilds
+    on uv's default, which is the newest Python on the machine — measured: a
+    working 3.13 install came back on 3.14 and no longer started (D37)."""
+    _answers(monkeypatch, _payload())
+
+    assert update.run(io.StringIO()) == 0
+
+    assert _python_of(uv.argv) == config.python_label()
+
+
+def test_a_copy_on_an_unsupported_python_is_moved_to_the_newest_supported(
+    monkeypatch, installed, uv
+):
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+    _answers(monkeypatch, _payload())
+    out = io.StringIO()
+
+    assert update.run(out) == 0
+
+    assert _python_of(uv.argv) == config.python_label(config.PYTHON_NEWEST)
+    assert "does not" in out.getvalue(), "the move happened without saying why"
+
+
+def test_a_stranded_copy_is_repaired_even_when_nothing_newer_exists(monkeypatch, installed, uv):
+    """The copy cannot start, and this is the one command it still has — both
+    `casefinder` and `--check` send it here. "Nothing newer" would strand it."""
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+    _answers(monkeypatch, _payload(tag=f"v{config.VERSION}"))
+    out = io.StringIO()
+
+    assert update.run(out) == 0
+
+    assert uv.argv is not None, "a copy that cannot start was told there was nothing to do"
+    assert _python_of(uv.argv) == config.python_label(config.PYTHON_NEWEST)
+    assert "Reinstalled" in out.getvalue()
+
+
+def test_a_stranded_build_ahead_of_every_release_is_not_downgraded(monkeypatch, installed, uv):
+    """The maintainer's machine: an unpublished build on the wrong Python.
+    Reinstalling "the newest release" there would be installing an older one."""
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+    _answers(monkeypatch, _payload(tag="v0.0.1"))
+    out = io.StringIO()
+
+    assert update.run(out) == 1
+
+    assert uv.argv is None
+    assert "--python" in out.getvalue()
+
+
+def test_a_supported_copy_with_nothing_newer_is_left_alone(monkeypatch, installed, uv):
+    _answers(monkeypatch, _payload(tag=f"v{config.VERSION}"))
+
+    assert update.run(io.StringIO()) == 0
+
+    assert uv.argv is None, "a working install was reinstalled for no reason"
+
+
+def test_github_is_reached_with_certifi_on_top_of_the_platform_store(monkeypatch):
+    """A python.org build on macOS trusts nothing until its own "Install
+    Certificates" script has run, and uv will build the tool on one if it finds
+    one. The platform store stays in, for a proxy only Windows trusts."""
+    calls = []
+    real = update.certifi.where
+    monkeypatch.setattr(update.certifi, "where", lambda: calls.append(1) or real())
+    seen = _answers(monkeypatch, _payload())
+
+    update.latest()
+
+    assert isinstance(seen["context"], ssl.SSLContext)
+    assert seen["context"].verify_mode == ssl.CERT_REQUIRED, "verification was switched off"
+    assert calls, "certifi's certificates were not loaded"
+
+
+def test_only_windows_refuses_to_let_a_program_replace_itself(monkeypatch):
+    monkeypatch.setattr(update.os, "name", "nt")
+    assert _CAN_REPLACE_ITSELF() is False
+    monkeypatch.setattr(update.os, "name", "posix")
+    assert _CAN_REPLACE_ITSELF() is True
+
+
+def test_on_windows_the_update_is_printed_rather_than_run(monkeypatch, installed, uv):
+    """uv deletes the old environment file by file and stops at the first file
+    Windows refuses — and during `--update` those files are the ones running
+    it. Trying anyway can leave a working copy half-deleted."""
+    monkeypatch.setattr(update, "can_replace_itself", lambda: False)
+    _answers(monkeypatch, _payload())
+    out = io.StringIO()
+
+    assert update.run(out) == 1, "an update that has not happened must not report success"
+
+    assert uv.argv is None, "uv was run on Windows, over the files running it"
+    text = out.getvalue()
+    assert f"uv tool install --force --python {config.python_label()} " in text
+    assert "casefinder-2.2.0-py3-none-any.whl" in text
+    assert "Close Case Finder" in text
+
+
+def test_on_windows_the_printed_line_keeps_the_ask_extra(monkeypatch, installed, uv):
+    monkeypatch.setattr(update, "can_replace_itself", lambda: False)
+    monkeypatch.setattr(update, "_has_ask_extra", lambda: True)
+    _answers(monkeypatch, _payload())
+    out = io.StringIO()
+
+    update.run(out)
+
+    assert '"casefinder[ask] @ https://' in out.getvalue()
+
+
+def test_on_windows_a_stranded_copy_is_shown_the_line_for_its_own_version(monkeypatch, installed):
+    """No `--update` hop and no network: it is its own version it reinstalls."""
+    monkeypatch.setattr(update, "can_replace_itself", lambda: False)
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+
+    status, _, remedy = selfcheck.check_python()
+
+    assert status == selfcheck.FAILED
+    text = "\n".join(remedy)
+    assert update.wheel_url(config.VERSION) in text
+    assert f"--python {config.python_label(config.PYTHON_NEWEST)}" in text
+
+
+def test_the_wheel_url_a_copy_builds_for_itself_is_the_one_the_readme_gives():
+    """`release.sh` refuses to publish while the README names another version,
+    so the README's URL is the one that exists — and this is the one printed."""
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    assert update.wheel_url(config.VERSION) in readme
 
 
 def test_the_extra_is_read_off_the_environment(monkeypatch):
@@ -334,7 +485,9 @@ def test_no_uv_on_path_prints_the_command_instead_of_guessing(monkeypatch, insta
 
     assert update.run(out) == 1, "an update that did not happen must not report success"
 
-    assert "uv tool install --force" in out.getvalue()
+    assert "uv tool install --force --python " in out.getvalue(), (
+        "the printed command would put the app on uv's default Python"
+    )
 
 
 def test_a_failed_install_returns_the_exit_code_uv_gave(monkeypatch, installed):
@@ -429,11 +582,11 @@ def test_the_update_check_skips_the_network_in_a_checkout(monkeypatch):
 
 def test_the_update_flag_is_wired_to_the_module_and_returns_its_code(monkeypatch):
     monkeypatch.setattr(update, "run", lambda *a, **k: 5)
-    assert main.cli(["--update"]) == 5
+    assert cli.cli(["--update"]) == 5
 
 
 def test_the_usage_line_mentions_every_flag_that_exists(capsys):
-    assert main.cli(["--nope"]) == 2
+    assert cli.cli(["--nope"]) == 2
     usage = capsys.readouterr().out
     for flag in ("--check", "--update", "--version"):
         assert flag in usage

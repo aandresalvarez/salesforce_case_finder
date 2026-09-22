@@ -4,7 +4,7 @@ A small desktop app for searching the historical Salesforce support-case archive
 in BigQuery. It runs on your own laptop, signs in as you, and never copies case
 data to disk.
 
-**Version 2.1.2** · macOS and Windows · [full specification](SPECS.md)
+**Version 2.1.3** · macOS and Windows · [full specification](SPECS.md)
 
 Everything through **Uninstall** is for people who use the app. Everything after
 it is for people who change it.
@@ -41,8 +41,13 @@ There are two ways in: install it to use it, or clone it to work on it.
 
 ### Use it
 
-**Step 1 — install `uv`,** the tool that does the installing. Skip this if you
-already have it.
+Everything here stays inside your own user account. It needs no admin rights,
+and it leaves the rest of the machine as it was: a Python you already have is
+not changed, and other programs go on using whatever they used before. What the
+install adds, and how to take it away again, is under [Uninstall](#uninstall).
+
+**Step 1 — install `uv`,** the tool that does the installing. If `uv --version`
+already prints a version number, skip to step 2.
 
 On macOS, open Terminal:
 
@@ -50,27 +55,47 @@ On macOS, open Terminal:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-On Windows, open **PowerShell** — the older `cmd.exe` prompt will not run these:
+On Windows, open **PowerShell** — not the older `cmd.exe` prompt:
 
 ```powershell
-irm https://astral.sh/uv/install.ps1 | iex
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Then **close that window and open a new one.** The installer edits your shell
-profile, and a window that was already open does not see the change. Skipping
-this is the one reason the next step says `uv: command not found`.
+Copy that line whole. It runs the installer in a second PowerShell, so if
+anything goes wrong the error stays on your screen. The shorter `irm … | iex`
+you may see elsewhere runs it inside your own window, and when it fails it
+closes that window, error message and all.
+
+**Then close the window and open a new one** — on Windows, close every
+PowerShell window. The installer has just added `uv` to your PATH, and a window
+that was already open does not see the change. In the new window:
+
+```bash
+uv --version
+```
+
+A version number means step 1 worked. `uv: command not found` on macOS, or
+`The term 'uv' is not recognized as the name of a cmdlet…` on Windows, means
+the window was opened before the install finished: close it and open another.
 
 **Step 2 — install Case Finder.** One command, the same on both systems; there
 is nothing to download first:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
+uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.3/casefinder-2.1.3-py3-none-any.whl"
 ```
+
+Keep the `--python 3.13`. Case Finder does not run on Python 3.14 yet, and
+without the flag `uv` picks the newest Python it can find — on a machine with no
+Python at all, it downloads 3.14. If there is no 3.13 on the machine, `uv`
+fetches one into its own folder. That copy is not put on your PATH or registered
+with Windows, and it replaces nothing: typing `python` still starts whatever it
+started before.
 
 If someone handed you the `.whl` file directly instead, point at the file:
 
 ```bash
-cd ~/Downloads && uv tool install "./casefinder-2.1.2-py3-none-any.whl"
+cd ~/Downloads && uv tool install --python 3.13 "./casefinder-2.1.3-py3-none-any.whl"
 ```
 
 **Step 3 — check the machine, then start it:**
@@ -101,11 +126,11 @@ quotes are required either way, because a bare `[ask]` means something else to
 the shell:
 
 ```bash
-uv tool install --force "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
+uv tool install --force --python 3.13 "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.3/casefinder-2.1.3-py3-none-any.whl"
 ```
 
 ```bash
-uv tool install --force "./casefinder-2.1.2-py3-none-any.whl[ask]"
+uv tool install --force --python 3.13 "./casefinder-2.1.3-py3-none-any.whl[ask]"
 ```
 
 That installs the mode without switching it on; see `CASEFINDER_ASK` below.
@@ -122,12 +147,27 @@ casefinder --update
 ```
 
 It asks GitHub which release is newest, installs it if it is newer than yours,
-and tells you if it is not. An install made with `[ask]` keeps `[ask]`. Restart
-the app afterwards to be running the new one.
+and tells you if it is not. What you already have is kept: the same Python
+version, and `[ask]` if you installed with `[ask]`. Restart the app afterwards
+to be running the new one.
 
-**If you are on 2.1.0** — check with `casefinder --version` — that release came
-out before this command existed, so it answers `unrecognised option: --update`.
-Run the install line above one last time. Every version after it updates itself.
+**On Windows the last step is yours.** Windows will not let a program replace
+its own files while it is running, so there `casefinder --update` finds the
+release and prints the one command that installs it. Close Case Finder, then
+paste that command into the same window.
+
+A copy that has ended up on a Python Case Finder does not run on says so when
+you start it, and gives you the command that moves it onto Python 3.13.
+
+**If your copy is older than 2.1.3,** update it once with the install line,
+`--force` added. Its own `--update` is either missing (2.1.0), crashes on Python
+3.14 with `module 'pkgutil' has no attribute 'find_loader'`, or — on Windows —
+tries to replace the program while it runs, which Windows stops partway. After
+this one time, `casefinder --update` is enough:
+
+```bash
+uv tool install --force --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.3/casefinder-2.1.3-py3-none-any.whl"
+```
 
 You do not have to remember to check: `casefinder --check` says when a newer
 release exists. If you would rather it did not reach out, set
@@ -329,11 +369,22 @@ Your own saved views go somewhere else and are never shared:
 
 ## Uninstall
 
-If you installed the `.whl`:
+If you installed it with `uv tool install`:
 
 ```bash
 uv tool uninstall casefinder
 ```
+
+That removes Case Finder and its `casefinder` command. Two things the install
+may have added stay behind, because other things can use them; both are safe to
+keep, and both live in your own account:
+
+- **`uv`**, in `~/.local/bin`, which step 1 also added to your PATH. uv's own
+  documentation says how to
+  [remove it](https://docs.astral.sh/uv/getting-started/installation/#uninstallation).
+- **A Python 3.13 in uv's folder**, if uv had to fetch one. `uv python list
+  --only-installed` shows it, and `uv python uninstall 3.13` removes it once
+  nothing else you installed with uv is using it.
 
 If you have the source checkout, delete the folder.
 
@@ -348,7 +399,7 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 672 tests, no credentials needed, ~4 s
+uv run pytest              # 701 tests, no credentials needed, ~5 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -377,8 +428,8 @@ uv run pytest -m warehouse   # 31 tests, ~55 s
 | `test_pagination.py` | Paging on lists and search: offsets, tiebreaks, and when the offset resets |
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
 | `test_no_corpus_data.py` | No live case data is committed — this repo is public and the corpus is not |
-| `test_packaging.py` | What is true of the wheel but not of a checkout: packaged presets, the console script, nothing untracked shipping |
-| `test_update.py` | Finding the newest release and installing over this one, without touching the network |
+| `test_packaging.py` | What is true of the wheel but not of a checkout: packaged presets, the console script, the Pythons it runs on, flags that work when the UI cannot import, nothing untracked shipping |
+| `test_update.py` | Finding the newest release and installing it on the right Python — or, on Windows, printing the command — without touching the network |
 | `test_warehouse.py` | Semantics only real data can prove — opt-in, marked `warehouse` |
 
 UI tests render real NiceGUI pages into an isolated client and assert against
@@ -428,13 +479,17 @@ want to look at the wheel. With it, one command does all of:
 2. `ruff` and the full suite;
 3. builds the wheel and checks `views.json` is inside it;
 4. checks the install URLs in the docs name the version being released;
-5. writes `dist/requirements-lock.txt` — the exact versions this release was
+5. asks PyPI whether every dependency installs prebuilt — no compiler needed —
+   on Windows and on both kinds of Mac, for the Python the install line names;
+6. writes `dist/requirements-lock.txt` — the exact versions this release was
    tested against, for a site that has to pin them;
-6. tags, pushes the tag, and creates the GitHub release with both files
+7. tags, pushes the tag, and creates the GitHub release with both files
    attached;
-7. downloads the published asset with no credentials and installs it into a
-   throwaway directory, so the link in the README is known to work rather than
-   assumed to.
+8. downloads the published asset with no credentials and installs it the way a
+   teammate would: the newest uv, and no Python but the one uv downloads. Once
+   with the README's line, and once without `--python`, to prove that a copy on
+   the wrong Python says so and repairs itself. The link in the README is then
+   known to work rather than assumed to.
 
 Neither built file is committed. The wheel is a release asset because a binary
 in git history is permanent: every clone fetches every version ever committed
@@ -462,6 +517,7 @@ casefinder/
   views.py       saved views; the allowlist of what may be persisted
   ask.py         question in, SQL out, no case data in the prompt
   intake.py      reads the serialised intake form out of a case body
+  cli.py         the `casefinder` command: flags first, the window last
   main.py        routes, and the loopback-only native window
   selfcheck.py   `--check`: is this machine ready, and if not, what to do
   update.py      `--update`: which release is newest, and installing it

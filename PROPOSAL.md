@@ -32,7 +32,7 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 672 automated
+**Status: complete and verified against the live warehouse.** 701 automated
 tests, plus 31 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path, and the distributable wheel installs and self-checks
@@ -124,14 +124,21 @@ independent queries now issue them concurrently.
 ## How it gets to people
 
 A link, and not a signed binary. No admin rights, no Apple Developer
-certificate, no Authenticode signing, no IT ticket, and nothing to email around
-— the same three lines work on macOS and Windows:
+certificate, no Authenticode signing, no IT ticket, and nothing to email around.
+Once `uv` is installed — one line, from its own site — the same three lines work
+on macOS and Windows:
 
 ```bash
-uv tool install "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.2/casefinder-2.1.2-py3-none-any.whl"
+uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.3/casefinder-2.1.3-py3-none-any.whl"
 casefinder --check
 casefinder
 ```
+
+The `--python 3.13` matters. The interface library does not run on Python 3.14
+yet, and without the flag `uv` picks the newest Python it can find, which on a
+new machine is 3.14. With it, `uv` fetches a 3.13 into its own folder if there
+is none — without touching any Python already on the machine, or anything else
+that uses one.
 
 `--check` is the part worth pointing at. It reports, one line each, whether this
 machine has Python, the drawing engine the desktop window needs, the team

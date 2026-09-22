@@ -1,6 +1,6 @@
 # Case Finder — as-built specification
 
-**Version 2.1.2 · 17 September 2026**
+**Version 2.1.3 · 22 September 2026**
 
 The normative specification is
 [`CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md`](CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md),
@@ -22,13 +22,13 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **672 passing**, ~3.1 s, no network access required |
+| Automated tests | **701 passing**, ~4.5 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
 | Native window | Opens a pywebview window on `127.0.0.1` with an OS-assigned port, from `python -m casefinder.main` and from the `casefinder` console script. `lsof` confirms the listening socket is bound to loopback and nothing else. |
 | macOS installer | `./install-mac.sh` completes on a clean path, exit 0, self-check reports BigQuery reachable |
-| Wheel | Built, then installed into a throwaway tool directory and exercised there: `--version` and `--check` correct, all 8 checks `ok`, presets resolved from `site-packages`, `--update` reaching the live releases API, and the console script reporting `init_main_from_name: casefinder.main` — see D33, D36 |
+| Wheel | Built, then installed with the uv a teammate gets today (0.12.17) into a sandbox holding no Python but what uv downloads. From the README's line: Python 3.13, `--version` right, the app imports, and the console script's window spawn reporting `init_main_from_name: casefinder.main`. Left to uv's choice: Python 3.14, where `casefinder` refuses to start and names the fix, `--check` reports it on two lines without a traceback, and `--update` moves it to 3.13. Every dependency installs prebuilt on Windows and on both kinds of Mac — see D33, D36, D37 |
 | Ask | End-to-end against Vertex on both eras; generated SQL passed the read-only guard and dry-ran under cap |
 
 Tests requiring credentials are marked `warehouse` and excluded by default. The
@@ -46,35 +46,36 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-9,582 lines across 35 modules.
+9,809 lines across 36 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
 | `queries.py` | 786 | Pure `(sql, params)` builders. No I/O, no globals, no client. |
 | `models.py` | 710 | Typed rows; the single place that decides how a missing value is displayed. |
 | `ui/reconnect.py` | 566 | What the window says, and offers, when the program behind it stops answering (D20, D21). |
-| `ui/case_detail.py` | 750 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
+| `ui/case_detail.py` | 751 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
 | `ui/lists.py` | 444 | §6.2 — the triage list, its filters, its paging and its CSV. |
 | `bq.py` | 469 | One client, byte caps, cost estimates, and the two-stage read-only guard. |
 | `ui/search.py` | 434 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
 | `data.py` | 350 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 297 | Saved views, and the allowlist of what may be persisted. |
-| `ask.py` | 248 | §6.5 — question in, SQL out; nothing else in the prompt. |
+| `ask.py` | 256 | §6.5 — question in, SQL out; nothing else in the prompt. |
 | `ui/theme.py` | 346 | §3.3 — the visual language, and the two ways a stylesheet reaches a page. |
 | `cache.py` | 302 | TTL cache with no disk backend, deliberately. Bounded, reaped, single-flight. |
 | `intake.py` | 449 | Reads the serialised intake form out of a case body (D15). Pure. |
 | `ui/components/table.py` | 223 | The list table; clickable rows, no Open button, container-query columns (D16). |
-| `config.py` | 263 | Every environment variable and its default. |
+| `config.py` | 289 | Every environment variable and its default, and the Pythons the app runs on (D37). |
 | `ui/ask_page.py` | 215 | §6.5 UI — generate, review, then run. |
 | `ui/components/filters.py` | 295 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 192 | §6.6 — free-form SQL with a priced dry run. |
 | `window.py` | 194 | What the native window can still do once the server behind it has gone (D21). |
-| `selfcheck.py` | 233 | `casefinder --check` — eight prerequisites, one line each, on any machine the app is installed on (D34). |
-| `update.py` | 225 | `casefinder --update` — which release is newest, and installing it over this one (D36). |
-| `main.py` | 255 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
+| `selfcheck.py` | 278 | `casefinder --check` — eight prerequisites, one line each, on any machine the app is installed on (D34, D37). |
+| `update.py` | 347 | `casefinder --update` — which release is newest, installing it on a named Python, and repairing a copy on the wrong one (D36, D37). |
+| `main.py` | 223 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
+| `cli.py` | 65 | The `casefinder` command: every flag read before anything imports the UI, and a refusal rather than a crash on an unsupported Python (D37). |
 | `ui/settings.py` | 185 | §6.7 — era, connection, Ask availability, about. |
 | `ui/shell.py` | 156 | §3.1 — the navigation rail, the content region, and the connection gate. |
-| `ui/list_columns.py` | 140 | What a list row shows, and the order columns give way in (D16). |
+| `ui/list_columns.py` | 146 | What a list row shows, and the order columns give way in (D16). |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/intake_form.py` | 176 | Draws what `intake.py` parsed — as labels, never as HTML. |
 | `ui/state.py` | 100 | §4.5 — what the reader has asked for, held between renders. |
@@ -200,7 +201,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirty-six departures from the specification. Each names what the spec says,
+Thirty-seven departures from the specification. Each names what the spec says,
 what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -1311,8 +1312,10 @@ Nothing raises. The app starts and draws, and is simply missing text selection,
 its minimum size, and its only way out of a dead window — the failure mode this
 project has already spent a commit on.
 
-So `main.cli`, the console-script entry point, assigns
+So `cli.cli`, the console-script entry point, assigns
 `importlib.util.find_spec("casefinder.main")` onto `__main__` before launching.
+(It lived in `main` until D37 moved it out; the spec it pins is still `main`'s,
+because the window process has to import the routes.)
 `main()` itself deliberately does not: it is called directly by `test_window` and
 `test_reconnect` under pytest's own `__main__`, and pinning there would rewrite
 it mid-suite. `test_packaging.py` asserts the switch against the real
@@ -1322,7 +1325,7 @@ pass with the call site deleted, which is the only way this can regress.
 
 Verified on the built artifact, not inferred: installed from the wheel into a
 throwaway tool directory, the console script reports `init_main_from_name:
-casefinder.main`.
+casefinder.main`. Re-verified for 2.1.3, after the entry point moved to `cli`.
 
 ---
 
@@ -1335,7 +1338,9 @@ and surface a remediation message.
 **Built:** `casefinder --check`, eight checks — python, app, webview, presets,
 gcloud, credentials, BigQuery, and whether a newer release exists (D36) —
 printing one line each with indented remedies, exiting non-zero if any failed.
-Both installers now call it instead of carrying their own copy.
+Both installers now call it instead of carrying their own copy. Since D37 the
+`python` line asserts the supported range rather than only reporting it, and the
+`app` line imports the application for real rather than assuming it.
 
 **Why:** the checks were two heredocs, one per installer, and the installers are
 not part of the wheel. Everything they knew would have left with them — above all
@@ -1491,6 +1496,118 @@ re-pointing it changes what a URL means. It also refuses when the install URLs
 printed in `README.md` and `PROPOSAL.md` name a different version than the one
 being released — nothing regenerates those, so without the check they go stale
 silently and the command people copy installs the version before this one.
+
+**Corrected by D37.** Two things above were measured on macOS and are not true
+everywhere. `uv tool install --force` without `--python` does not keep the
+environment's interpreter, so an update could move a working copy onto a Python
+the app does not run on. And the running tool cannot replace itself on Windows,
+so `--update` there could never have worked. Both are fixed in 2.1.3.
+
+### D37 — the install names its Python, because uv picks the newest and the UI does not run on it
+
+**Spec:** silent on which Python. `requires-python` said `>=3.10`.
+
+**Built:** the app runs on Python 3.10 to 3.13, and says so in four places that
+each do a different job: `requires-python = ">=3.10,<3.14"`,
+`config.PYTHON_OLDEST`/`PYTHON_NEWEST`, `--python 3.13` in every install line
+handed to a person, and `--python` on every reinstall `--update` performs.
+`casefinder` refuses to start outside the range and names the fix. `--version`,
+`--check` and `--update` no longer import the UI. On Windows, `--update` prints
+the install command rather than running it. `release.sh` installs the published
+wheel the way a teammate does, and refuses a release that any platform would have
+to compile for.
+
+**Why:** Windows teammates reported that the app installed and then could not
+start — `AttributeError: module 'pkgutil' has no attribute 'find_loader'`, out
+of `nicegui → vbuild`. It reproduced exactly on macOS, with the uv a teammate
+installing today gets (0.12.17) and no Python on the machine:
+
+- **uv picks the Python, and it picks the newest.** The install line named none,
+  so uv downloaded the newest stable CPython, 3.14.7. Every verification until
+  then had run on this project's development environment, on 3.11, with a uv
+  from November 2024.
+- **Every NiceGUI 2.x imports `vbuild`, and `vbuild` does not import on 3.14.**
+  It calls `pkgutil.find_loader` at import time, and 3.14 removed it. `vbuild` is
+  abandoned — 0.8.2, last uploaded in August 2023 — and NiceGUI dropped it in
+  3.0.4, while this app pins `nicegui<3`. Real 3.14 support is a migration to
+  NiceGUI 3, left for its own piece of work; 3.13 is supported upstream until
+  October 2029.
+- **`requires-python` does not stop it.** A wheel declaring `<3.14` installed
+  onto 3.14 in every configuration tried: no Python on the machine, 3.14 already
+  present, `--force` over an existing install, `--python 3.14` asked for
+  outright, and `uv pip install` into a bare venv. uv does not enforce the field
+  for a wheel installed from a URL or a file. The ceiling is declared anyway:
+  pip honours it, and so does `uv sync` — without it, a new checkout's `.venv`
+  is built on 3.14 (measured), and that is what both installers run.
+- **The diagnostic and the fix died with the app.** `cli()` lived in `main`,
+  which imports NiceGUI at module scope, so `--check`, `--version` and
+  `--update` all printed the same traceback. The command written to diagnose a
+  broken machine could not run on one, and the command written to deliver a fix
+  could not deliver it.
+- **`--update` undid the workaround.** The workaround is
+  `uv tool install --python 3.13 …`. But 2.1.2's update reinstalled without
+  `--python`, and uv rebuilt on its default: a working 3.13 copy came back on
+  3.14.7 and no longer started. That happens wherever 3.14 is present, which is
+  every machine that hit this bug, since the failed install downloaded it.
+- **On Windows `--update` could never have worked.** uv deletes the old
+  environment file by file (`uv_fs::remove_virtualenv`) and replaces the tool's
+  `.exe`. Windows refuses both while the program is running — and during
+  `casefinder --update` it is. uv special-cases only its own executable, and its
+  tracker has the failure for other tools, `os error 32`, still open
+  (astral-sh/uv#11930, #14520). macOS allows replacing a file in use, which is
+  why D36's measurement passed.
+
+So:
+
+- **`cli.py`** holds the console script and imports only what each flag needs.
+  `--check` imports the application as one of its checks, where a failure
+  becomes a line. `casefinder` on an unsupported Python prints what it is on,
+  what it needs and the command that fixes it, before `main` is imported.
+  `test_packaging.py` reproduces the 3.14 failure on whatever Python runs the
+  suite, by putting a `nicegui` that raises `vbuild`'s error ahead of the real
+  one.
+- **`update.py`** passes `--python` on every reinstall: the running version
+  when it is supported, 3.13 when it is not. It reinstalls even when nothing
+  newer exists if the running Python is unsupported, because that copy cannot
+  start and `--update` is the command it still has. A build ahead of every
+  release is not "repaired" into an older one. On Windows it prints the command
+  instead, and a copy that cannot start is shown that command directly, for its
+  own version's wheel. Its request to GitHub now trusts certifi's certificates as
+  well as the platform's: a python.org build on macOS trusts nothing until its
+  Install Certificates script runs, and uv uses a Python already on the machine
+  before it downloads one.
+- **The install lines** in `README.md`, `PROPOSAL.md` and the release notes
+  carry `--python 3.13`, and a test fails if one stops doing so.
+  `uv python pin --global 3.13` was considered and rejected: it changes uv's
+  default for everything else its user does with uv, which is not this app's to
+  change. `--python` applies to Case Finder's own environment only, and a Python
+  uv fetches for it stays in uv's own folder — not on PATH, and not registered
+  with Windows (read from uv's source: only an explicit `uv python install`
+  writes the registry).
+- **`release.sh`** installs the published wheel, in stage 6, with a current uv
+  into a sandbox holding no Python but what uv downloads. It installs once with
+  the README's line, and once without `--python`, to prove that a copy on the
+  wrong Python says so and repairs itself. Stage 3 asks PyPI whether every
+  dependency installs prebuilt on Windows and on both kinds of Mac for the
+  install line's Python. That is how `cryptography` was found to have stopped
+  publishing Intel Mac wheels at 49; `pyproject.toml` bounds it below 49 there.
+
+**Measured before release,** on the built 2.1.3 wheel with uv 0.12.17:
+- On 3.14, `--version` answers, `casefinder` refuses with the fix named, and
+  `--check` reports two `FAILED` lines and no traceback.
+- With GitHub's answer stood in for, `--update` moved that copy to 3.13 and the
+  app imported.
+- A 2.1.2 install on 3.13, updated by 2.1.2's own updater, landed on 3.14 as
+  predicted and refused to start; `--update` put it back.
+- The installed console script's window spawn still reports
+  `init_main_from_name: casefinder.main`.
+
+`release.sh --publish` repeats the install, the refusal and the repair against
+the published release.
+
+**Effect on requirements:** the Python range is now stated rather than assumed.
+Nothing about what the app reads, shows or stores changes, and the update path
+still sends nothing but one unauthenticated GET.
 
 ---
 

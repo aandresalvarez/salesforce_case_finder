@@ -124,6 +124,17 @@ if [ -z "$version" ]; then
 fi
 ok "version $version"
 
+# The Python every install line names. Asked of the app for the same reason as
+# the version: `config.PYTHON_NEWEST` is the one statement of it that the app
+# itself enforces, and the notes and the checks below must say the same thing.
+python=$(uv run --frozen python -c \
+  'from casefinder import config; print(config.python_label(config.PYTHON_NEWEST))')
+if [ -z "$python" ]; then
+  fail "could not read the supported Python out of the app"
+  exit 1
+fi
+ok "installs name Python $python"
+
 # The README and the proposal both print the install line, URL and all, and that
 # URL names a version. Nothing regenerates them, so they go stale silently: the
 # release succeeds, the page looks right, and the command people copy installs
@@ -139,6 +150,61 @@ if [ -n "$stale" ]; then
   exit 1
 fi
 ok "README and PROPOSAL point at v$version"
+
+# Every platform the README promises has to install this without a compiler.
+# `uv tool install` resolves the newest version of every dependency at install
+# time — the lock is not consulted — so a dependency that stops publishing a
+# wheel for one platform turns that platform's install into a source build,
+# which fails for want of a toolchain. cryptography did exactly that to Intel
+# Macs at 49 (see `pyproject.toml`). Checked against PyPI as it is now, which is
+# what a teammate installing today gets. proxy-tools is the one exception: it
+# has only ever been published as source, and it is a single pure-Python file.
+uv run --frozen python - "$wheel" "$python" <<'PY' || { fail "a platform would have to compile a dependency"; exit 1; }
+import pathlib
+import shutil
+import subprocess
+import sys
+
+wheel, python = sys.argv[1:3]
+uv = shutil.which("uv")
+requirement = f"casefinder[ask] @ {pathlib.Path(wheel).resolve().as_uri()}"
+source_only = {"casefinder", "proxy-tools"}
+platforms = {
+    "x86_64-pc-windows-msvc": "Windows",
+    "aarch64-apple-darwin": "macOS on Apple silicon",
+    "x86_64-apple-darwin": "macOS on Intel",
+}
+
+
+def resolve(platform, *extra):
+    return subprocess.run(
+        [uv, "pip", "compile", "--quiet", "--no-header", "--no-annotate",
+         "--python-platform", platform, "--python-version", python, *extra, "-"],
+        input=requirement, capture_output=True, text=True,
+    )
+
+
+failed = False
+for platform, label in platforms.items():
+    newest = resolve(platform)
+    if newest.returncode != 0:
+        print(f"  \033[31m✗\033[0m {label}: does not resolve — {newest.stderr.strip()[-200:]}")
+        failed = True
+        continue
+    pins = newest.stdout.splitlines()
+    names = [line.split("==")[0] for line in pins if "==" in line]
+    flags = [f for n in names if n.lower() not in source_only for f in ("--only-binary", n)]
+    prebuilt = resolve(platform, *flags)
+    if prebuilt.returncode != 0 or prebuilt.stdout.splitlines() != pins:
+        # Either no version has a wheel, or uv had to fall back to an older one
+        # that does — and a real install takes the newest and compiles it.
+        compiled = sorted(set(pins) - set(prebuilt.stdout.splitlines())) or ["(see uv)"]
+        print(f"  \033[31m✗\033[0m {label}: would compile {', '.join(compiled)}")
+        failed = True
+    else:
+        print(f"  \033[32m✓\033[0m {label}: all {len(names)} dependencies install prebuilt")
+sys.exit(1 if failed else 0)
+PY
 
 # --------------------------------------------------------------------------
 # 4. Lock file
@@ -237,11 +303,16 @@ ok "tagged $tag and pushed it"
 notes="Install on macOS or Windows — or update a copy that is already installed:
 
 \`\`\`
-uv tool install --force \"$asset_url\"
+uv tool install --force --python $python \"$asset_url\"
 casefinder --check
 \`\`\`
 
-An installed copy can also update itself in place: \`casefinder --update\`.
+Keep the \`--python $python\`. Without it uv installs onto the newest Python on the
+machine, which Case Finder may not run on yet. An installed copy can also update
+itself, and repair itself if it is on the wrong Python: \`casefinder --update\`.
+On Windows that prints the command above rather than running it, because Windows
+will not let a program replace itself while it runs — and copies older than 2.1.3
+do not know that, so update those with the line above.
 
 **Access.** Case Finder runs under your own Google credentials and ships no
 service-account key. Installing it grants nothing: if you cannot query the
@@ -254,14 +325,22 @@ gh release create "$tag" "$wheel" dist/requirements-lock.txt \
 ok "published $tag"
 
 # --------------------------------------------------------------------------
-# 6. The published link
+# 6. The published link, installed the way a teammate installs it
 # --------------------------------------------------------------------------
 #
 # Everything above proves the wheel is right. This proves the *link* is right,
-# which is a different claim and the one the README makes. curl carries none of
-# gh's credentials, so it fetches the asset exactly as a teammate will.
+# which is a different claim and the one the README makes — and that it installs
+# and starts on the machine it will actually land on, which is not this one.
+#
+# This machine has a development environment, whichever Pythons its owner once
+# installed, and whichever uv they last updated. A teammate has the newest uv,
+# and no Python at all or the one uv downloads for them. Until 2.1.3 this stage
+# installed with this machine's uv onto this machine's Python, and so passed a
+# release that could not start on a new Windows laptop (D37).
 bold "6. The published link"
 
+# curl carries none of gh's credentials, so it fetches the asset exactly as a
+# teammate will.
 code=""
 for _ in 1 2 3; do
   code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 30 "$asset_url")
@@ -274,25 +353,97 @@ if [ "$code" != "200" ]; then
 fi
 ok "downloads unauthenticated (HTTP 200)"
 
-# And this proves it installs. A throwaway tool directory, so whatever is on
-# this machine is untouched either way.
-sandbox=$(mktemp -d)
-UV_TOOL_DIR="$sandbox/tools" UV_TOOL_BIN_DIR="$sandbox/bin" \
-  uv tool install --quiet "$asset_url" >/dev/null 2>&1
-reported=$("$sandbox/bin/casefinder" --version 2>/dev/null | awk '{print $NF}')
-rm -rf "$sandbox"
-if [ "$reported" != "$version" ]; then
-  fail "installing from the published URL reported '$reported', expected '$version'"
+# `casefinder --update` asks this endpoint, and an unauthenticated answer can be
+# cached for a minute, so the repair check further down waits for it rather
+# than racing it.
+latest_tag=""
+for _ in $(seq 1 24); do
+  latest_tag=$(curl -s --max-time 10 -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/$slug/releases/latest" \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$latest_tag" = "$tag" ] && break
+  sleep 5
+done
+if [ "$latest_tag" != "$tag" ]; then
+  fail "GitHub still names '$latest_tag' as the latest release, not $tag"
   exit 1
 fi
-ok "installs from the URL and reports $version"
+ok "GitHub names $tag as the latest release, which is what --update asks for"
+
+sandbox=$(mktemp -d)
+trap 'rm -rf "$sandbox"' EXIT
+
+# A current uv, installed into the sandbox rather than over the one on PATH.
+UV_TOOL_DIR="$sandbox/uv-tool" UV_TOOL_BIN_DIR="$sandbox/uv-bin" \
+  uv tool install --quiet uv >/dev/null 2>&1 || { fail "could not fetch a current uv"; exit 1; }
+
+# Two machines with nothing on them — a tools directory, a place for the
+# Pythons uv downloads, and none of this machine's uv settings or global pin.
+# Two, because uv prefers a Python it already has to downloading the newest: a
+# second install on the first machine would quietly reuse the first's Python and
+# prove nothing. The update check is off because it is not what is under test.
+on() {
+  local machine="$sandbox/$1"
+  shift
+  env PATH="$sandbox/uv-bin:$machine/bin:$PATH" \
+    UV_TOOL_DIR="$machine/tools" UV_TOOL_BIN_DIR="$machine/bin" \
+    UV_PYTHON_INSTALL_DIR="$machine/pythons" UV_PYTHON_BIN_DIR="$machine/python-bin" \
+    UV_PYTHON_PREFERENCE=only-managed UV_NO_CONFIG=1 XDG_CONFIG_HOME="$machine/config" \
+    CASEFINDER_UPDATE_CHECK=0 \
+    "$@"
+}
+imports() { on "$1" "$sandbox/$1/tools/casefinder/bin/python" -c 'import casefinder.main' >/dev/null 2>&1; }
+runs_on() { on "$1" "$sandbox/$1/tools/casefinder/bin/python" -c 'import platform; print(platform.python_version())'; }
+
+# The line the README gives, as given.
+on readme uv tool install --quiet --python "$python" "$asset_url" >/dev/null 2>&1 \
+  || { fail "the README's install line failed"; exit 1; }
+reported=$(on readme "$sandbox/readme/bin/casefinder" --version 2>/dev/null | awk '{print $NF}')
+if [ "$reported" != "$version" ]; then
+  fail "installed from the published URL it reported '$reported', expected '$version'"
+  exit 1
+fi
+imports readme || { fail "installed with the README's line, the app does not import"; exit 1; }
+ok "the README's line installs $version on Python $(runs_on readme), and the app imports"
+
+# And without `--python`, which is what uv does when nobody tells it: the newest
+# Python there is. Where the app runs on that too, there is nothing to prove.
+# Where it does not, it has to say so rather than crash, and `--update` has to
+# be able to move it — that is the path of anyone who installed from an old
+# line, and of every copy 2.1.2's updater moves onto 3.14.
+if ! on bare uv tool install --quiet "$asset_url" >/dev/null 2>&1; then  # unpinned on purpose
+  fail "installing without --python failed"
+  exit 1
+fi
+newest=$(runs_on bare)
+if imports bare; then
+  ok "left to itself uv picks Python $newest, and the app imports there too"
+else
+  said=$(on bare "$sandbox/bare/bin/casefinder" 2>&1)
+  case "$said" in
+    *Traceback*)
+      fail "on Python $newest, casefinder crashes instead of saying it cannot run there"
+      exit 1
+      ;;
+    *"casefinder --update"*) ;;
+    *)
+      fail "on Python $newest, casefinder does not say how to fix it"
+      exit 1
+      ;;
+  esac
+  on bare "$sandbox/bare/bin/casefinder" --update >/dev/null 2>&1 \
+    || { fail "on Python $newest, casefinder --update could not repair it"; exit 1; }
+  imports bare || { fail "casefinder --update ran, and the app still does not import"; exit 1; }
+  ok "left to itself uv picks Python $newest; the app says it cannot run there,"
+  ok "and casefinder --update moves it to Python $(runs_on bare)"
+fi
 
 echo
 bold "Released $tag"
 echo "  https://github.com/$slug/releases/tag/$tag"
 echo
 echo "Send the team this line:"
-echo "  uv tool install --force \"$asset_url\""
+echo "  uv tool install --force --python $python \"$asset_url\""
 echo
 echo "Anyone already on an older version only needs:"
 echo "  casefinder --update"

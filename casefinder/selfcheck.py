@@ -43,12 +43,56 @@ WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 GCLOUD_INSTALL_URL = "https://cloud.google.com/sdk/docs/install-sdk"
 
 
-def _check_python() -> tuple[str, str, list[str]]:
-    """Reported, not asserted. `requires-python` already refuses to install on
-    anything older than 3.10, so a version test here could never fire; what is
-    worth having in pasted output is which interpreter the app actually got."""
+def check_python() -> tuple[str, str, list[str]]:
+    """Which interpreter the app got, and whether it runs on it.
+
+    This used to be reported and not asserted, on the grounds that
+    `requires-python` refuses an unsupported Python at install time, so a test
+    here could never fire. That holds for pip. It does not hold for uv
+    installing a wheel from a URL, which is how the app is installed: uv does
+    not enforce the field there, and on a machine with no Python it downloads
+    the newest, which is one the app does not run on (D37). So it fires.
+
+    Public because `cli` prints the same words when it refuses to start, and
+    one wording is easier to keep true than two.
+    """
     version = ".".join(str(n) for n in sys.version_info[:3])
-    return OK, f"Python {version} at {config.tilde(sys.executable)}", []
+    where = f"Python {version} at {config.tilde(sys.executable)}"
+    if config.python_supported():
+        return OK, where, []
+
+    from . import update
+
+    oldest = config.python_label(config.PYTHON_OLDEST)
+    newest = config.python_label(config.PYTHON_NEWEST)
+    if update.running_from_checkout():
+        remedy = [f"Rebuild the environment on Python {newest}:", f"    uv sync --python {newest}"]
+    elif update.can_replace_itself():
+        remedy = [f"Move this copy onto Python {newest}:", "    casefinder --update"]
+    else:
+        # Straight to the command, because on Windows `--update` would only
+        # print it: a stranded copy is spared a step, and needs no network to
+        # be told it — it is its own version it is reinstalling.
+        line = update.reinstall_line(update.wheel_url(config.VERSION), newest)
+        remedy = [f"Move this copy onto Python {newest}:", f"    {line}"]
+    return FAILED, f"{where} — Case Finder runs on {oldest} to {newest}", remedy
+
+
+def _check_app() -> tuple[str, str, list[str]]:
+    """Import the application, NiceGUI and all.
+
+    This used to be a line that could only say yes. `--check` was dispatched
+    from inside `main`, so by the time it ran the import had already succeeded
+    — and when the import failed, the whole command failed with it, as a
+    traceback, which is what a machine on Python 3.14 got. The flags are now
+    read before anything imports the UI (see `cli`), so this is where an
+    application that cannot import finds out, as a line of output.
+    """
+    try:
+        importlib.import_module(f"{__package__}.main")
+    except Exception as exc:  # noqa: BLE001 — any import failure is the answer
+        return FAILED, f"the app does not import: {type(exc).__name__}: {exc}", []
+    return OK, f"{config.APP_NAME} {config.VERSION} imports cleanly", []
 
 
 def _check_webview() -> tuple[str, str, list[str]]:
@@ -184,16 +228,17 @@ def _check_update() -> tuple[str, str, list[str]]:
     return OK, f"nothing newer than {config.VERSION} has been released", []
 
 
-# Ordered so that a failure explains the failures under it: no gcloud means no
-# credentials, and no credentials means no BigQuery. A reader who fixes the
-# first line usually fixes the rest.
+# Ordered so that a failure explains the failures under it: an unsupported
+# Python means the app does not import, no gcloud means no credentials, and no
+# credentials means no BigQuery. A reader who fixes the first line usually fixes
+# the rest.
 #
 # `update` sits last despite being a fact about the app rather than the machine,
 # because it is the only check that can sit there waiting on a timeout, and a
 # list that stalls at its end reads better than one that stalls in its middle.
 CHECKS = (
-    ("python", _check_python),
-    ("app", lambda: (OK, f"{config.APP_NAME} {config.VERSION} imports cleanly", [])),
+    ("python", check_python),
+    ("app", _check_app),
     ("webview", _check_webview),
     ("presets", _check_views),
     ("gcloud", _check_gcloud),

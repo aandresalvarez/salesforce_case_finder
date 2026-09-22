@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Case Finder"
-VERSION = "2.1.2"
+VERSION = "2.1.3"
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -201,6 +201,32 @@ MIN_WINDOW_SIZE = (1024, 700)
 # reach the internet for anything but the warehouse. Turning it off costs the
 # notice and nothing else — `casefinder --update` still works on demand.
 UPDATE_CHECK = _flag("CASEFINDER_UPDATE_CHECK", True)
+
+# The Pythons the app runs on, oldest and newest, both inclusive. The top is set
+# by NiceGUI rather than by anything here: every 2.x release imports `vbuild`,
+# which calls `pkgutil.find_loader` at import time, and 3.14 removed it. vbuild
+# is abandoned, and NiceGUI only dropped it in 3.0.4 (D37).
+#
+# Kept here as well as in `requires-python` because the metadata is not enough.
+# uv does not enforce `requires-python` for a wheel installed from a URL — a
+# wheel declaring `<3.14` installed onto 3.14 when tested — and it picks the
+# newest Python it can find, so a machine with no Python gets 3.14. The install
+# line therefore names `PYTHON_NEWEST`, `--update` reinstalls onto it, and
+# `casefinder` refuses to start outside this range instead of crashing inside
+# NiceGUI. `tests/test_packaging.py` keeps the two statements in step.
+PYTHON_OLDEST = (3, 10)
+PYTHON_NEWEST = (3, 13)
+
+
+def python_supported(version: tuple[int, ...] | None = None) -> bool:
+    """Is `version` — this interpreter when not given — one the app runs on?"""
+    running = tuple(sys.version_info[:2] if version is None else version[:2])
+    return PYTHON_OLDEST <= running <= PYTHON_NEWEST
+
+
+def python_label(version: tuple[int, ...] | None = None) -> str:
+    """`(3, 13)` as `3.13`; this interpreter when not given."""
+    return ".".join(str(n) for n in (sys.version_info[:2] if version is None else version[:2]))
 
 
 def tilde(path: Path | str) -> str:

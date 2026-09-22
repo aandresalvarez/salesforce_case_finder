@@ -22,13 +22,16 @@ shipped, so this is an exposure the wheel creates.
 from __future__ import annotations
 
 import multiprocessing.spawn as spawn
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from packaging.specifiers import SpecifierSet
 
-from casefinder import config, main, selfcheck, views
+from casefinder import cli, config, main, selfcheck, update, views
 
 REPO = Path(__file__).resolve().parent.parent
 PACKAGE = REPO / "casefinder"
@@ -152,9 +155,11 @@ def test_the_console_script_points_at_cli_not_main():
 
     `main` reads no argv and does no pinning, both on purpose. Pointed at
     `main`, the entry point still launches a window — one that is missing text
-    selection, its minimum size, and the reconnect Restart button.
+    selection, its minimum size, and the reconnect Restart button. Pointed at a
+    `cli` inside `main`, every flag imports NiceGUI first, and on a Python where
+    NiceGUI cannot import, `--check` and `--update` die with it (D37).
     """
-    assert _pyproject()["project"]["scripts"]["casefinder"] == "casefinder.main:cli"
+    assert _pyproject()["project"]["scripts"]["casefinder"] == "casefinder.cli:cli"
 
 
 def test_version_is_declared_once():
@@ -169,18 +174,18 @@ def test_version_is_declared_once():
 
 
 def test_the_version_flag_prints_and_exits_clean(capsys):
-    assert main.cli(["--version"]) == 0
+    assert cli.cli(["--version"]) == 0
     assert config.VERSION in capsys.readouterr().out
 
 
 def test_the_check_flag_runs_the_self_check_and_returns_its_code(monkeypatch):
     monkeypatch.setattr(selfcheck, "run", lambda *a, **k: 3)
-    assert main.cli(["--check"]) == 3
+    assert cli.cli(["--check"]) == 3
 
 
 def test_an_unknown_flag_is_refused_rather_than_launching_a_window(capsys):
     """A typo'd flag must not silently open the app and swallow the argument."""
-    assert main.cli(["--wat"]) == 2
+    assert cli.cli(["--wat"]) == 2
     assert "--wat" in capsys.readouterr().out
 
 
@@ -193,8 +198,173 @@ def test_launching_pins_the_main_module_before_running(monkeypatch):
     calls = []
     monkeypatch.setattr(main, "_pin_main_module", lambda: calls.append("pinned"))
     monkeypatch.setattr(main, "main", lambda: calls.append("ran"))
-    assert main.cli([]) == 0
+    assert cli.cli([]) == 0
     assert calls == ["pinned", "ran"], "the window process will not get its window arguments"
+
+
+# The runner for the two subprocess tests below. They are subprocesses because
+# this process imported NiceGUI long ago, so "was it imported?" and "can it be
+# made to fail?" are only answerable in a fresh interpreter. The check list is
+# cut down to the two lines under test: a full `--check` would query BigQuery
+# from outside every fixture that exists to stop exactly that.
+_RUN_CLI = """
+import sys
+from casefinder import cli, selfcheck
+selfcheck.CHECKS = tuple(c for c in selfcheck.CHECKS if c[0] in {"python", "app"})
+code = cli.cli(sys.argv[1:])
+print("NICEGUI-LOADED" if "nicegui" in sys.modules else "NICEGUI-ABSENT")
+sys.exit(code)
+"""
+
+
+def _run_cli(*args, pythonpath=None):
+    env = dict(os.environ)
+    if pythonpath is not None:
+        env["PYTHONPATH"] = str(pythonpath)
+    return subprocess.run(
+        [sys.executable, "-c", _RUN_CLI, *args],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+@pytest.mark.parametrize("flag", ["--version", "--update", "--nope"])
+def test_no_flag_but_check_imports_the_ui(flag):
+    """`--update` returns early here, from a checkout, before any network."""
+    result = _run_cli(flag)
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "NICEGUI-ABSENT" in result.stdout, f"{flag} imported NiceGUI"
+
+
+def test_a_ui_that_cannot_import_is_a_line_in_check_not_a_traceback(tmp_path):
+    """The Python 3.14 failure, reproduced on whatever Python runs the suite.
+
+    A `nicegui` that raises what `vbuild` raised is put ahead of the real one.
+    `--version` must not notice, and `--check` must say so on its `app` line
+    and exit 1 — rather than print a traceback, which is what it did on 3.14
+    while it was still dispatched from inside `main`.
+    """
+    fake = tmp_path / "nicegui"
+    fake.mkdir()
+    (fake / "__init__.py").write_text(
+        "raise AttributeError(\"module 'pkgutil' has no attribute 'find_loader'\")\n",
+        encoding="utf-8",
+    )
+
+    version = _run_cli("--version", pythonpath=tmp_path)
+    assert version.returncode == 0, version.stderr
+    assert config.VERSION in version.stdout
+
+    check = _run_cli("--check", pythonpath=tmp_path)
+    assert "Traceback" not in check.stdout + check.stderr, check.stderr
+    assert check.returncode == 1
+    app_line = next(line for line in check.stdout.splitlines() if "] app" in line)
+    assert selfcheck.FAILED in app_line and "find_loader" in app_line
+
+
+def test_an_unsupported_python_is_refused_before_the_ui_is_imported(monkeypatch, capsys):
+    """What `casefinder` prints on 3.14 instead of a traceback out of `vbuild`."""
+    ran = []
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+    monkeypatch.setattr(update, "running_from_checkout", lambda: False)
+    monkeypatch.setattr(update, "can_replace_itself", lambda: True)
+    monkeypatch.setattr(main, "main", lambda: ran.append("main"))
+
+    assert cli.cli([]) == 1
+
+    out = capsys.readouterr().out
+    assert "cannot start" in out
+    assert "casefinder --update" in out, "refused to start without saying what fixes it"
+    assert ran == [], "the window was launched on a Python the app does not run on"
+
+
+# --------------------------------------------------------------------------
+# Which Pythons the app runs on
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [((3, 9), False), ((3, 10), True), ((3, 13), True), ((3, 14), False), ((4, 0), False)],
+)
+def test_the_supported_pythons(version, supported):
+    """3.14 is out because every NiceGUI 2.x imports `vbuild` (D37)."""
+    assert config.python_supported(version) is supported
+
+
+def test_requires_python_says_what_config_says():
+    """Two statements of one fact. The metadata is what pip and `uv sync`
+    honour; `config` is what the app checks, because `uv tool install <url>`
+    does not honour the metadata at all."""
+    spec = SpecifierSet(_pyproject()["project"]["requires-python"])
+    for minor in range(6, 20):
+        assert (f"3.{minor}.0" in spec) is config.python_supported((3, minor)), f"3.{minor}"
+
+
+def test_the_python_check_fails_outside_the_range_and_names_the_fix(monkeypatch):
+    monkeypatch.setattr(config, "python_supported", lambda version=None: False)
+    newest = config.python_label(config.PYTHON_NEWEST)
+
+    monkeypatch.setattr(update, "running_from_checkout", lambda: False)
+    monkeypatch.setattr(update, "can_replace_itself", lambda: True)
+    status, _, remedy = selfcheck.check_python()
+    assert status == selfcheck.FAILED
+    assert "casefinder --update" in "\n".join(remedy)
+
+    monkeypatch.setattr(update, "running_from_checkout", lambda: True)
+    status, _, remedy = selfcheck.check_python()
+    assert status == selfcheck.FAILED
+    assert f"uv sync --python {newest}" in "\n".join(remedy), "a checkout was sent to --update"
+
+
+def test_the_python_check_passes_on_this_python():
+    status, message, remedy = selfcheck.check_python()
+    assert status == selfcheck.OK
+    assert remedy == []
+    assert config.tilde(sys.executable) in message
+
+
+def test_the_app_check_reports_an_import_failure_as_a_line(monkeypatch):
+    def fails(name):
+        raise AttributeError("module 'pkgutil' has no attribute 'find_loader'")
+
+    monkeypatch.setattr(selfcheck.importlib, "import_module", fails)
+    status, message, _ = selfcheck._check_app()
+    assert status == selfcheck.FAILED
+    assert "find_loader" in message
+
+
+def test_the_app_check_passes_when_the_app_imports():
+    assert selfcheck._check_app()[0] == selfcheck.OK
+
+
+def test_every_install_line_handed_to_people_names_the_python():
+    """uv picks the newest Python it can find when not told, and on a machine
+    with none it downloads the newest — which the app does not run on. So every
+    install line a person is given carries `--python`, and this is what stops
+    the next edit to the README from quietly dropping it.
+
+    `release.sh` spells it `--python $python`, read out of `config` when the
+    release is cut. It also installs without it once, on purpose, to prove that
+    a copy which ended up on the wrong Python can repair itself; that line says
+    so.
+    """
+    newest = config.python_label(config.PYTHON_NEWEST)
+    pinned = re.compile(rf'--python (?:{re.escape(newest)}\b|"?\$python"?)')
+    lines = []
+    for name in ("README.md", "PROPOSAL.md", "release.sh"):
+        for number, line in enumerate((REPO / name).read_text(encoding="utf-8").splitlines(), 1):
+            installs_the_app = "uv tool install" in line and (
+                ".whl" in line or "asset_url" in line or "wanted" in line
+            )
+            if installs_the_app and "unpinned on purpose" not in line:
+                lines.append((f"{name}:{number}", line))
+    assert len(lines) >= 5, "the install lines moved; this test is no longer looking at them"
+    missing = [where for where, line in lines if not pinned.search(line)]
+    assert not missing, f"these install lines leave the Python to uv: {missing}"
 
 
 # --------------------------------------------------------------------------

@@ -23,7 +23,7 @@ import sys
 
 from nicegui import app, ui
 
-from . import cache, config, selfcheck, window
+from . import cache, config, window
 from .ui import (
     ask_page,
     case_detail,
@@ -203,9 +203,10 @@ def _pin_main_module() -> None:
     server is gone.
 
     Pointing `__spec__` at this module is enough to put spawn back on the
-    by-name path. Called from `cli` and not from `main` so that the tests, which
-    call `main` directly under pytest's own `__main__`, are never handed a
-    rewritten spec.
+    by-name path. Called from `cli.cli` and not from `main` so that the tests,
+    which call `main` directly under pytest's own `__main__`, are never handed a
+    rewritten spec. It names this module, not the one it is called from: the
+    window process has to import the routes, and `cli` deliberately has none.
     """
     main_module = sys.modules.get("__main__")
     if main_module is None or getattr(main_module, "__spec__", None) is not None:
@@ -215,41 +216,8 @@ def _pin_main_module() -> None:
         main_module.__spec__ = spec
 
 
-def cli(argv: list[str] | None = None) -> int:
-    """Console-script entry point: the flags, then the window.
-
-    `main` is deliberately left taking no arguments and reading no argv. Two
-    tests call it directly to assert on what it passes to `ui.run`, and they run
-    under pytest's own command line — a `main` that parsed `sys.argv` would see
-    pytest's flags and fail on them.
-    """
-    args = list(sys.argv[1:] if argv is None else argv)
-    if "--version" in args:
-        print(f"{config.APP_NAME} {config.VERSION}")
-        return 0
-    if "--check" in args:
-        return selfcheck.run()
-    if "--update" in args:
-        # Imported here rather than at module scope: it is the one module that
-        # opens a socket to somewhere other than BigQuery, and launching the app
-        # should not load it at all.
-        from . import update
-
-        return update.run()
-    unknown = [a for a in args if a.startswith("-")]
-    if unknown:
-        print(
-            f"unrecognised option: {unknown[0]}\n"
-            "usage: casefinder [--check] [--update] [--version]"
-        )
-        return 2
-    _pin_main_module()
-    main()
-    return 0
-
-
 # NiceGUI's native mode re-imports the module in the webview process, so the
-# guard has to accept both spellings. `main` and not `cli`: reaching here means
-# the module was run by name, which is the case `cli` exists to arrange.
+# guard has to accept both spellings. `main` and not `cli.cli`: reaching here
+# means the module was run by name, which is the case `cli` exists to arrange.
 if __name__ in {"__main__", "__mp_main__"}:
     main()

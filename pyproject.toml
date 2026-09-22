@@ -7,7 +7,17 @@ name = "casefinder"
 dynamic = ["version"]
 description = "Search the historical Salesforce support-case archive in BigQuery, from a local desktop window."
 readme = "README.md"
-requires-python = ">=3.10"
+# The ceiling is NiceGUI 2's, not this app's: every 2.x imports `vbuild`, which
+# does not import on 3.14 (D37). Keep it in step with `config.PYTHON_NEWEST`;
+# `tests/test_packaging.py` fails when the two disagree.
+#
+# What the ceiling protects is narrower than it looks. pip honours it, and so
+# does `uv sync`, which is why a checkout set up by `install-mac.sh` or
+# `install-windows.ps1` gets 3.13 on a machine whose newest Python is 3.14. The
+# install people are actually told to run — `uv tool install <url>` — ignores
+# it: a wheel declaring `<3.14` installed onto 3.14 when tested. That is why the
+# README's install line names `--python`, and why `--update` passes it.
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "nicegui>=2.0,<3",
     # Upper bound on purpose. NiceGUI 2.x declares `pywebview>=5.0.1,<6.0.0` for
@@ -25,6 +35,16 @@ dependencies = [
     # comparison instead was the alternative, and `"2.10.0" > "2.9.0"` is False
     # as strings.
     "packaging>=23",
+    # For `update.py` again: the certificates that let it reach GitHub from a
+    # python.org build on macOS, which ships with none. Already present through
+    # the Google client libraries; declared for the same reason `packaging` is.
+    "certifi",
+    # Not used by this app's own code — `google-auth` pulls it in — and bounded
+    # on Intel Macs only. cryptography stopped publishing a wheel for them at 49,
+    # so without the bound uv resolves the newest and compiles it there, which
+    # needs a Rust toolchain almost nobody has: the install fails. `release.sh`
+    # refuses a release that any supported platform would have to compile for.
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
 
 [project.optional-dependencies]
@@ -36,10 +56,12 @@ ask = ["google-genai>=1.0"]
 dev = ["pytest>=8", "playwright>=1.40", "ruff>=0.6"]
 
 [project.scripts]
-# `cli`, not `main`. The console script is the only caller that has to read
-# argv and pin the main module for the window subprocess; `main` stays the
-# argv-free entry point the tests call. See `casefinder/main.py`.
-casefinder = "casefinder.main:cli"
+# `cli`, in a module of its own. The console script is the only caller that has
+# to read argv and pin the main module for the window subprocess; `main` stays
+# the argv-free entry point the tests call. It is not in `main` because `main`
+# imports NiceGUI, and a flag must still work when NiceGUI cannot import — that
+# is the machine `--check` and `--update` exist for (D37). See `casefinder/cli.py`.
+casefinder = "casefinder.cli:cli"
 
 [build-system]
 requires = ["hatchling"]

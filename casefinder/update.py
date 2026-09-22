@@ -22,19 +22,38 @@ What is left is to ask GitHub which release is newest and install that. This
 module is that, and nothing else. It is the only code in the app that contacts
 anything other than BigQuery, so it stays small and it sends nothing: one
 unauthenticated GET of a public release, a version comparison, and a subprocess.
+
+Except on Windows, where there is no subprocess, only the command (D37).
+Windows will not let a file be replaced while a program is using it, and during
+`casefinder --update` the files uv has to replace are the ones running the
+update. uv deletes the old environment file by file and stops at the first
+refusal, so trying anyway can leave a working copy half-deleted. On Windows this
+therefore finds the right release and Python and prints the one command that
+installs it, to be run once Case Finder has exited.
+
+The command names its Python, every time. Left to itself,
+`uv tool install --force` rebuilds the environment on uv's default interpreter
+rather than the one the environment had, and uv's default is the newest Python
+on the machine — measured: a working install on 3.13 came back on 3.14 and no
+longer started. The same flag is what repairs a copy that is already on a Python
+the app does not run on, which is why `--update` still acts when nothing newer
+has been released.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
+import ssl
 import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import certifi
 from packaging.version import InvalidVersion, Version
 
 from . import config
@@ -68,6 +87,23 @@ class Release:
     page_url: str
 
 
+def _tls_context() -> ssl.SSLContext:
+    """The platform's certificate store, with certifi's loaded into it.
+
+    The platform's alone fails on a python.org build for macOS, which trusts
+    nothing until someone runs the "Install Certificates" script that comes with
+    it: every HTTPS request `urllib` makes fails verification. uv will build the
+    tool on such a Python when it finds one, because it prefers a Python already
+    on the machine to downloading another. certifi's alone would fail the other
+    way — a managed Windows laptop behind a TLS-inspecting proxy trusts that
+    proxy through the Windows store and nowhere else. One loaded into the other
+    covers both.
+    """
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def latest(timeout: float = UPDATE_TIMEOUT) -> Release:
     """The newest published release, per GitHub.
 
@@ -89,7 +125,7 @@ def latest(timeout: float = UPDATE_TIMEOUT) -> Release:
     try:
         # `OSError` and not the three separate names: `HTTPError` is a
         # `URLError` is an `OSError`, and so is the timeout.
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=_tls_context()) as response:
             payload = json.load(response)
     except OSError as exc:
         raise UpdateError(f"could not reach GitHub ({type(exc).__name__}: {exc})") from exc
@@ -127,6 +163,56 @@ def is_newer(candidate: str, current: str) -> bool:
         return Version(candidate) > Version(current)
     except InvalidVersion:
         return False
+
+
+def _same(a: str, b: str) -> bool:
+    try:
+        return Version(a) == Version(b)
+    except InvalidVersion:
+        return False
+
+
+def target_python() -> str:
+    """The Python to install onto: this one, unless the app cannot run on it.
+
+    Keeping the interpreter someone already has is the point of naming it — see
+    the module docstring. Moving is only for a copy that is stranded on a Python
+    outside `config.PYTHON_OLDEST`..`config.PYTHON_NEWEST`, and it moves to the
+    newest one the app runs on, which is also the one with the longest support.
+    """
+    if config.python_supported():
+        return config.python_label()
+    return config.python_label(config.PYTHON_NEWEST)
+
+
+def can_replace_itself() -> bool:
+    """Can this process run the install that replaces its own files?
+
+    Everywhere but Windows, yes: a POSIX system lets a file be unlinked while
+    it is open, and the running process keeps its copy until it exits. Windows
+    refuses — uv's own issue tracker has the error, `os error 32`, and the fix
+    it asks for (astral-sh/uv#11930, #14520) is still open. One function so the
+    decision is made once, for `run` and for `selfcheck` alike.
+    """
+    return os.name != "nt"
+
+
+def wheel_url(version: str) -> str:
+    """Where `release.sh` publishes the wheel for `version`.
+
+    For the one case that cannot ask GitHub first: a copy that cannot start
+    being told how to reinstall itself. It is its own version that it needs,
+    and `tests/test_update.py` checks this against the URL the README gives.
+    """
+    return (
+        f"https://github.com/{REPO}/releases/download/v{version}/"
+        f"casefinder-{version}-py3-none-any.whl"
+    )
+
+
+def reinstall_line(wheel_url: str, python: str) -> str:
+    """The install as a line a person can paste, `[ask]` and `--python` kept."""
+    return f'uv tool install --force --python {python} "{requirement(wheel_url)}"'
 
 
 def running_from_checkout() -> bool:
@@ -170,6 +256,10 @@ def run(out=None) -> int:
 
     0 means there is nothing to do or the update succeeded. 1 means the update
     was wanted and did not happen, and the reason is on the line above.
+
+    A copy on a Python the app does not run on is reinstalled even when nothing
+    newer exists: same version, supported Python. It cannot start, so this is
+    the one command it still has — `casefinder` and `--check` both point here.
     """
     stream = sys.stdout if out is None else out
 
@@ -195,16 +285,41 @@ def run(out=None) -> int:
         say(f"  Releases are listed at {RELEASES_PAGE}")
         return 1
 
-    if not is_newer(release.version, config.VERSION):
+    newer = is_newer(release.version, config.VERSION)
+    stranded = not config.python_supported()
+    python = target_python()
+
+    if not newer and not stranded:
         # "nothing newer has been released" rather than "this is the newest
         # release", because the two come apart on the maintainer's machine
         # between building a version and publishing it, and only one of them is
         # true in both cases.
         say(f"  Nothing newer than {config.VERSION} has been released.")
         return 0
+    if not newer and not _same(release.version, config.VERSION):
+        # Stranded, and ahead of every release: a build nobody has published,
+        # which only happens on the maintainer's machine. Repairing it from the
+        # newest release would quietly install an older version.
+        say(f"  {config.VERSION} has not been released, so there is no release to reinstall.")
+        say(f"  Reinstall it from the file it came from, with  --python {python}")
+        return 1
 
-    say(f"  installed {config.VERSION}  ·  available {release.version}")
+    if newer:
+        say(f"  installed {config.VERSION}  ·  available {release.version}")
+    if stranded:
+        say(f"  This copy is on Python {config.python_label()}, which Case Finder does not")
+        say(f"  run on, so it is going onto Python {python}.")
     say()
+
+    line = reinstall_line(release.wheel_url, python)
+    if not can_replace_itself():
+        # Returns 1 because the update has not happened yet, and saying 0 would
+        # tell a script it had.
+        say("  Windows cannot replace a program while it is running, so this last")
+        say("  step is yours. Close Case Finder if it is open, then run:")
+        say()
+        say(f"      {line}")
+        return 1
 
     wanted = requirement(release.wheel_url)
     uv = shutil.which("uv")
@@ -212,18 +327,21 @@ def run(out=None) -> int:
         # Installed some other way, or uv is not on this shell's PATH. Print
         # the command rather than guess at an installer that was never used.
         say("  uv is not on PATH, so this cannot install it for you. Run:")
-        say(f'      uv tool install --force "{wanted}"')
+        say(f"      {line}")
         return 1
 
-    say(f"  installing {release.version} ...")
+    say(f"  installing {release.version} on Python {python} ...")
     # Output not captured: `uv tool install` reports what it is resolving and
     # downloading, and a silent thirty seconds is worse than a wall of text.
-    completed = subprocess.run([uv, "tool", "install", "--force", wanted])
+    completed = subprocess.run([uv, "tool", "install", "--force", "--python", python, wanted])
     if completed.returncode != 0:
         say()
         say(f"  That did not work. The release is at {release.page_url}")
         return completed.returncode
 
     say()
-    say(f"  Updated to {release.version}. Start it with:  casefinder")
+    if newer:
+        say(f"  Updated to {release.version}. Start it with:  casefinder")
+    else:
+        say(f"  Reinstalled {release.version} on Python {python}. Start it with:  casefinder")
     return 0
