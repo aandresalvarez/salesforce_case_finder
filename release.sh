@@ -442,8 +442,9 @@ echo
 bold "Released $tag"
 echo "  https://github.com/$slug/releases/tag/$tag"
 echo
-echo "Send the team this line:"
+echo "Send the team this line. It installs, and it updates any older copy:"
 echo "  uv tool install --force --python $python \"$asset_url\""
 echo
-echo "Anyone already on an older version only needs:"
+echo "A copy on 2.1.3 or later can use this instead — on Windows it prints the"
+echo "line above rather than running it, and older copies cannot be trusted with it:"
 echo "  casefinder --update"
