@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 from packaging.specifiers import SpecifierSet
 
-from casefinder import cli, config, main, selfcheck, update, views
+from casefinder import bq, cli, config, main, selfcheck, update, views
 
 REPO = Path(__file__).resolve().parent.parent
 PACKAGE = REPO / "casefinder"
@@ -456,6 +456,33 @@ def test_the_self_check_reports_every_check_and_a_legend(capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "ok = ready" in out and "FAILED = fix this" in out, "no legend to read the output by"
     assert "bigquery" in out
+
+
+def test_the_bigquery_line_names_the_vpn_when_that_is_the_cause(monkeypatch):
+    """"VPC Service Controls" stays in the line: it is what the README tells
+    people to look for, and what a support request will quote."""
+    reason = f"{bq.OFF_VPN}\n\nBigQuery said: 403 VPC Service Controls: Request refused"
+    monkeypatch.setattr(bq, "check_access", lambda: (False, reason))
+
+    status, message, remedy = selfcheck._check_bigquery()
+
+    assert status == selfcheck.FAILED
+    assert "VPN" in message and "VPC Service Controls" in message
+    assert bq.OFF_VPN in remedy
+
+
+def test_a_probe_that_raises_is_a_line_not_a_crash(monkeypatch):
+    """The failure branch returns before the VPN question is asked of `bq`."""
+
+    def explodes():
+        raise ImportError("no module named google")
+
+    monkeypatch.setattr(bq, "check_access", explodes)
+
+    status, _, remedy = selfcheck._check_bigquery()
+
+    assert status == selfcheck.FAILED
+    assert remedy == ["ImportError: no module named google"]
 
 
 def test_the_self_check_exit_code_follows_the_failures(monkeypatch):

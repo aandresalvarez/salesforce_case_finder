@@ -406,6 +406,21 @@ def test_the_connection_screen_gives_the_command_to_run(render):
     assert "Could not find credentials" in tree.text
 
 
+def test_off_the_vpn_the_connection_screen_says_vpn_and_not_sign_in(render):
+    """D38. The sign-in steps cannot fix this, and their closing line blames a
+    missing grant, so neither may appear — but BigQuery's own words stay."""
+    from casefinder import bq
+
+    reason = f"{bq.OFF_VPN}\n\nBigQuery said: 403 POST: VPC Service Controls: Request refused"
+    tree = render(shell.connection_screen, reason)
+
+    assert "Connect to the VPN" in tree.text
+    assert "Connect to Google Cloud" not in tree.text
+    assert "gcloud auth application-default login" not in tree.text
+    assert "not been granted" not in tree.text
+    assert "VPC Service Controls" in tree.text
+
+
 def test_a_failed_query_becomes_a_region_not_a_blank_page(render, warehouse, monkeypatch):
     from casefinder import data
 

@@ -32,7 +32,7 @@ tool, with the interface rebuilt as a native desktop app and the operational
 triage features (lists, saved views, extended metadata, related cases) that v1
 never had.
 
-**Status: complete and verified against the live warehouse.** 701 automated
+**Status: complete and verified against the live warehouse.** 709 automated
 tests, plus 31 more that run against live BigQuery to check the things a test
 double cannot; all seven screens exercised end to end; both installers run
 through on a clean path, and the distributable wheel installs and self-checks
@@ -129,7 +129,7 @@ Once `uv` is installed — one line, from its own site — the same three lines 
 on macOS and Windows:
 
 ```bash
-uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.3/casefinder-2.1.3-py3-none-any.whl"
+uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.4/casefinder-2.1.4-py3-none-any.whl"
 casefinder --check
 casefinder
 ```

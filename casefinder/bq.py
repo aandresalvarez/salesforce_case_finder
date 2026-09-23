@@ -69,6 +69,35 @@ def get_client() -> bigquery.Client:
     return _CLIENT
 
 
+# What BigQuery says when VPC Service Controls refuses a request. For this
+# project that refusal has one everyday cause — the request did not come through
+# the VPN — and it arrives as a 403 that reads exactly like a missing grant, so
+# it has to be told apart by its text. Observed from a machine off the VPN:
+# `403 POST …/jobs: VPC Service Controls: Request is prohibited by
+# organization's policy`. `vpcServiceControls` also covers the unique-identifier
+# field that follows it and the `reason` on the error itself.
+_OFF_VPN_MARKERS = ("VPC Service Controls", "vpcServiceControls")
+
+# One wording, for the access probe, `--check` and a query that fails
+# mid-session alike (D38).
+OFF_VPN = "Case Finder can't reach BigQuery from outside the VPN. Connect to the VPN and try again."
+
+
+def refused_off_vpn(exc: BaseException) -> bool:
+    """Did BigQuery refuse this because the request did not come through the VPN?"""
+    reasons = " ".join(
+        str(error.get("reason", ""))
+        for error in getattr(exc, "errors", None) or []
+        if isinstance(error, dict)
+    )
+    return any(marker in f"{exc} {reasons}" for marker in _OFF_VPN_MARKERS)
+
+
+def blocked_off_vpn(reason: str) -> bool:
+    """Is `reason`, as `check_access` returned it, the refusal from off the VPN?"""
+    return reason.startswith(OFF_VPN)
+
+
 def check_access() -> tuple[bool, str]:
     """Cheap probe used by the UI on startup to give a real error early.
 
@@ -93,6 +122,11 @@ def check_access() -> tuple[bool, str]:
     except AuthError as exc:
         return False, str(exc)
     except Exception as exc:  # noqa: BLE001
+        if refused_off_vpn(exc):
+            # Not "has not been granted access": that sends someone to ask the
+            # data team for a grant they already have, or to sign in again,
+            # when what they need is the VPN.
+            return False, f"{OFF_VPN}\n\nBigQuery said: {exc}"
         return False, (
             f"Connected, but the query failed:\n\n{exc}\n\n"
             "This usually means the account is authenticated but has not been "

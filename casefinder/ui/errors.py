@@ -25,8 +25,13 @@ def friendly(exc: Exception) -> str:
     query builders raise it with text written for the user; anything else is a
     BigQuery or transport failure whose own message is not.
     """
-    from ..bq import CostError, QueryTimeout
+    from ..bq import OFF_VPN, CostError, QueryTimeout, refused_off_vpn
 
+    if refused_off_vpn(exc):
+        # The VPN dropped after the app connected. "BigQuery could not run
+        # that" is true and useless; this is the one failure the reader can
+        # fix in a second, and only if they are told which it is (D38).
+        return OFF_VPN
     if isinstance(exc, CostError):
         return "That query would scan more data than the safety cap allows."
     if isinstance(exc, QueryTimeout):

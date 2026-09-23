@@ -1,6 +1,6 @@
 # Case Finder — as-built specification
 
-**Version 2.1.3 · 22 September 2026**
+**Version 2.1.4 · 23 September 2026**
 
 The normative specification is
 [`CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md`](CASE_FINDER_SPECS_NICEGUI_LEAN_v2.1.md),
@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **701 passing**, ~4.5 s, no network access required |
+| Automated tests | **709 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -46,7 +46,7 @@ makes the contract explicit and the whole suite finishes in a second.
 
 ## 2. Module map
 
-9,809 lines across 36 modules.
+9,880 lines across 36 modules.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
@@ -55,7 +55,7 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/reconnect.py` | 566 | What the window says, and offers, when the program behind it stops answering (D20, D21). |
 | `ui/case_detail.py` | 751 | §6.4 — header, metadata, comments, messages, timeline, files, related. |
 | `ui/lists.py` | 444 | §6.2 — the triage list, its filters, its paging and its CSV. |
-| `bq.py` | 469 | One client, byte caps, cost estimates, and the two-stage read-only guard. |
+| `bq.py` | 503 | One client, byte caps, cost estimates, the two-stage read-only guard, and telling a refusal from off the VPN apart from a missing grant (D38). |
 | `ui/search.py` | 434 | §6.3 — idle state, results, snippets, paging, case-number shortcut. |
 | `data.py` | 350 | The UI↔query seam: builder + cache + model, one function per page need. |
 | `views.py` | 297 | Saved views, and the allowlist of what may be persisted. |
@@ -69,12 +69,12 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/components/filters.py` | 295 | The compact filter row and its disclosure. |
 | `ui/sql_page.py` | 192 | §6.6 — free-form SQL with a priced dry run. |
 | `window.py` | 194 | What the native window can still do once the server behind it has gone (D21). |
-| `selfcheck.py` | 278 | `casefinder --check` — eight prerequisites, one line each, on any machine the app is installed on (D34, D37). |
+| `selfcheck.py` | 289 | `casefinder --check` — eight prerequisites, one line each, on any machine the app is installed on (D34, D37). |
 | `update.py` | 347 | `casefinder --update` — which release is newest, installing it on a named Python, and repairing a copy on the wrong one (D36, D37). |
 | `main.py` | 223 | Routes, the loopback-only native window, its selectable body (D19) and its bridge (D21). |
 | `cli.py` | 65 | The `casefinder` command: every flag read before anything imports the UI, and a refusal rather than a crash on an unsupported Python (D37). |
 | `ui/settings.py` | 185 | §6.7 — era, connection, Ask availability, about. |
-| `ui/shell.py` | 156 | §3.1 — the navigation rail, the content region, and the connection gate. |
+| `ui/shell.py` | 177 | §3.1 — the navigation rail, the content region, and the connection gate, in its sign-in and its VPN forms (D38). |
 | `ui/list_columns.py` | 146 | What a list row shows, and the order columns give way in (D16). |
 | `ui/components/loading.py` | 104 | Says a slow thing is happening, and gets the work off the event loop. |
 | `ui/components/intake_form.py` | 176 | Draws what `intake.py` parsed — as labels, never as HTML. |
@@ -85,7 +85,7 @@ makes the contract explicit and the whole suite finishes in a second.
 | `ui/components/actions.py` | 66 | The action vocabulary; `primary()` is the only filled button in the app. |
 | `ui/components/empty_state.py` | 56 | Every "nothing here" screen, including the failure ones. |
 | `ui/components/freshness.py` | 38 | The stale-snapshot banner. |
-| `ui/errors.py` | 36 | §12 — one plain sentence, with the raw text one disclosure away. |
+| `ui/errors.py` | 41 | §12 — one plain sentence, with the raw text one disclosure away. |
 
 ### The layering rule
 
@@ -201,7 +201,7 @@ Carry over the shape, never the string.
 
 ## 4. Deviations register
 
-Thirty-seven departures from the specification. Each names what the spec says,
+Thirty-eight departures from the specification. Each names what the spec says,
 what was built, and why.
 
 ### D1 — `casefinder/data.py` is not in the specified module layout
@@ -1608,6 +1608,53 @@ the published release.
 **Effect on requirements:** the Python range is now stated rather than assumed.
 Nothing about what the app reads, shows or stores changes, and the update path
 still sends nothing but one unauthenticated GET.
+
+
+### D38 — a request from off the VPN is named as that, not as a missing grant
+
+**Spec:** §12's failure matrix has a row for no credentials and a row for an
+account without a BigQuery grant. FR-START-2's connection state is written for
+the first — *Connect to Google Cloud*, with sign-in steps. Neither says anything
+about a network BigQuery refuses to answer.
+
+**Built:** a refusal from VPC Service Controls — for this project, a request that
+did not come through the VPN — is recognised by BigQuery's own text and named as
+that wherever it can surface:
+- the access probe, which now says so instead of blaming the grant;
+- the Connect screen, which becomes *Connect to the VPN*, with one Retry and
+  BigQuery's words under Details;
+- the `bigquery` line of `--check`;
+- the one-sentence error when a query fails mid-session because the VPN dropped.
+
+An ordinary missing grant keeps its old message.
+
+**Why:** the refusal is a 403, and every path treated a 403 as a missing grant.
+On a machine off the VPN, `--check` printed "has not been granted BigQuery
+access". The Connect screen offered `gcloud auth application-default login`, then
+blamed the grant. Both sent the reader somewhere that could not help — the data
+team, or a sign-in they had already done — for a problem they could fix in a
+second by connecting.
+
+It is matched on the text, because the text is what was observed:
+`403 POST …/jobs: VPC Service Controls: Request is prohibited by organization's
+policy`. `vpcServiceControls` also catches the unique identifier BigQuery appends,
+and the error's `reason` where a client surfaces it. `tests/test_bq.py` pins that
+an ordinary `Access Denied` is not mistaken for it.
+
+The Connect screen still has one state and one action, as FR-START-2 asks; it
+now has two wordings of it. The VPN form leaves out the sign-in steps, because
+they cannot help here and their closing line is the misleading one.
+`--check` keeps "VPC Service Controls" in its line, because it is the phrase the
+README tells people to look for and the one a support request will quote.
+
+**Verified** against that exception in the suite. It could not be exercised live
+for 2.1.4: the machine it was built on was inside the network perimeter that day.
+The text it matches is the text that machine received from outside it the day
+before.
+
+**Effect on requirements:** adds a row to §12 — *request refused off the VPN →
+a Connect-to-the-VPN state with one Retry, raw error one disclosure away.*
+Nothing the app reads, shows or stores changes.
 
 ---
 

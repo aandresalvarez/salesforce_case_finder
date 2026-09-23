@@ -188,9 +188,20 @@ def _check_bigquery() -> tuple[str, str, list[str]]:
 
         reachable, message = bq.check_access()
     except Exception as exc:  # noqa: BLE001 — reported, never raised at a user
-        reachable, message = False, f"{type(exc).__name__}: {exc}"
+        # Returned here rather than folded into `message`: if the import is
+        # what failed, there is no `bq` below to ask about the VPN.
+        return FAILED, "BigQuery is not reachable", [f"{type(exc).__name__}: {exc}"]
     if reachable:
         return OK, message, []
+    if bq.blocked_off_vpn(message):
+        # "VPC Service Controls" kept in the line because it is the phrase the
+        # README tells people to look for, and the one a support request will
+        # quote.
+        return (
+            FAILED,
+            "not on the VPN — BigQuery refused this computer (VPC Service Controls)",
+            message.strip().splitlines(),
+        )
     return FAILED, "BigQuery is not reachable", message.strip().splitlines()
 
 

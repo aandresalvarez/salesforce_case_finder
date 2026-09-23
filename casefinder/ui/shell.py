@@ -95,24 +95,45 @@ def layout(active: str) -> Iterator[None]:
 
 
 def connection_screen(reason: str) -> None:
-    """One centered state with one primary action. No setup dashboard."""
+    """One centered state with one primary action. No setup dashboard.
+
+    Two states behind the one screen, because two unrelated things stop the
+    probe and they are fixed in unrelated ways (D38). Off the VPN, BigQuery
+    refuses the request outright; the sign-in steps below would change nothing,
+    and their closing line — signed in, but not granted access — would send the
+    reader to the data team for a grant they already have. So that case says
+    what it is, and keeps BigQuery's own words one disclosure away.
+    """
+    from ..bq import blocked_off_vpn
 
     def retry() -> None:
         data.reset_connection()
         ui.navigate.to("/")
 
     theme.install()
+    off_vpn = blocked_off_vpn(reason)
     with ui.column().classes("w-full items-center justify-center").style(
         "height:100vh; gap:0; background:" + SURFACE
     ):
-        ui.icon("cloud_off").style(f"font-size:38px;color:{MUTED}")
-        ui.label("Connect to Google Cloud").classes("cf-h1").style("margin-top:14px")
+        ui.icon("vpn_lock" if off_vpn else "cloud_off").style(f"font-size:38px;color:{MUTED}")
+        ui.label("Connect to the VPN" if off_vpn else "Connect to Google Cloud").classes(
+            "cf-h1"
+        ).style("margin-top:14px")
         ui.label(
-            "Case Finder uses the Google Cloud credentials already on this "
+            "Case Finder can only reach BigQuery through the VPN. Connect to it, "
+            "then press Retry."
+            if off_vpn
+            else "Case Finder uses the Google Cloud credentials already on this "
             "computer. It has no login of its own."
         ).classes("cf-muted").style("max-width:390px;text-align:center;margin-top:8px")
         with ui.element("div").style("margin-top:18px"):
             primary("Retry", retry)
+        if off_vpn:
+            with ui.expansion("Details").classes("cf-muted").style(
+                "margin-top:18px; max-width:520px"
+            ):
+                ui.label(reason).classes("cf-error")
+            return
         with ui.expansion("Setup instructions").classes("cf-muted").style(
             "margin-top:18px; max-width:520px"
         ):

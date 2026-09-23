@@ -429,6 +429,72 @@ def test_a_failed_probe_says_which_project_the_grant_is_missing_on(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# Off the VPN — D38
+# --------------------------------------------------------------------------
+
+
+def _refused_off_vpn():
+    """The shape `--check` printed on a machine off the VPN; the identifier is
+    invented. A 403, like a missing grant — which is the whole problem."""
+    from google.api_core.exceptions import Forbidden
+
+    return Forbidden(
+        f"POST https://bigquery.googleapis.com/bigquery/v2/projects/{config.PROJECT}/jobs"
+        "?prettyPrint=false: VPC Service Controls: Request is prohibited by organization's "
+        "policy. vpcServiceControlsUniqueIdentifier: 0a1b2c3d4e5f"
+    )
+
+
+def test_a_probe_refused_off_the_vpn_says_so_rather_than_blaming_the_grant(monkeypatch):
+    """The old message told this reader they had not been granted access —
+    sending them to ask the data team for a grant they already have."""
+
+    class OffVpn:
+        def query(self, *a, **k):
+            raise _refused_off_vpn()
+
+    monkeypatch.setattr(bq, "get_client", OffVpn)
+    ok, message = bq.check_access()
+
+    assert not ok
+    assert bq.blocked_off_vpn(message)
+    assert "granted BigQuery access" not in message
+    assert "VPC Service Controls" in message, "BigQuery's own words were dropped"
+
+
+def test_the_refusal_is_recognised_by_its_reason_as_well_as_its_text():
+    from google.api_core.exceptions import Forbidden
+
+    refused = Forbidden("Request refused", errors=[{"reason": "vpcServiceControls"}])
+    assert bq.refused_off_vpn(refused)
+
+
+def test_an_ordinary_missing_grant_is_not_mistaken_for_the_vpn(monkeypatch):
+    from google.api_core.exceptions import Forbidden
+
+    no_grant = Forbidden("Access Denied: User does not have bigquery.jobs.create permission")
+    assert not bq.refused_off_vpn(no_grant)
+
+    class NoGrant:
+        def query(self, *a, **k):
+            raise no_grant
+
+    monkeypatch.setattr(bq, "get_client", NoGrant)
+    ok, message = bq.check_access()
+    assert not ok
+    assert not bq.blocked_off_vpn(message)
+    assert "granted BigQuery access" in message
+
+
+def test_a_query_refused_mid_session_says_to_connect_to_the_vpn():
+    """The VPN dropped after the app connected. "BigQuery could not run that"
+    is true, and hides the one failure the reader can fix in a second."""
+    from casefinder.ui.errors import friendly
+
+    assert friendly(_refused_off_vpn()) == bq.OFF_VPN
+
+
+# --------------------------------------------------------------------------
 # Network exposure — spec section 9.6, Appendix B "socket/security test"
 # --------------------------------------------------------------------------
 

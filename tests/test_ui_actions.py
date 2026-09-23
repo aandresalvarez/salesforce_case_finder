@@ -166,6 +166,13 @@ def test_the_connection_screen_has_exactly_one(render):
     assert _primaries(tree) == ["Retry"]
 
 
+def test_the_vpn_connection_screen_has_exactly_one_too(render):
+    from casefinder import bq
+
+    tree = render(shell.connection_screen, f"{bq.OFF_VPN}\n\nBigQuery said: 403")
+    assert _primaries(tree) == ["Retry"]
+
+
 def test_every_filled_button_came_from_the_primary_helper(list_page, case_page, search_idle):
     """The rule is enforceable only because `primary()` is the one way in.
 
