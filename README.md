@@ -35,7 +35,8 @@ Two slices of the archive are available, switchable in Settings:
 ## Install
 
 You need a Google account that has been granted BigQuery access to the data
-project. No admin rights, no service-account key, nothing to configure.
+project, and the VPN, which is the only way Case Finder can reach BigQuery. No
+admin rights, no service-account key, nothing to configure.
 
 There are two ways in: install it to use it, or clone it to work on it.
 
@@ -98,7 +99,8 @@ If someone handed you the `.whl` file directly instead, point at the file:
 cd ~/Downloads && uv tool install --python 3.13 "./casefinder-2.1.3-py3-none-any.whl"
 ```
 
-**Step 3 — check the machine, then start it:**
+**Step 3 — connect to the VPN, check the machine, then start it.** Case Finder
+needs the VPN to reach BigQuery, so connect first, then:
 
 ```bash
 casefinder --check
@@ -106,9 +108,10 @@ casefinder --check
 
 That prints a line per prerequisite — Python, the desktop window's drawing
 engine, the shared presets, `gcloud`, your credentials, and BigQuery itself —
-and tells you how to fix any that are not ready. It is also the right thing to
-paste into a support request; it names no paths belonging to you. When it is
-happy:
+and tells you how to fix any that are not ready. If the BigQuery line shows a
+`VPC Service Controls` error, make sure you are connected to the VPN and run it
+again. It is also the right thing to paste into a support request; it names no
+paths belonging to you. When it is happy:
 
 ```bash
 casefinder
@@ -245,7 +248,10 @@ same ones `gcloud` uses — so you are whoever is signed in on the machine, and
 BigQuery IAM decides what you can read. The app grants nothing and can widen
 nothing.
 
-If the Connect screen appears:
+If the Connect screen appears, first check that you are on the VPN — Case
+Finder can only reach BigQuery through it — and press **Retry**. When the VPN is
+the cause, the screen's setup details mention `VPC Service Controls`. If you are
+on the VPN and the screen stays:
 
 ```bash
 gcloud auth application-default login
