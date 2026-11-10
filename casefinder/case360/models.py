@@ -18,6 +18,8 @@ def matches(value: object, schema: dict) -> bool:
         return any(matches(value, child) for child in schema["anyOf"])
     if "const" in schema and value != schema["const"]:
         return False
+    if "enum" in schema and value not in schema["enum"]:
+        return False
     kind = schema.get("type")
     if kind == "object":
         if not isinstance(value, dict):
@@ -29,8 +31,15 @@ def matches(value: object, schema: dict) -> bool:
             return False
         return all(matches(value[key], spec) for key, spec in properties.items() if key in value)
     if kind == "string":
-        return isinstance(value, str) and ("pattern" not in schema
-                                          or re.fullmatch(schema["pattern"], value) is not None)
+        return (isinstance(value, str) and schema.get("minLength", 0) <= len(value)
+                <= schema.get("maxLength", len(value)) and ("pattern" not in schema
+                or re.fullmatch(schema["pattern"], value) is not None))
+    if kind == "array":
+        return (isinstance(value, list) and schema.get("minItems", 0) <= len(value)
+                <= schema.get("maxItems", len(value))
+                and all(matches(item, schema.get("items", {})) for item in value)
+                and (not schema.get("uniqueItems")
+                     or all(item not in value[:index] for index, item in enumerate(value))))
     if kind == "integer":
         return (type(value) is int and value >= schema.get("minimum", value)
                 and value <= schema.get("maximum", value))

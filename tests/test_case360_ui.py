@@ -35,3 +35,80 @@ def test_demo_route_does_not_probe_bigquery(render, monkeypatch):
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     tree = render(main.case360_route)
     assert "Offline preview" in tree.text
+
+
+def test_request_form_preserves_explicit_centers_and_cannot_run_live(render):
+    tree = render(case360_page.render_preparation)
+    assert "Prepare request" in tree.button_labels()
+    assert "Confirm request contract" in tree.button_labels()
+    assert "New request" in tree.button_labels()
+    assert "Run query" not in tree.button_labels()
+    assert "Run" not in tree.button_labels()
+    assert tree.of_type("Select")[0].value == ["SHC", "LPCH"]
+    assert "unbound string lists" in tree.text
+    confirm = next(b for b in tree.buttons() if b.text == "Confirm request contract")
+    assert not confirm.enabled
+
+
+def test_request_edit_invalidates_confirmation(render):
+    tree = render(case360_page.render_preparation)
+    confirm = next(b for b in tree.buttons() if b.text == "Confirm request contract")
+    confirm.enable()
+    with tree.client:
+        tree.of_type("Textarea")[0].value = "Return synthetic surgery information."
+    assert not confirm.enabled
+    assert "Prepare a new revision" in tree.text
+
+
+def test_prepare_confirm_and_revision_use_the_private_protocol(render, monkeypatch):
+    import asyncio
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+            self.revision = 0
+
+        async def request(self, method, params, **kwargs):
+            self.calls.append((method, params, kwargs))
+            if method == "prepare_request":
+                self.revision += 1
+                return {"run_id": f"run-{self.revision}", "revision": self.revision,
+                        "contract_sha256": "a" * 64, "artifact": {"artifact_id": "result"}}
+            return {"confirmed": True}
+
+        async def artifact(self, run_id, reference):
+            return {"contract": {"pending_decisions": ["Synthetic pending criteria"]},
+                    "resources": {"status": "NOT_CONFIGURED"}, "source_evidence": None,
+                    "evidence_alignment": {}, "execution_plan": {"max_paid_usd": 0}}
+
+    client = Client()
+    monkeypatch.setattr(case360_page.session, "client", lambda: client)
+    tree = render(case360_page.render_preparation)
+    buttons = {b.text: b for b in tree.buttons()}
+    text = tree.of_type("Textarea")[0]
+
+    async def click(label):
+        tree.press(buttons[label])
+        await asyncio.sleep(0)
+
+    async def check():
+        from nicegui import core
+
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            text.value = "Return synthetic orders ages 1 through 18 inclusive."
+        await click("Prepare request")
+        assert buttons["Confirm request contract"].enabled
+        assert "Synthetic pending criteria" in tree.text
+        await click("Confirm request contract")
+        assert "Live execution remains unavailable" in tree.text
+        with tree.client:
+            text.value = "Return synthetic surgery information."
+        assert not buttons["Confirm request contract"].enabled
+        await click("Prepare request")
+        assert client.calls[-1][1]["previous_run_id"] == "run-1"
+        assert client.calls[0][1]["centers"] == ["SHC", "LPCH"]
+        assert client.calls[1][1]["contract_sha256"] == "a" * 64
+        assert all(call[0] != "start_run" for call in client.calls)
+
+    asyncio.run(check())

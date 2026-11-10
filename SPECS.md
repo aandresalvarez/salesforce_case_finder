@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **744 passing**, ~4 s, no network access required |
+| Automated tests | **758 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1672,6 +1672,18 @@ restart recovery and Windows validation remain later beta phases. See
 [the P1 developer guide](docs/CASE360_P1.md) for the implemented boundary.
 
 ---
+
+### D41 — prepare new Case 360 requests against a pinned private runtime
+
+The opt-in beta page accepts requirement lines, explicit centers, an optional
+external case ID and unbound external input names. It displays a versioned
+contract and relevant evidence from the private engine. Confirmation refers
+to the exact contract hash; edits create a new revision. Missing resources
+and pending interpretation stay visible. The public client owns transport and
+presentation only; preparation and source verification remain in the private
+engine. `CASE360_RUNTIME_CONTEXT` selects explicit paths and pinned manifests
+without inheriting Ask configuration. Live execution remains unavailable;
+confirmation grants no paid budget. See [the P2 guide](docs/CASE360_P2.md).
 
 ## 5. Known limitations
 
