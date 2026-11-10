@@ -91,6 +91,19 @@ def settings_route() -> None:
     gated("settings", settings.render)
 
 
+@ui.page("/case360")
+def case360_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui import case360_page
+    from .ui.shell import layout
+
+    # This local demo must work before a BigQuery account is configured.
+    with layout("case360"):
+        case360_page.render()
+
+
 def _free_port() -> int:
     """Ask the OS for an unused loopback port.
 
@@ -134,6 +147,10 @@ def _window_args() -> dict[str, object]:
 
 
 def main() -> None:
+    if config.CASE360_ENABLED:
+        from .case360 import session
+
+        app.on_shutdown(session.close)
     # Before `ui.run`, because it writes into the head served with every page
     # and the first page is served the moment the server is up. It is also the
     # one part of the application that has to survive the socket going down, so

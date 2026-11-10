@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **709 passing**, ~4 s, no network access required |
+| Automated tests | **744 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1655,6 +1655,21 @@ before.
 **Effect on requirements:** adds a row to §12 — *request refused off the VPN →
 a Connect-to-the-VPN state with one Retry, raw error one disclosure away.*
 Nothing the app reads, shows or stores changes.
+
+---
+
+### D40 — optional Case 360 synthetic desktop preview
+
+An opt-in `/case360` route adds a secondary navigation entry and bypasses the
+warehouse gate for its offline demonstration. The private runtime owns the
+contract, execution, ledger and review. The Python client confirms the exact
+contract revision, checks the pinned protocol and displays completion and
+quality separately. Synthetic runs persist in the beta's separate private
+directory; the existing reader keeps its original storage contract.
+
+This adds 35 offline tests. Installation, generalized requests, manual cleanup,
+restart recovery and Windows validation remain later beta phases. See
+[the P1 developer guide](docs/CASE360_P1.md) for the implemented boundary.
 
 ---
 
