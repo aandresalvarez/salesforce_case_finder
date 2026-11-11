@@ -34,11 +34,14 @@ class Runtime:
         # unnecessary for this synthetic preview and must not select its runtime.
         names = ("PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "WINDIR",
                  "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL")
-        return {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1"}
+        return {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
+                "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
 
 
 def discover() -> Runtime:
-    context = os.environ.get("CASE360_RUNTIME_CONTEXT")
+    from .preferences import read
+
+    context = read()["runtime_context"] or os.environ.get("CASE360_RUNTIME_CONTEXT")
     if context:
         location = Path(context).resolve(strict=True)
         data = json.loads(location.read_text())

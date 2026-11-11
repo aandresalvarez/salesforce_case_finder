@@ -10,25 +10,10 @@ from nicegui import ui
 from ..case360 import session
 
 
-def render_result(result: dict) -> None:
-    ui.label("Execution: " + result["execution_status"]).classes("cf-h2")
-    ui.label("Quality: " + result["quality_status"]).classes("cf-h2")
-    if result.get("stop_reason"):
-        ui.label("Stopped: " + str(result["stop_reason"]))
-    ui.label("Experimental draft for human review.")
-    if result.get("mode", "synthetic").startswith("synthetic"):
-        ui.label("Synthetic evidence and responses.")
-    ui.label("Judge evaluation has not been run.")
-    if result.get("budget"):
-        ui.code(json.dumps(result["budget"], indent=2), language="json")
-    ui.label("Real provider calls: " + str(result["real_provider_calls"]))
-    sections = (("Pending decisions", "pending_decisions"), ("Requirements", "requirements"),
-                ("Evidence", "source_evidence"), ("SQL packages", "packages"),
-                ("Checks", "validations"), ("Independent review", "reviews"),
-                ("SDK verification", "sdk_attestation"))
-    for title, key in sections:
-        with ui.expansion(title).classes("w-full"):
-            ui.code(json.dumps(result.get(key), ensure_ascii=False, indent=2), language="json")
+def render_result(result: dict, run_id: str | None = None, reference: dict | None = None) -> None:
+    from .case360_result import render_result as render
+
+    render(result, run_id, reference)
 
 
 def render_preparation(*, previous_run: str | None = None, draft: dict | None = None) -> None:
@@ -40,12 +25,23 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
     external = ui.input("External case ID (optional)")
     inputs = ui.input("External input names (optional, comma-separated)")
     ui.label("External inputs remain unbound string lists; no values are collected here.")
+    with ui.expansion("Request context (optional; leave unresolved values explicit)"):
+        objective = ui.textarea("Objective")
+        period = ui.input("Period or date window")
+        cohort = ui.textarea("Cohort and exclusions")
+        deliveries = ui.textarea("Requested fields and deliverables")
+        supplied = ui.textarea("Approved source text or references")
+        pending = ui.textarea("Decisions still to confirm")
+    context_fields = (("Objective", objective), ("Period", period),
+                      ("Cohort and exclusions", cohort),
+                      ("Fields and deliverables", deliveries), ("Supplied sources", supplied),
+                      ("Pending decisions", pending))
     status = ui.label("Prepare and inspect the contract before confirming it.")
     panel = ui.column().classes("w-full")
     prepared: dict = {}
     previous: str | None = previous_run
     preflight: dict = {}
-    fields = (request, centers, external, inputs)
+    fields = (request, centers, external, inputs, *(field for _, field in context_fields))
 
     def busy(value: bool) -> None:
         for element in (*fields, prepare_button, new_button):
@@ -67,7 +63,9 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
             c = session.client()
             prepared.clear()
             prepared.update(await c.request("prepare_request", {
-                "text": request.value or "", "centers": centers.value,
+                "text": "\n".join([request.value or "", *(f"{label}: {field.value}"
+                    for label, field in context_fields if field.value)]).strip(),
+                "centers": centers.value,
                 "external_case_id": external.value or None,
                 "external_inputs": [name.strip() for name in (inputs.value or "").split(",")
                                     if name.strip()], "previous_run_id": previous}))
@@ -167,7 +165,7 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
                 result = await c.artifact(run_id, view["artifact"])
                 with panel:
                     if "execution_status" in result:
-                        render_result(result)
+                        render_result(result, run_id, view["artifact"])
                     elif view.get("budget"):
                         ui.code(json.dumps(view["budget"], indent=2), language="json")
             if view["execution_status"] == "INTERRUPTED":
@@ -197,6 +195,8 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
         request.value = ""
         external.value = ""
         inputs.value = ""
+        for _, field in context_fields:
+            field.value = ""
         panel.clear()
         changed()
 
@@ -229,6 +229,9 @@ def render() -> None:
     ui.label("Requests and evidence are retained locally. "
              "Use Limpiar datos to remove selected work or all local history.")
     from .case360_history import render_history
+    from .case360_setup import render_setup
+
+    render_setup()
 
     content = ui.column().classes("w-full")
 
@@ -311,7 +314,7 @@ def render_demo() -> None:
                 result = await c.artifact(run_id, view["artifact"])
                 result_panel.clear()
                 with result_panel:
-                    render_result(result)
+                    render_result(result, run_id, view["artifact"])
         except (RuntimeError, OSError, ValueError, TimeoutError) as error:
             status.text = str(error)
         finally:

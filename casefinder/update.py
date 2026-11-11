@@ -266,6 +266,9 @@ def run(out=None) -> int:
     def say(line: str = "") -> None:
         print(line, file=stream)
 
+    if config.PRIVATE_BETA:
+        say("Manage private beta packages from the installation settings in the app.")
+        return 1
     say(f"{config.APP_NAME} {config.VERSION} — checking for a newer release")
     say()
 

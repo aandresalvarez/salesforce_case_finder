@@ -71,7 +71,7 @@ class Client:
         run_id: str | None = None, request_id: str | None = None,
     ) -> dict[str, Any]:
         if self.quiescing and method not in {
-            "list_runs", "get_run", "cancel_run", "get_accounting"
+            "list_runs", "get_run", "read_events", "read_artifact", "cancel_run", "get_accounting"
         }:
             raise BridgeError("CLOSING", "Return to the app before starting another action.")
         await self.open()

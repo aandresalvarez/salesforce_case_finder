@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **792 passing**, ~4 s, no network access required |
+| Automated tests | **820 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1764,3 +1764,24 @@ partial failures and retained accounting; it cannot delete credentials, source
 systems or external exports. The visible cleanup flow is brought forward from
 P4 at the user's request. See [the P3 guide](docs/CASE360_P3.md). Windows execution
 and native visual acceptance remain unverified; this is not a release claim.
+
+### D44 — review delivery and configurable private beta installations
+
+Case 360 now presents requirement/field/center coverage, source evidence, draft
+SQL, checks, independent review and pending decisions separately. Feedback is
+append-only and bound to the exact contract/result. Selected exports always
+include provenance, pending decisions and the experimental status. Completion
+never grants clinical approval.
+
+Analyst/environment labels, private runtime selection, resource imports, expected
+account and budget policy are editable in the app. A separate private macOS
+bundle includes pinned runtimes and dependencies. Local diagnostics incur no
+provider cost. Updates verify the private manifest and preserve previous
+versions, requests and resources for rollback. Pilot assessments are explicitly
+human reports, not independent identity verification. Stable Case Finder keeps
+its existing installation and updater. See [the beta guide](docs/CASE360_BETA.md).
+
+The 820-test committed frontend suite excludes 31 opt-in warehouse tests. macOS
+arm64 has standalone and native acceptance evidence in the private engine repo.
+Windows is deferred. The app has ad-hoc signatures, not Developer ID notarization.
+A second analyst and live clinical quality have not been independently validated.

@@ -203,6 +203,64 @@
       "params": {
         "checkpoint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "list_feedback",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "create_export",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sections": [
+          "contract",
+          "sql",
+          "reviews"
+        ]
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "save_feedback",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_revision": 0,
+        "analyst": "Synthetic analyst",
+        "environment": "Synthetic desktop",
+        "useful": false,
+        "requirement_ids": [
+          "R0"
+        ],
+        "category": "omission",
+        "proposal": "A required field is missing.",
+        "correction_minutes": 12.5
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "read_artifact",
+      "params": {
+        "artifact_id": "feedback",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "offset": 0,
+        "length": 100
+      }
     }
   ],
   "invalid": [
@@ -564,6 +622,104 @@
       "method": "resume_run",
       "params": {
         "checkpoint_sha256": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "save_feedback",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_revision": -1,
+        "analyst": "Synthetic analyst",
+        "environment": "Synthetic desktop",
+        "useful": false,
+        "requirement_ids": [
+          "R0"
+        ],
+        "category": "omission",
+        "proposal": "A required field is missing.",
+        "correction_minutes": 12.5
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "save_feedback",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_revision": 0,
+        "analyst": "Synthetic analyst",
+        "environment": "Synthetic desktop",
+        "useful": false,
+        "requirement_ids": [
+          "R0"
+        ],
+        "category": "approve",
+        "proposal": "A required field is missing.",
+        "correction_minutes": 12.5
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "save_feedback",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_revision": 0,
+        "analyst": "Synthetic analyst",
+        "environment": "Synthetic desktop",
+        "useful": false,
+        "requirement_ids": [
+          "R0"
+        ],
+        "category": "omission",
+        "proposal": "A required field is missing.",
+        "correction_minutes": -1
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "save_feedback",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_revision": 0,
+        "analyst": "",
+        "environment": "Synthetic desktop",
+        "useful": false,
+        "requirement_ids": [
+          "R0"
+        ],
+        "category": "omission",
+        "proposal": "A required field is missing.",
+        "correction_minutes": 12.5
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "product-fixture",
+      "run_id": "run-synthetic",
+      "method": "create_export",
+      "params": {
+        "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sections": [
+          "credentials"
+        ]
       }
     }
   ]

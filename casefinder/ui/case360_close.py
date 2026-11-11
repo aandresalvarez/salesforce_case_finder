@@ -1,6 +1,7 @@
 """Offer Return or Stop and close; never approve native exit before process proof."""
 from nicegui import ui
 
+from .. import config
 from ..case360 import session
 
 
@@ -13,7 +14,7 @@ def install() -> None:
             return
         pending = True
         with ui.dialog().props("persistent") as dialog, ui.card():
-            ui.label("Close Case Finder")
+            ui.label("Close " + config.APP_NAME)
             status = ui.label("Checking active work…")
 
             def return_to_app() -> None:

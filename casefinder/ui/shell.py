@@ -70,7 +70,8 @@ def rail(active: str) -> None:
             f"font-size:13.5px;font-weight:650;padding:2px 16px 16px 16px;color:{INK}"
         )
         for key, label, icon, target in DESTINATIONS:
-            _nav_item(label, icon, target, active == key)
+            _nav_item(label, icon, "/search" if config.PRIVATE_BETA and key == "search"
+                      else target, active == key)
         ui.space()
         if config.CASE360_ENABLED:
             _nav_item("Case 360 Beta", "science", "/case360", active == "case360")
@@ -91,7 +92,20 @@ def layout(active: str) -> Iterator[None]:
         install()
     with ui.row().classes("w-full").style("gap:0; flex-wrap:nowrap"):
         rail(active)
-        with ui.column().classes("cf-content").style("gap:0"):
+        with ui.column().classes("cf-content").style("gap:0") as content:
+            if active == "case360" or (config.PRIVATE_BETA and active == "settings"):
+                content.classes("cf-case360")
+                ui.add_css("""
+                    .cf-case360 .nicegui-column,
+                    .cf-case360 .q-expansion-item,
+                    .cf-case360 .q-tab-panels,
+                    .cf-case360 .q-panel,
+                    .cf-case360 .q-tab-panel { min-width: 0; max-width: 100%; }
+                    .cf-case360 .nicegui-code { width: 100%; max-width: 100%; }
+                    .cf-case360 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+                    .cf-case360 .q-tabs,
+                    .cf-case360 .q-table__container { max-width: 100%; align-self: stretch; }
+                """)
             yield
 
 

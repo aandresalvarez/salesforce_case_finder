@@ -14,6 +14,9 @@ from pathlib import Path
 
 APP_NAME = "Case Finder"
 VERSION = "2.1.4"
+PRIVATE_BETA = os.environ.get("CASE360_CHANNEL") == "private-beta"
+if PRIVATE_BETA:
+    APP_NAME = "Case 360 Beta"
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -201,7 +204,7 @@ MIN_WINDOW_SIZE = (1024, 700)
 # where the call can only ever time out, or a user who would rather the app not
 # reach the internet for anything but the warehouse. Turning it off costs the
 # notice and nothing else — `casefinder --update` still works on demand.
-UPDATE_CHECK = _flag("CASEFINDER_UPDATE_CHECK", True)
+UPDATE_CHECK = not PRIVATE_BETA and _flag("CASEFINDER_UPDATE_CHECK", True)
 
 # The Pythons the app runs on, oldest and newest, both inclusive. The top is set
 # by NiceGUI rather than by anything here: every 2.x release imports `vbuild`,

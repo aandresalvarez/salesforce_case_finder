@@ -41,6 +41,9 @@ HOST = "127.0.0.1"
 
 @ui.page("/")
 def index() -> None:
+    if config.PRIVATE_BETA:
+        case360_route()
+        return
     # Search, not Lists — D17. The rail's Search entry points here rather than
     # at `/search`, so the landing page and the destination are one page and
     # not two that happen to render the same thing.
@@ -88,6 +91,13 @@ def sql_route() -> None:
 
 @ui.page("/settings")
 def settings_route() -> None:
+    if config.PRIVATE_BETA:
+        from .ui.case360_setup import render_setup
+        from .ui.shell import layout
+
+        with layout("settings"):
+            render_setup()
+        return
     gated("settings", settings.render)
 
 

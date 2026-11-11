@@ -61,7 +61,7 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                     from .case360_page import render_preparation, render_result
 
                     if "execution_status" in result:
-                        render_result(result)
+                        render_result(result, run_id, view["artifact"])
                     else:
                         ui.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
                         if view["mode"] == "request":
