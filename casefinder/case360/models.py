@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -40,6 +41,11 @@ def matches(value: object, schema: dict) -> bool:
                 and all(matches(item, schema.get("items", {})) for item in value)
                 and (not schema.get("uniqueItems")
                      or all(item not in value[:index] for index, item in enumerate(value))))
+    if kind == "number":
+        return (type(value) in (int, float) and math.isfinite(value)
+                and value >= schema.get("minimum", value)
+                and value > schema.get("exclusiveMinimum", float("-inf"))
+                and value <= schema.get("maximum", value))
     if kind == "integer":
         return (type(value) is int and value >= schema.get("minimum", value)
                 and value <= schema.get("maximum", value))

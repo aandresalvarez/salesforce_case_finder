@@ -92,6 +92,34 @@
       "run_id": null,
       "method": "resource_status",
       "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "probe_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "cancel_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 0.75
+      }
     }
   ],
   "invalid": [
@@ -324,6 +352,78 @@
           "cohort_ids"
         ],
         "previous_run_id": "../escape"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 0
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": -1
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 1001
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": "1"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": true
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": null
       }
     }
   ]
