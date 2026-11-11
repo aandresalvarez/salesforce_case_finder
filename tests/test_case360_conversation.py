@@ -96,3 +96,106 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
         assert "SELECT 2024 AS requested_year" in tree.text
 
     asyncio.run(check())
+
+
+def test_internal_failure_keeps_request_without_connection_retry(render, monkeypatch):
+    from casefinder.case360.client import BridgeError
+
+    class Client:
+        async def request(self, method, params=None, **kwargs):
+            if method == 'authorize_run':
+                raise BridgeError('FREEZE_REQUEST_FAILED', 'Incompatible or incomplete request.')
+            if method == 'probe_run':
+                return {'sha256': 'b' * 64, 'max_paid_usd': 50}
+            return {'run_id': 'saved-request', 'contract_sha256': 'a' * 64,
+                    'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'resources': {}, 'source_evidence': {}}
+
+    monkeypatch.setattr(flow.session, 'client', Client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow, 'active_request', lambda *a, **kw: None)
+    tree = render(flow.render)
+
+    async def check():
+        monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
+        with tree.client:
+            tree.of_type('Textarea')[0].value = 'Synthetic request with an unresolved date'
+            tree.press(next(b for b in tree.buttons() if b.text == 'Analyze request'))
+            await asyncio.sleep(0)
+        assert 'Update or repair the beta' in tree.text
+        assert 'Your request is saved' in tree.text
+        assert not any('Retry' in text for text in tree.button_labels())
+        assert tree.of_type('Textarea')[0].value == 'Synthetic request with an unresolved date'
+
+    asyncio.run(check())
+
+
+def test_connection_retry_reuses_saved_request_and_explains_continuation(render, monkeypatch):
+    from casefinder.case360.client import BridgeError
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, method, params=None, **kwargs):
+            self.calls.append((method, kwargs.get('run_id')))
+            if method == 'probe_run':
+                raise BridgeError('PREFLIGHT_TIMEOUT', 'Connection check timed out.')
+            return {'run_id': 'saved-request', 'contract_sha256': 'a' * 64,
+                    'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'resources': {}, 'source_evidence': {}}
+
+    client = Client()
+    monkeypatch.setattr(flow.session, 'client', lambda: client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow, 'active_request', lambda *a, **kw: None)
+    tree = render(flow.render)
+
+    async def check():
+        monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
+        with tree.client:
+            tree.of_type('Textarea')[0].value = 'Synthetic request'
+            tree.press(next(b for b in tree.buttons() if b.text == 'Analyze request'))
+            await asyncio.sleep(0)
+            assert 'then continues the request' in tree.text
+            tree.press(next(b for b in tree.buttons() if b.text == 'Retry and continue'))
+            await asyncio.sleep(0)
+        assert [m for m, _ in client.calls].count('prepare_conversation') == 1
+        assert [r for m, r in client.calls if m == 'probe_run'] == ['saved-request'] * 2
+        assert not any(m in {'authorize_run', 'start_run'} for m, _ in client.calls)
+
+    asyncio.run(check())
+
+
+def test_reopening_draft_preserves_literal_text_without_starting_analysis(render, monkeypatch):
+    text = 'Synthetic request, exactly as entered.  \n'
+    timers = []
+    calls = []
+
+    class Client:
+        async def request(self, method, **kwargs):
+            calls.append(method)
+            assert method == 'get_run'
+            return {'execution_status': 'READY', 'authorized': False,
+                    'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'conversation': {'original_text': text, 'remaining_cap_usd': 50}}
+
+    monkeypatch.setattr(flow.session, 'client', Client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow.ui, 'timer', lambda interval, callback, **kw: timers.append(callback))
+    tree = render(lambda: flow.render(run_id='saved-request'))
+
+    async def check():
+        with tree.client:
+            await timers[0]()
+        assert tree.of_type('Textarea')[0].value == text
+        assert 'Continue this request' in tree.button_labels()
+        assert calls == ['get_run']
+
+    asyncio.run(check())

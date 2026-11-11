@@ -12,6 +12,10 @@ from ..case360.runtime import discover
 from .case360_details import render_json
 
 ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
+CONNECTION_ERRORS = {
+    "PREFLIGHT_FAILED", "PREFLIGHT_TIMEOUT", "BIGQUERY_PREFLIGHT_FAILED",
+    "CREDENTIAL_UNVERIFIED", "PREFLIGHT_EXPIRED",
+}
 PHASES = {
     "INTAKE": "Interpreting your request",
     "AUTHOR_EVIDENCE": "Finding sources and checking columns",
@@ -117,6 +121,24 @@ def render(*, run_id: str | None = None) -> None:
         sources = ui.column().classes("w-full")
         dialogue = ui.column().classes("w-full")
         output = ui.column().classes("w-full")
+
+        def show_failure(error: Exception) -> None:
+            code = getattr(error, "code", None)
+            if code == "FREEZE_REQUEST_FAILED":
+                status.text = ("This beta could not prepare the run. Your request is saved. "
+                               "Update or repair the beta before continuing; "
+                               "retrying the connection will not fix this error.")
+            else:
+                status.text = "Could not continue: " + str(error)
+            dialogue.clear()
+            with dialogue:
+                if state["pending"] and (code in CONNECTION_ERRORS or
+                        (isinstance(error, TimeoutError) and state.get("step") == "connection")):
+                    ui.label("This rechecks your connection, then continues the request "
+                             "within the budget shown above.")
+                    ui.button("Retry and continue", on_click=lambda: retry_pending())
+                else:
+                    ui.link("Open beta settings", "/case360/settings")
 
         def busy(value: bool) -> None:
             state["busy"] = value
@@ -239,11 +261,7 @@ def render(*, run_id: str | None = None) -> None:
                     render_sources(artifact)
                 await start_prepared(prepared, cap)
             except ERRORS as error:
-                status.text = "Could not continue: " + str(error)
-                if state["pending"]:
-                    dialogue.clear()
-                    with dialogue:
-                        ui.button("Retry connection", on_click=lambda: retry_pending())
+                show_failure(error)
             finally:
                 busy(False)
 
@@ -252,12 +270,15 @@ def render(*, run_id: str | None = None) -> None:
             await c.request("confirm_contract", {
                 "contract_sha256": prepared["contract_sha256"]}, run_id=state["run_id"])
             status.text = "Checking your connection and budget…"
+            state["step"] = "connection"
             proof = await c.request("probe_run", run_id=state["run_id"])
+            state["step"] = "authorization"
             await c.request("authorize_run", {
                 "contract_sha256": prepared["contract_sha256"],
                 "preflight_sha256": proof["sha256"], "cap_usd": min(cap, proof["max_paid_usd"])},
                 run_id=state["run_id"])
             state["pending"] = None
+            state["step"] = "start"
             view = await c.request("start_run", run_id=state["run_id"],
                                    request_id="start-" + state["run_id"])
             await inspect(view)
@@ -269,7 +290,7 @@ def render(*, run_id: str | None = None) -> None:
             try:
                 await start_prepared(state["pending"], state["remaining"])
             except ERRORS as error:
-                status.text = "Could not continue: " + str(error)
+                show_failure(error)
             finally:
                 busy(False)
 
@@ -296,7 +317,8 @@ def render(*, run_id: str | None = None) -> None:
             try:
                 cap = configured_cap()
                 state["consent_cap"] = cap
-                consent.text = (f"By selecting Analyze, you authorize up to ${cap:g} USD for this "
+                consent.text = (f"By selecting Analyze or Continue, you authorize up to ${cap:g} "
+                                "USD for this "
                                 "request, including clarification and review. "
                                 "SQL is not executed.")
             except ERRORS as error:

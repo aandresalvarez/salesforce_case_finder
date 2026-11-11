@@ -102,3 +102,8 @@ assessment with reasons for DEMO_ONLY, BLOCKED or LIMITED_PILOT. This is a human
 report; it does not independently establish the identity or participation of a
 second analyst. Live runs remain optional and separately authorized. Synthetic
 passes do not establish clinical quality or generalization.
+
+If admission fails, the request remains saved. **Retry and continue** is offered
+for connection failures and can start the analysis after reconnection. An internal
+package failure instead directs you to repair or update the beta. Opening a saved
+draft does not start it; **Continue this request** is the explicit next action.
