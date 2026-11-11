@@ -32,6 +32,9 @@ def test_side_by_side_update_and_rollback_keep_requests(tmp_path, monkeypatch):
     second = tmp_path / "second"
     two = package.install(second, release(second, "synthetic-v2"))
     package.activate(two)
+    newer_context = package.context_for(two, package.verify(two))
+    assert json.loads(newer_context.read_text())["resource_root"] != \
+        json.loads(context.read_text())["resource_root"]
     assert run.read_text() == "Synthetic saved work"
     package.activate(one)
     assert json.loads((tmp_path / "private/active-release.json").read_text())["root"] == str(one)

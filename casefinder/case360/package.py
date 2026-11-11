@@ -56,7 +56,7 @@ def context_for(root: Path, manifest: dict) -> Path:
     value = {**previous, "schema": "case360_runtime_context/1",
              "engine_root": str(root / "engine"), "node_executable": str(root / "node/bin/node"),
              "python_executable": str(root / "python/bin/python3.13"),
-             "resource_root": str(data_root() / "resources"),
+             "resource_root": str(location / "resources"),
              "runs_root": str(location / "runs"),
              "installation_id": "release-" + hashlib.sha256(
                  manifest["release_id"].encode()).hexdigest()[:32],
