@@ -93,7 +93,7 @@ def layout(active: str) -> Iterator[None]:
     with ui.row().classes("w-full").style("gap:0; flex-wrap:nowrap"):
         rail(active)
         with ui.column().classes("cf-content").style("gap:0") as content:
-            if active == "case360" or config.PRIVATE_BETA and active == "settings":
+            if active == "case360" or (config.PRIVATE_BETA and active == "settings"):
                 content.classes("cf-case360")
                 ui.add_css("""
                     .cf-case360 .nicegui-column,
