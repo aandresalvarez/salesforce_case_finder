@@ -95,8 +95,18 @@ def install(source: Path, expected: str) -> Path:
 
 def installed() -> list[Path]:
     folder = data_root() / "releases"
-    return sorted(p for p in folder.iterdir() if (p / "release.json").is_file()) \
-        if folder.exists() else []
+    roots = {p for p in folder.iterdir() if (p / "release.json").is_file()} \
+        if folder.exists() else set()
+    # Include the original app bundle so the first update can roll back to it.
+    for context in (data_root() / "installations").glob("*/context.json"):
+        try:
+            root = Path(json.loads(context.read_text())["engine_root"]).parent
+            release = json.loads((root / "release.json").read_text())
+            if root.is_absolute() and release["release_id"] == context.parent.name:
+                roots.add(root)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return sorted(roots)
 
 
 def activate(root: Path) -> None:

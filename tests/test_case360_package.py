@@ -85,3 +85,11 @@ def test_only_manifest_bound_relative_links_inside_package_are_allowed(tmp_path)
     (root / "alias").symlink_to("release.json")
     with pytest.raises(ValueError):
         package.verify(root)
+
+
+def test_first_packaged_version_is_available_for_rollback(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path / "private"))
+    original = tmp_path / "original-app-resources"
+    release(original)
+    package.context_for(original, package.verify(original))
+    assert package.installed() == [original]
