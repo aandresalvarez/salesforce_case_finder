@@ -406,11 +406,15 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 709 tests, no credentials needed, ~5 s
+uv run pytest              # 744 tests, no credentials needed, ~5 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
 ```
+
+The optional [Case 360 P1 preview](docs/CASE360_P1.md) connects a separately
+installed private runtime for synthetic offline demonstrations. It is disabled
+by default and is not a beta installer or a live pilot.
 
 The default test run touches no network. Fixtures fail loudly if a test reaches
 for BigQuery or Vertex, so a test that forgets its fakes fails rather than

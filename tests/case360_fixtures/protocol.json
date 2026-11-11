@@ -1,0 +1,174 @@
+{
+  "valid": [
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "health",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "prepare_run",
+      "params": {
+        "mode": "synthetic",
+        "upper_bound": 10
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "confirm_contract",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "start_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "get_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "read_artifact",
+      "params": {
+        "artifact_id": "result",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "offset": 0,
+        "length": 65536
+      }
+    }
+  ],
+  "invalid": [
+    null,
+    [],
+    {},
+    {
+      "protocol": "case360.desktop/2",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "hello",
+      "params": {},
+      "extra": "unsupported"
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "../escape",
+      "run_id": null,
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "prepare_run",
+      "params": {
+        "mode": "live",
+        "upper_bound": 10
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "prepare_run",
+      "params": {
+        "mode": "synthetic",
+        "upper_bound": true
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "prepare_run",
+      "params": {
+        "mode": "synthetic",
+        "upper_bound": 101
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": null,
+      "method": "start_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "confirm_contract",
+      "params": {
+        "contract_sha256": "x"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "get_run",
+      "params": {
+        "extra": 1
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "read_artifact",
+      "params": {
+        "artifact_id": "../contract.json",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "offset": 0,
+        "length": 1
+      }
+    }
+  ]
+}

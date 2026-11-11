@@ -78,6 +78,7 @@ CACHE_TTL_SECONDS = int(os.environ.get("CASEFINDER_CACHE_TTL", 900))
 # and a static schema, never case data, because a flag someone can flip must
 # not be the thing standing between a corpus and a third party.
 ASK_ENABLED = _flag("CASEFINDER_ASK", False)
+CASE360_ENABLED = _flag("CASEFINDER_CASE360", False)
 
 # Vertex AI region for the optional natural-language mode.
 VERTEX_LOCATION = os.environ.get("CASEFINDER_VERTEX_LOCATION", "us-central1")

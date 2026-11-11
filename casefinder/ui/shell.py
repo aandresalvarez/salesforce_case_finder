@@ -72,6 +72,8 @@ def rail(active: str) -> None:
         for key, label, icon, target in DESTINATIONS:
             _nav_item(label, icon, target, active == key)
         ui.space()
+        if config.CASE360_ENABLED:
+            _nav_item("Case 360 Beta", "science", "/case360", active == "case360")
         _nav_item("Settings", "settings", "/settings", active == "settings")
 
 
