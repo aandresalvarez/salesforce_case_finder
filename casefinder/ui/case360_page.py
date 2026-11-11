@@ -31,7 +31,7 @@ def render_result(result: dict) -> None:
             ui.code(json.dumps(result.get(key), ensure_ascii=False, indent=2), language="json")
 
 
-def render_preparation() -> None:
+def render_preparation(*, previous_run: str | None = None, draft: dict | None = None) -> None:
     ui.label("Prepare a new request").classes("cf-h2")
     ui.label("Write one requirement per line. Wording and numbers are preserved for review.")
     request = ui.textarea("Requirements").classes("w-full")
@@ -43,7 +43,7 @@ def render_preparation() -> None:
     status = ui.label("Prepare and inspect the contract before confirming it.")
     panel = ui.column().classes("w-full")
     prepared: dict = {}
-    previous: str | None = None
+    previous: str | None = previous_run
     preflight: dict = {}
     fields = (request, centers, external, inputs)
 
@@ -213,6 +213,12 @@ def render_preparation() -> None:
         cancel_button = ui.button("Cancel request", on_click=cancel)
     reset_execution()
     confirm_button.disable()
+    if draft:
+        source = {row["id"]: row["excerpt"] for row in draft["sources"]}
+        request.value = source["REQUEST"]
+        centers.value = [name for name in ("SHC", "LPCH") if name in source["CENTERS"]]
+        external.value = next(iter(draft.get("excluded_case_ids", [])), "")
+        inputs.value = ", ".join(row["name"] for row in draft.get("external_inputs", []))
     for field in fields:
         field.on_value_change(changed)
 
@@ -221,16 +227,26 @@ def render() -> None:
     ui.label("Case 360 Beta").classes("cf-h1")
     ui.label("Preparation uses local resources and makes no paid calls.")
     ui.label("Requests and evidence are retained locally. "
-             "Manual cleanup is planned for the history view.")
-    render_preparation()
-    with ui.expansion("Synthetic demonstration"):
-        render_demo()
+             "Use Limpiar datos to remove selected work or all local history.")
+    from .case360_history import render_history
+
+    content = ui.column().classes("w-full")
+
+    def rebuild_forms() -> None:
+        content.clear()
+        with content:
+            render_preparation()
+            with ui.expansion("Synthetic demonstration"):
+                render_demo()
+
+    render_history(on_clear=rebuild_forms)
+    rebuild_forms()
 
 
 def render_demo() -> None:
     ui.label("Case 360 Beta · Offline preview").classes("cf-h1")
     ui.label("Synthetic demonstration only. No credentials or paid calls are used.")
-    ui.label("This preview retains local runs; history, cleanup and recovery are later phases.")
+    ui.label("This preview retains local runs until you clear them from history.")
     upper = ui.number("Synthetic upper bound", value=10, min=2, max=100, precision=0)
     status = ui.label("Prepare a synthetic contract to begin.").classes("cf-muted")
     actions = ui.row()

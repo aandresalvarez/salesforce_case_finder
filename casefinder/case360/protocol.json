@@ -556,6 +556,371 @@
             "params"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "null"
+            },
+            "method": {
+              "const": "list_runs"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              },
+              "required": [
+                "offset",
+                "limit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "read_events"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "after_seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              },
+              "required": [
+                "after_seq",
+                "limit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "null"
+            },
+            "method": {
+              "const": "prepare_cleanup"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "run_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                  },
+                  "maxItems": 100,
+                  "uniqueItems": true
+                },
+                "all_runs": {
+                  "type": "boolean"
+                },
+                "unused_resources": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "run_ids",
+                "all_runs",
+                "unused_resources"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "null"
+            },
+            "method": {
+              "const": "cleanup_data"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cleanup_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                },
+                "plan_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "cleanup_id",
+                "plan_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "null"
+            },
+            "method": {
+              "const": "get_cleanup"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cleanup_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                }
+              },
+              "required": [
+                "cleanup_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "null"
+            },
+            "method": {
+              "const": "get_accounting"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "prepare_resume"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "resume_run"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "checkpoint_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "checkpoint_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
         }
       ]
     },

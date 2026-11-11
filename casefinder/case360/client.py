@@ -38,6 +38,11 @@ class Client:
         self._tasks: list[asyncio.Task] = []
         self._ready = False
         self._closed = False
+        self.quiescing = False
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
 
     async def open(self) -> None:
         async with self._opening:
@@ -65,6 +70,10 @@ class Client:
         self, method: str, params: dict[str, Any] | None = None, *,
         run_id: str | None = None, request_id: str | None = None,
     ) -> dict[str, Any]:
+        if self.quiescing and method not in {
+            "list_runs", "get_run", "cancel_run", "get_accounting"
+        }:
+            raise BridgeError("CLOSING", "Return to the app before starting another action.")
         await self.open()
         return await self._exchange(method, params or {}, run_id, request_id or uuid.uuid4().hex)
 

@@ -35,11 +35,13 @@ appear, and exits.
 from __future__ import annotations
 
 import contextlib
+import multiprocessing
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 # How a restarted Case Finder is told where to report for duty. An environment
@@ -69,7 +71,8 @@ class WindowApi:
     the reader has already stopped waiting on.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, guarded: bool = False) -> None:
+        self._guarded = guarded
         self._child: subprocess.Popen[bytes] | None = None
         self._token: Path | None = None
         self._arrived = False
@@ -129,7 +132,9 @@ class WindowApi:
         return "waiting"
 
     def close(self) -> str:
-        """End this window. Does not return."""
+        """Request a verified stop before closing when Case 360 is enabled."""
+        if self._guarded and not _close_allowed():
+            return "waiting_for_stop"
         # Closing while a restart is still in flight is an ordinary thing to
         # do, and `os._exit` runs nothing on the way out, so the tidying is
         # here rather than in an `atexit` that would never fire.
@@ -192,3 +197,48 @@ def _leave() -> None:
         with contextlib.suppress(OSError, ValueError):
             stream.flush()
     os._exit(0)
+
+
+def _close_allowed() -> bool:
+    """The native close button and JS close share this gate.
+
+    A dead server cannot answer a UI event. Its pipe has already closed, so the
+    controller handles that as a crash; closing the orphan window is allowed.
+    """
+    if _server_gone():
+        return True
+    try:
+        import webview
+
+        return webview.windows[0].evaluate_js(
+            "window.case360CloseApproved === true ? true : "
+            "(typeof emitEvent === 'function' && emitEvent('case360-close-request'), false)"
+        ) is True
+    except Exception:  # noqa: BLE001 -- a native bridge failure must keep the window open
+        return False
+
+
+def install_close_guard() -> None:
+    """Runs in pywebview's window process after create_window."""
+    import webview
+
+    webview.windows[0].events.closing += _native_close_requested
+
+
+def _server_gone() -> bool:
+    parent = multiprocessing.parent_process()
+    return parent is not None and not parent.is_alive()
+
+
+def _native_close_requested() -> bool:
+    # pywebview invokes the locked closing event on the native UI thread.
+    # evaluate_js waits for that same thread: defer it before returning False.
+    if _server_gone():
+        return True
+
+    def request() -> None:
+        if _close_allowed():
+            _leave()
+
+    threading.Thread(target=request, daemon=True).start()
+    return False

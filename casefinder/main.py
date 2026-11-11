@@ -142,7 +142,7 @@ def _window_args() -> dict[str, object]:
     return {
         "min_size": config.MIN_WINDOW_SIZE,
         "text_select": True,
-        "js_api": window.WindowApi(),
+        "js_api": window.WindowApi(guarded=config.CASE360_ENABLED),
     }
 
 
@@ -174,6 +174,8 @@ def main() -> None:
         # and a client connecting is exactly that.
         app.on_connect(lambda: window.announce(token))
     app.native.window_args.update(_window_args())
+    if config.CASE360_ENABLED:
+        app.native.start_args["func"] = window.install_close_guard
     # `window_size` is passed only in native mode, and that is not tidiness.
     # NiceGUI reads a window size as a request for a window: `ui_run` sets
     # `native = True` whenever `window_size` is given, whatever the `native`
