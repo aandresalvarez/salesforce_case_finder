@@ -406,7 +406,7 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 792 tests, no credentials needed, ~5 s
+uv run pytest              # 819 tests, no credentials needed, ~5 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -414,7 +414,9 @@ git config core.hooksPath .githooks   # once, per clone — see below
 
 The optional [Case 360 preview](docs/CASE360_P1.md) connects a separately
 installed private runtime for synthetic offline demonstrations. It is disabled
-by default and is not a beta installer or a live pilot.
+by default in stable Case Finder. A separate private beta package and its
+[configurable installation and review workflow](docs/CASE360_BETA.md) are available
+for the internal pilot; no general clinical-quality claim is made.
 See [P2 request preparation and authorization](docs/CASE360_P2.md) for explicit runtime contexts
 and versioned resources, scoped approval and launching with the private engine.
 Live mode requires the pilot owner to configure and verify that runtime.
