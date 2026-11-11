@@ -57,19 +57,40 @@ def render_setup() -> None:
 
 
 def render_resources() -> None:
+    saved: dict = {}
+    origins: dict = {}
+    try:
+        from ..case360.runtime import discover
+
+        location = discover().context_file
+        if location:
+            saved = json.loads(location.read_text())
+        version = saved.get("source_profile")
+        if (isinstance(version, str) and len(version) == 64
+                and all(character in "0123456789abcdef" for character in version)):
+            folder = Path(saved["resource_root"]) / version
+            for key, name in (("profile", "profile.json"), ("metadata", "metadata.json"),
+                              ("epic-index", "epic.json"), ("repository-index", "starr.json")):
+                if (folder / name).is_file():
+                    origins[key] = str(folder / name)
+    except (OSError, ValueError, KeyError, RuntimeError):
+        saved = {}
+    policy = saved.get("authorization_policy", {})
     with ui.expansion("Resources and connection policy").classes("w-full"):
         ui.label("Import prepared documentation and metadata files. This step is local. "
                  "A snapshot records evidence used; it does not certify freshness.")
-        fields = {name: ui.input(label) for name, label in (
+        fields = {name: ui.input(label, value=origins.get(name, "")) for name, label in (
             ("profile", "Source profile JSON"), ("metadata", "SHC and LPCH metadata JSON"),
             ("epic-export", "Epic documentation export folder (optional)"),
             ("epic-index", "Epic documentation index JSON (optional)"),
             ("repository", "STARR repository checkout (optional)"),
             ("repository-index", "Prepared STARR repository index JSON (optional)"))}
-        snapshot = ui.input("Resource snapshot SHA256")
-        principal = ui.input("Expected Google account")
-        cap = ui.number("Maximum authorized budget in USD (0 disables live)", value=0, min=0)
-        route = ui.input("Verified route proof SHA256")
+        snapshot = ui.input("Resource snapshot SHA256", value=saved.get("source_profile") or "")
+        principal = ui.input("Expected Google account", value=policy.get("expected_principal", ""))
+        cap = ui.number("Maximum authorized budget in USD (0 disables live)",
+                        value=policy.get("max_paid_usd", 0), min=0)
+        route = ui.input("Verified route proof SHA256",
+                         value=policy.get("route_verification_sha256", ""))
         ui.label("Saving a policy makes no remote call. Each request still needs connection "
                  "verification, a confirmed contract and explicit budget authorization.")
         status = ui.label("")

@@ -26,6 +26,9 @@ meaning. Set the snapshot, expected account, verified route proof and maximum
 budget. Zero disables live operation. Existing local Google credentials are
 used; the analyst profile stores no credentials. Each live request still needs
 a confirmed contract, a remote connection check and explicit budget approval.
+Saved snapshot locations, account and budget policy are restored when the
+settings page is reopened. Editing the display labels does not change Google
+credentials.
 
 The packaged command below runs only local diagnostics:
 
@@ -44,6 +47,9 @@ Results separate the requirement/field/center matrix, evidence, draft SQL,
 compilation checks, semantic checks, independent review, pending decisions and
 cost. Missing fields and unverified centers remain visible. Select a matrix row
 to inspect its citations, columns, keys and dependencies.
+Large JSON details are displayed in pages to keep the native window responsive.
+Every page remains available, and **Download complete JSON** preserves the
+entire record without changing the saved evidence.
 
 Feedback records the analyst, affected requirements, issue category, proposed
 correction and correction time. It is append-only and bound to the exact result
