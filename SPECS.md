@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **820 passing**, ~4 s, no network access required |
+| Automated tests | **823 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1781,7 +1781,19 @@ versions, requests and resources for rollback. Pilot assessments are explicitly
 human reports, not independent identity verification. Stable Case Finder keeps
 its existing installation and updater. See [the beta guide](docs/CASE360_BETA.md).
 
-The 820-test committed frontend suite excludes 31 opt-in warehouse tests. macOS
+The 823-test committed frontend suite excludes 31 opt-in warehouse tests. macOS
 arm64 has standalone and native acceptance evidence in the private engine repo.
 Windows is deferred. The app has ad-hoc signatures, not Developer ID notarization.
 A second analyst and live clinical quality have not been independently validated.
+
+### D45 — native review of real resource snapshots
+
+Large JSON evidence in request preparation, saved requests and result details
+is paged instead of rendered as one large syntax-highlighted block. All pages
+and a complete JSON download remain available; persisted artifacts are unchanged.
+Resource settings restore the saved snapshot, imported locations, expected
+account and budget policy after reopening the page.
+
+Synthetic regressions verify exact Unicode reconstruction across pages, complete
+downloads and restored configuration. The committed suite has 823 tests; 31
+opt-in warehouse tests remain excluded.

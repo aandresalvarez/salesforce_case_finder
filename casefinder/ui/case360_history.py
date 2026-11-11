@@ -8,6 +8,7 @@ from collections.abc import Callable
 from nicegui import ui
 
 from ..case360 import session
+from .case360_details import render_json
 
 ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
 
@@ -63,7 +64,7 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                     if "execution_status" in result:
                         render_result(result, run_id, view["artifact"])
                     else:
-                        ui.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
+                        render_json(result, "case360-saved-request.json")
                         if view["mode"] == "request":
                             with ui.expansion("Edit as a new revision"):
                                 render_preparation(previous_run=run_id, draft=result["contract"])

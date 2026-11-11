@@ -8,6 +8,7 @@ import json
 from nicegui import ui
 
 from ..case360 import session
+from .case360_details import render_json
 
 
 def render_result(result: dict, run_id: str | None = None, reference: dict | None = None) -> None:
@@ -74,15 +75,13 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
             panel.clear()
             with panel:
                 ui.label(f"Contract revision {prepared['revision']} · Quality: HOLD")
-                ui.code(json.dumps(artifact["contract"], ensure_ascii=False, indent=2),
-                        language="json")
+                render_json(artifact["contract"], "case360-contract.json")
                 for label, key in (("Resources and coverage", "resources"),
                                    ("Relevant evidence", "source_evidence"),
                                    ("Source comparison", "evidence_alignment"),
                                    ("Execution plan", "execution_plan")):
                     with ui.expansion(label).classes("w-full"):
-                        ui.code(json.dumps(artifact[key], ensure_ascii=False, indent=2),
-                                language="json")
+                        render_json(artifact[key], f"case360-{key}.json")
             status.text = "Prepared locally. Review pending decisions and source coverage."
             confirm_button.enable()
         except (RuntimeError, OSError, ValueError, TimeoutError) as error:

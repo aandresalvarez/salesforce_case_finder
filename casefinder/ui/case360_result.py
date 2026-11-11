@@ -9,6 +9,7 @@ import zipfile
 from nicegui import ui
 
 from ..case360 import preferences, session
+from .case360_details import render_json
 
 
 def requirement_rows(result: dict) -> list[dict]:
@@ -67,7 +68,7 @@ def bundle_zip(bundle: dict) -> bytes:
 
 
 def _json(value: object) -> None:
-    ui.code(json.dumps(value, ensure_ascii=False, indent=2), language="json").classes("w-full")
+    render_json(value)
 
 
 def render_result(result: dict, run_id: str | None = None, reference: dict | None = None) -> None:

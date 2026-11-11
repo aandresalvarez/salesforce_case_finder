@@ -1,5 +1,6 @@
 """Analyst setup is an app workflow, not a compiled identity or a remote probe."""
 import asyncio
+import json
 from unittest.mock import AsyncMock
 
 from casefinder import config, main
@@ -62,3 +63,27 @@ def test_settings_refuse_switch_while_owned_work_is_active(monkeypatch):
         closed.assert_not_awaited()
 
     asyncio.run(check())
+
+
+def test_resource_settings_reload_saved_policy_and_locations(render, tmp_path, monkeypatch):
+    from casefinder.case360.runtime import Runtime
+
+    version = "a" * 64
+    folder = tmp_path / "resources" / version
+    folder.mkdir(parents=True)
+    for name in ("profile.json", "metadata.json", "epic.json", "starr.json"):
+        (folder / name).write_text("{}")
+    context = tmp_path / "context.json"
+    context.write_text(json.dumps({"source_profile": version, "resource_root": str(folder.parent),
+        "authorization_policy": {"max_paid_usd": 50, "expected_principal": "analyst@example.edu",
+                                 "route_verification_sha256": "b" * 64}}))
+    monkeypatch.setattr("casefinder.case360.runtime.discover",
+                        lambda: Runtime(tmp_path, tmp_path, "node", context))
+    tree = render(render_setup)
+    inputs = {field.props["label"]: field.value for field in tree.of_type("Input", "Number")}
+    assert inputs["Expected Google account"] == "analyst@example.edu"
+    assert inputs["Maximum authorized budget in USD (0 disables live)"] == 50
+    assert inputs["Resource snapshot SHA256"] == version
+    assert inputs["Verified route proof SHA256"] == "b" * 64
+    assert inputs["Epic documentation index JSON (optional)"] == str(folder / "epic.json")
+    assert inputs["Prepared STARR repository index JSON (optional)"] == str(folder / "starr.json")
