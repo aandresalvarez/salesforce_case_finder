@@ -73,7 +73,7 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                         render_result(result, run_id, view["artifact"])
                     else:
                         render_json(result, "case360-saved-request.json")
-                        if view["mode"] == "request":
+                        if view["mode"] == "request" and not view.get("conversation"):
                             with ui.expansion("Edit as a new revision"):
                                 render_preparation(previous_run=run_id, draft=result["contract"])
                 if (view["mode"] == "request"
