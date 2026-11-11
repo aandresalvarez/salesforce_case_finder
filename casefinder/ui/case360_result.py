@@ -17,8 +17,11 @@ def requirement_rows(result: dict) -> list[dict]:
     requirements = contract.get("requirements", result.get("requirements", []))
     sources = {r["id"]: r for r in contract.get("sources", [])}
     centers_text = sources.get("CENTERS", {}).get("excerpt", "")
-    centers = [c for c in ("SHC", "LPCH") if c in centers_text] or ["Unspecified"]
     matrix = result.get("field_matrix", [])
+    centers = ([c for c in ("SHC", "LPCH") if c in centers_text]
+               or [c for c in ("SHC", "LPCH")
+                   if any(str(row.get("site", "")).upper() == c for row in matrix)]
+               or ["Unspecified"])
     rows = []
     for requirement in requirements:
         matches = [r for r in matrix if r.get("requirement_id") == requirement["id"]]
@@ -84,7 +87,8 @@ def render_result(result: dict, run_id: str | None = None, reference: dict | Non
     with ui.tabs().classes("w-full") as tabs:
         for title in ("Requirements", "Evidence", "SQL", "Checks", "Review", "Pending", "Cost"):
             ui.tab(title)
-    with ui.tab_panels(tabs, value="Requirements").classes("w-full"):
+    initial_tab = "SQL" if result.get("conversation") else "Requirements"
+    with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
         with ui.tab_panel("Requirements"):
             ui.label("Observed schema is not confirmed meaning or complete coverage.")
             rows = requirement_rows(result)

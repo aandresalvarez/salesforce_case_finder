@@ -58,6 +58,14 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                 ui.label(f"Execution: {view['execution_status']} · Quality: HOLD")
                 if view.get("budget"):
                     ui.code(json.dumps(view["budget"], indent=2), language="json")
+                if result and view.get("conversation"):
+                    from .case360_conversation import active_request
+
+                    def open_conversation() -> None:
+                        active_request(run_id, save=True)
+                        ui.navigate.to("/case360")
+
+                    ui.button("Abrir conversación", on_click=open_conversation)
                 if result:
                     from .case360_page import render_preparation, render_result
 

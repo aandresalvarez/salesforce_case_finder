@@ -223,26 +223,9 @@ def render_preparation(*, previous_run: str | None = None, draft: dict | None = 
 
 
 def render() -> None:
-    ui.label("Case 360 Beta").classes("cf-h1")
-    ui.label("Preparation uses local resources and makes no paid calls.")
-    ui.label("Requests and evidence are retained locally. "
-             "Use Limpiar datos to remove selected work or all local history.")
-    from .case360_history import render_history
-    from .case360_setup import render_setup
+    from .case360_conversation import render as conversation
 
-    render_setup()
-
-    content = ui.column().classes("w-full")
-
-    def rebuild_forms() -> None:
-        content.clear()
-        with content:
-            render_preparation()
-            with ui.expansion("Synthetic demonstration"):
-                render_demo()
-
-    render_history(on_clear=rebuild_forms)
-    rebuild_forms()
+    conversation()
 
 
 def render_demo() -> None:

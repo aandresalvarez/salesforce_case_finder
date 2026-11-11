@@ -96,6 +96,8 @@ def settings_route() -> None:
         from .ui.shell import layout
 
         with layout("settings"):
+            ui.link("Volver a la solicitud", "/case360")
+            ui.label("Ajustes").classes("cf-h1")
             render_setup()
         return
     gated("settings", settings.render)
@@ -112,6 +114,20 @@ def case360_route() -> None:
     # This local demo must work before a BigQuery account is configured.
     with layout("case360"):
         case360_page.render()
+
+
+@ui.page("/case360/history")
+def case360_history_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui.case360_conversation import active_request
+    from .ui.case360_history import render_history
+    from .ui.shell import layout
+
+    with layout("case360"):
+        ui.link("Volver a la solicitud", "/case360")
+        render_history(on_clear=lambda: active_request(None, save=True))
 
 
 def _free_port() -> int:

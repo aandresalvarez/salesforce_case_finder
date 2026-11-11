@@ -90,6 +90,24 @@ def layout(active: str) -> Iterator[None]:
         from .case360_close import install
 
         install()
+    if config.PRIVATE_BETA:
+        with ui.column().classes("w-full cf-case360").style(
+            "min-height:100vh;background:#fafbfc;padding:28px 36px;gap:20px"
+        ):
+            ui.add_css("""
+                .cf-case360 { color: #202b3a; }
+                .cf-case360 .nicegui-column, .cf-case360 .q-expansion-item,
+                .cf-case360 .q-tab-panels, .cf-case360 .q-panel,
+                .cf-case360 .q-tab-panel { min-width:0; max-width:100%; }
+                .cf-case360 .nicegui-code { width:100%; max-width:100%; }
+                .cf-case360 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+                .cf-case360 .q-field__control { background:white; border-radius:10px; }
+                .cf-case360 .q-btn { border-radius:8px; }
+                .cf-case360 .q-table__container { max-width:100%; }
+                @media (max-width:640px) { .cf-case360 { padding:18px !important; } }
+            """)
+            yield
+        return
     with ui.row().classes("w-full").style("gap:0; flex-wrap:nowrap"):
         rail(active)
         with ui.column().classes("cf-content").style("gap:0") as content:

@@ -38,7 +38,9 @@ def test_beta_home_and_settings_are_local_before_cloud_configuration(render, mon
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     monkeypatch.setattr(main, "gated", lambda *_: (_ for _ in ()).throw(
         AssertionError("A beta landing page must not make a cloud access probe")))
-    assert "Offline preview" in render(main.index).text
+    home = render(main.index)
+    assert "¿Qué datos necesitas?" in home.text
+    assert "Save analyst settings" not in home.button_labels()
     settings = render(main.settings_route)
     assert "Save analyst settings" in settings.button_labels()
     assert "Record and export pilot assessment" in settings.button_labels()

@@ -6,7 +6,7 @@ from casefinder.ui.shell import rail
 
 
 def test_demo_has_explicit_prepare_confirm_start(render):
-    tree = render(case360_page.render)
+    tree = render(case360_page.render_demo)
     assert "Prepare synthetic request" in tree.button_labels()
     assert "Confirm contract" in tree.button_labels()
     assert "Run synthetic demonstration" in tree.button_labels()
@@ -35,7 +35,8 @@ def test_beta_navigation_is_optional(render, monkeypatch):
 def test_demo_route_does_not_probe_bigquery(render, monkeypatch):
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     tree = render(main.case360_route)
-    assert "Offline preview" in tree.text
+    assert "¿Qué datos necesitas?" in tree.text
+    assert "Prepare request" not in tree.button_labels()
 
 
 def test_request_form_preserves_explicit_centers_and_cannot_run_live(render):
