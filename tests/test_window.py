@@ -335,3 +335,59 @@ def test_the_browser_fallback_really_opens_a_browser(monkeypatch):
 
     assert run_with(True) is True, "native mode stopped opening a window"
     assert run_with(False) is False, "the browser fallback still opened the webview"
+
+
+def test_beta_js_close_waits_for_verified_stop(monkeypatch):
+    left = []
+    monkeypatch.setattr(window, "_leave", lambda: left.append(True))
+    monkeypatch.setattr(window, "_close_allowed", lambda: False)
+    api = window.WindowApi(guarded=True)
+    assert api.close() == "waiting_for_stop"
+    assert not left
+    monkeypatch.setattr(window, "_close_allowed", lambda: True)
+    assert api.close() == "closing"
+    assert left == [True]
+
+
+def test_native_close_and_js_bridge_share_the_same_gate(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    class Closing:
+        def __init__(self):
+            self.handlers = []
+
+        def __iadd__(self, handler):
+            self.handlers.append(handler)
+            return self
+
+    closing = Closing()
+    native = SimpleNamespace(events=SimpleNamespace(closing=closing))
+    monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(windows=[native]))
+    window.install_close_guard()
+    assert closing.handlers == [window._native_close_requested]
+
+
+def test_beta_window_guard_allows_orphan_close_without_server_callback(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(window.multiprocessing, "parent_process",
+                        lambda: SimpleNamespace(is_alive=lambda: False))
+    assert window._close_allowed() is True
+
+
+def test_native_close_defers_javascript_until_the_ui_thread_is_released(monkeypatch):
+    from types import SimpleNamespace
+
+    pending = []
+    checked = []
+    left = []
+    monkeypatch.setattr(window, "_server_gone", lambda: False)
+    monkeypatch.setattr(window, "_close_allowed", lambda: checked.append(True) or True)
+    monkeypatch.setattr(window, "_leave", lambda: left.append(True))
+    monkeypatch.setattr(window.threading, "Thread", lambda *, target, daemon:
+                        SimpleNamespace(start=lambda: pending.append(target)))
+    assert window._native_close_requested() is False
+    assert not checked and not left
+    pending[0]()
+    assert checked == [True] and left == [True]

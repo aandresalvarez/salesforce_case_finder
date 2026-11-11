@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **768 passing**, ~4 s, no network access required |
+| Automated tests | **792 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1750,3 +1750,17 @@ build and identity, enforces the cap before sends and retains uncertain
 reservations on cancellation. Clinical SQL execution stays disabled. Execution
 and quality are displayed independently; HOLD and pending decisions remain
 visible. Live policy defaults to disabled. See [the P2 guide](docs/CASE360_P2.md).
+
+### D43 — persistent Case 360 history, verified recovery and manual cleanup
+
+The optional private-engine view adds saved history, explicit reconnect and
+checkpoint recovery. The engine alone decides whether a saved boundary is safe;
+prior charges and uncertain reservations are preserved. Native window closure
+and the reconnect notice share a stop-and-verify gate, including Return to app.
+
+Limpiar datos previews selected requests or all local history, optionally unused
+resource snapshots, and requires confirmation of that exact scope. It reports
+partial failures and retained accounting; it cannot delete credentials, source
+systems or external exports. The visible cleanup flow is brought forward from
+P4 at the user's request. See [the P3 guide](docs/CASE360_P3.md). Windows execution
+and native visual acceptance remain unverified; this is not a release claim.

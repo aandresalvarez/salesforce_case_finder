@@ -120,6 +120,89 @@
         "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "cap_usd": 0.75
       }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-list_runs",
+      "run_id": null,
+      "method": "list_runs",
+      "params": {
+        "offset": 0,
+        "limit": 25
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-read_events",
+      "run_id": "run-fixture",
+      "method": "read_events",
+      "params": {
+        "after_seq": 0,
+        "limit": 25
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-prepare_cleanup",
+      "run_id": null,
+      "method": "prepare_cleanup",
+      "params": {
+        "run_ids": [
+          "run-fixture"
+        ],
+        "all_runs": false,
+        "unused_resources": false
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-cleanup_data",
+      "run_id": null,
+      "method": "cleanup_data",
+      "params": {
+        "cleanup_id": "cleanup-fixture",
+        "plan_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-get_cleanup",
+      "run_id": null,
+      "method": "get_cleanup",
+      "params": {
+        "cleanup_id": "cleanup-fixture"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-get_accounting",
+      "run_id": null,
+      "method": "get_accounting",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-prepare_resume",
+      "run_id": "run-fixture",
+      "method": "prepare_resume",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-resume_run",
+      "run_id": "run-fixture",
+      "method": "resume_run",
+      "params": {
+        "checkpoint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
     }
   ],
   "invalid": [
@@ -424,6 +507,63 @@
         "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "cap_usd": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-list_runs",
+      "run_id": null,
+      "method": "list_runs",
+      "params": {
+        "offset": 0,
+        "limit": 101
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-read_events",
+      "run_id": "run-fixture",
+      "method": "read_events",
+      "params": {
+        "after_seq": -1,
+        "limit": 25
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-prepare_cleanup",
+      "run_id": null,
+      "method": "prepare_cleanup",
+      "params": {
+        "run_ids": [
+          "../../outside"
+        ],
+        "all_runs": false,
+        "unused_resources": false
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-cleanup_data",
+      "run_id": null,
+      "method": "cleanup_data",
+      "params": {
+        "cleanup_id": "cleanup-fixture",
+        "plan_sha256": "bad"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-resume_run",
+      "run_id": "run-fixture",
+      "method": "resume_run",
+      "params": {
+        "checkpoint_sha256": null
       }
     }
   ]

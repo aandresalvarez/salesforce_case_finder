@@ -85,6 +85,10 @@ def layout(active: str) -> Iterator[None]:
     is how "exactly four primary destinations" stays true as pages are added.
     """
     theme.install()
+    if config.CASE360_ENABLED:
+        from .case360_close import install
+
+        install()
     with ui.row().classes("w-full").style("gap:0; flex-wrap:nowrap"):
         rail(active)
         with ui.column().classes("cf-content").style("gap:0"):
@@ -113,6 +117,10 @@ def connection_screen(reason: str) -> None:
         ui.navigate.to("/")
 
     theme.install()
+    if config.CASE360_ENABLED:
+        from .case360_close import install
+
+        install()
     off_vpn = blocked_off_vpn(reason)
     with ui.column().classes("w-full items-center justify-center").style(
         "height:100vh; gap:0; background:" + SURFACE
