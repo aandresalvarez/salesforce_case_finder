@@ -1,6 +1,7 @@
 """Private installs preserve old evidence and refuse modified payloads."""
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -24,6 +25,7 @@ def test_side_by_side_update_and_rollback_keep_requests(tmp_path, monkeypatch):
     one = package.install(first, release(first))
     package.activate(one)
     context = package.context_for(one, package.verify(one))
+    assert re.fullmatch(r"[A-Za-z0-9_-]{1,96}", json.loads(context.read_text())["installation_id"])
     run = context.parent / "runs" / "synthetic-request.json"
     run.parent.mkdir()
     run.write_text("Synthetic saved work")

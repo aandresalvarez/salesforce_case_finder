@@ -62,9 +62,10 @@ def render_resources() -> None:
                  "A snapshot records evidence used; it does not certify freshness.")
         fields = {name: ui.input(label) for name, label in (
             ("profile", "Source profile JSON"), ("metadata", "SHC and LPCH metadata JSON"),
-            ("epic-export", "Epic documentation export JSON (optional)"),
+            ("epic-export", "Epic documentation export folder (optional)"),
             ("epic-index", "Epic documentation index JSON (optional)"),
-            ("repository", "STARR repository metadata JSON (optional)"))}
+            ("repository", "STARR repository checkout (optional)"),
+            ("repository-index", "Prepared STARR repository index JSON (optional)"))}
         snapshot = ui.input("Resource snapshot SHA256")
         principal = ui.input("Expected Google account")
         cap = ui.number("Maximum authorized budget in USD (0 disables live)", value=0, min=0)
