@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **744 passing**, ~4 s, no network access required |
+| Automated tests | **768 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1673,6 +1673,18 @@ restart recovery and Windows validation remain later beta phases. See
 
 ---
 
+### D41 — prepare new Case 360 requests against a pinned private runtime
+
+The opt-in beta page accepts requirement lines, explicit centers, an optional
+external case ID and unbound external input names. It displays a versioned
+contract and relevant evidence from the private engine. Confirmation refers
+to the exact contract hash; edits create a new revision. Missing resources
+and pending interpretation stay visible. The public client owns transport and
+presentation only; preparation and source verification remain in the private
+engine. `CASE360_RUNTIME_CONTEXT` selects explicit paths and pinned manifests
+without inheriting Ask configuration. Live execution remains unavailable;
+confirmation grants no paid budget. See [the P2 guide](docs/CASE360_P2.md).
+
 ## 5. Known limitations
 
 Carried from §14, with current status.
@@ -1727,3 +1739,14 @@ The working copy they came from:
 
 That is a machine-local Astra task directory — provenance, not a dependency.
 Nothing in this repository reads from it.
+
+
+### D42 — explicit Case 360 connection, budget authorization and launch
+
+The optional private-engine workflow adds separate Check connection, Authorize
+this budget and Start authorized request actions. Confirmation remains local
+and grants no budget. The engine binds authorization to contract, evidence,
+build and identity, enforces the cap before sends and retains uncertain
+reservations on cancellation. Clinical SQL execution stays disabled. Execution
+and quality are displayed independently; HOLD and pending decisions remain
+visible. Live policy defaults to disabled. See [the P2 guide](docs/CASE360_P2.md).

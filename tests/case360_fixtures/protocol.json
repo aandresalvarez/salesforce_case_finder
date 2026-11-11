@@ -65,6 +65,61 @@
         "offset": 0,
         "length": 65536
       }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "SHC",
+          "LPCH"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "resource_status",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "probe_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "cancel_run",
+      "params": {}
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 0.75
+      }
     }
   ],
   "invalid": [
@@ -168,6 +223,207 @@
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "offset": 0,
         "length": 1
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "SHC",
+          "SHC"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "OTHER"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "",
+        "centers": [
+          "SHC",
+          "LPCH"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "SHC",
+          "LPCH"
+        ],
+        "external_case_id": "../unsafe",
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "SHC",
+          "LPCH"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "invalid-name"
+        ],
+        "previous_run_id": null
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "prepare-new",
+      "run_id": null,
+      "method": "prepare_request",
+      "params": {
+        "text": "Return synthetic orders from 1 through 18 inclusive.",
+        "centers": [
+          "SHC",
+          "LPCH"
+        ],
+        "external_case_id": null,
+        "external_inputs": [
+          "cohort_ids"
+        ],
+        "previous_run_id": "../escape"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 0
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": -1
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": 1001
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": "1"
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": true
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "fixture-1",
+      "run_id": "run-1",
+      "method": "authorize_run",
+      "params": {
+        "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "preflight_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cap_usd": null
       }
     }
   ]
