@@ -1,6 +1,6 @@
 # Case 360 P3: history, recovery and local cleanup
 
-The optional Case 360 view now includes local history and **Limpiar datos**.
+The optional Case 360 view now includes local history and **Clean data**.
 Use matching P3 frontend and private runtime components: the client checks the
 exact protocol schema. The beta remains disabled by default. No provider or
 warehouse access is needed to inspect history or clear local content.
@@ -28,14 +28,14 @@ actions, cancels owned work and verifies process exit before approving the windo
 close. If the server has already died, its closed pipe triggers the controller's
 crash handling; the orphan window can close without a server callback.
 
-## Limpiar datos
+## Clean data
 
 1. Refresh history and select requests, or choose All local history.
 2. Optionally select unused imported resources. Snapshots still referenced by
    retained work are protected; removed snapshots must be prepared again.
-3. Press Limpiar datos and inspect the exact request revisions, file counts,
-   sizes and blocked items. Cancelar does not delete anything.
-4. Confirmar limpieza removes only the previewed scope. Newly created work and
+3. Press Clean data and inspect the exact request revisions, file counts,
+   sizes and blocked items. Cancel does not delete anything.
+4. Confirm cleanup removes only the previewed scope. Newly created work and
    changed revisions are not added to an earlier confirmation.
 
 Stop selected work and open a fresh preview if a process is active. Unverified

@@ -70,8 +70,7 @@ def rail(active: str) -> None:
             f"font-size:13.5px;font-weight:650;padding:2px 16px 16px 16px;color:{INK}"
         )
         for key, label, icon, target in DESTINATIONS:
-            _nav_item(label, icon, "/search" if config.PRIVATE_BETA and key == "search"
-                      else target, active == key)
+            _nav_item(label, icon, target, active == key)
         ui.space()
         if config.CASE360_ENABLED:
             _nav_item("Case 360 Beta", "science", "/case360", active == "case360")
@@ -90,28 +89,10 @@ def layout(active: str) -> Iterator[None]:
         from .case360_close import install
 
         install()
-    if config.PRIVATE_BETA:
-        with ui.column().classes("w-full cf-case360").style(
-            "min-height:100vh;background:#fafbfc;padding:28px 36px;gap:20px"
-        ):
-            ui.add_css("""
-                .cf-case360 { color: #202b3a; }
-                .cf-case360 .nicegui-column, .cf-case360 .q-expansion-item,
-                .cf-case360 .q-tab-panels, .cf-case360 .q-panel,
-                .cf-case360 .q-tab-panel { min-width:0; max-width:100%; }
-                .cf-case360 .nicegui-code { width:100%; max-width:100%; }
-                .cf-case360 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
-                .cf-case360 .q-field__control { background:white; border-radius:10px; }
-                .cf-case360 .q-btn { border-radius:8px; }
-                .cf-case360 .q-table__container { max-width:100%; }
-                @media (max-width:640px) { .cf-case360 { padding:18px !important; } }
-            """)
-            yield
-        return
     with ui.row().classes("w-full").style("gap:0; flex-wrap:nowrap"):
         rail(active)
         with ui.column().classes("cf-content").style("gap:0") as content:
-            if active == "case360" or (config.PRIVATE_BETA and active == "settings"):
+            if active == "case360":
                 content.classes("cf-case360")
                 ui.add_css("""
                     .cf-case360 .nicegui-column,
@@ -170,6 +151,8 @@ def connection_screen(reason: str) -> None:
         ).classes("cf-muted").style("max-width:390px;text-align:center;margin-top:8px")
         with ui.element("div").style("margin-top:18px"):
             primary("Retry", retry)
+        if config.CASE360_ENABLED:
+            ui.link("Open Case 360 Beta", "/case360").style("margin-top:12px")
         if off_vpn:
             with ui.expansion("Details").classes("cf-muted").style(
                 "margin-top:18px; max-width:520px"

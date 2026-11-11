@@ -12,7 +12,7 @@ def test_landing_has_one_text_field_and_no_configuration(render, monkeypatch):
     assert len(tree.of_type("Textarea")) == 1
     assert not tree.of_type("Select")
     assert not tree.of_type("Number")
-    assert "Ajustes" in tree.text
+    assert "Beta settings" in tree.text
     assert "$50 USD" in tree.text
     assert "Prepare request" not in tree.button_labels()
     assert "Check connection" not in tree.button_labels()
@@ -27,9 +27,9 @@ def test_blank_request_is_explained_without_protocol_call(render, monkeypatch):
     async def check():
         monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
         with tree.client:
-            tree.press(next(b for b in tree.buttons() if b.text == "Analizar solicitud"))
+            tree.press(next(b for b in tree.buttons() if b.text == "Analyze request"))
             await asyncio.sleep(0)
-        assert "Escribe una petición" in tree.text
+        assert "Enter a request" in tree.text
 
     asyncio.run(check())
 
@@ -62,8 +62,8 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
             if not self.started:
                 return {"resources": {}, "source_evidence": {"sources": []}}
             return {"conversation": conversation, "execution_status": "COMPLETED",
-                    "quality_status": "HOLD", "interpretation": "Necesito una fecha.",
-                    "questions": [{"id": "intake-year", "text": "¿Qué año?"}],
+                    "quality_status": "HOLD", "interpretation": "I need a date.",
+                    "questions": [{"id": "intake-year", "text": "Which year?"}],
                     "budget": {"cap_usd": 50, "charged_or_reserved_usd": 1,
                                "remaining_usd": 49, "uncertain_reservation_usd": 0},
                     "packages": [] if self.round == 1 else [{"version": 1,
@@ -79,12 +79,12 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
         monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
         with tree.client:
             tree.of_type("Textarea")[0].value = "Synthetic request"
-            tree.press(next(b for b in tree.buttons() if b.text == "Analizar solicitud"))
+            tree.press(next(b for b in tree.buttons() if b.text == "Analyze request"))
             await asyncio.sleep(0)
-            assert "¿Qué año?" in tree.text
+            assert "Which year?" in tree.text
             assert not any("SELECT" in str(e._props) for e in tree.of_type("Code"))
             tree.of_type("Textarea")[-1].value = "2024"
-            tree.press(next(b for b in tree.buttons() if b.text == "Continuar con mis respuestas"))
+            tree.press(next(b for b in tree.buttons() if b.text == "Continue with my answers"))
             await asyncio.sleep(0)
         prepares = [p for m, p, _ in client.calls if m == "prepare_conversation"]
         assert prepares == [
@@ -92,7 +92,7 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
             {"text": "", "previous_run_id": "run-1",
              "answers": [{"question_id": "intake-year", "text": "2024"}]}]
         assert [p["cap_usd"] for m, p, _ in client.calls if m == "authorize_run"] == [50, 49]
-        assert "SQL preparado" in tree.text
+        assert "SQL is ready" in tree.text
         assert "SELECT 2024 AS requested_year" in tree.text
 
     asyncio.run(check())

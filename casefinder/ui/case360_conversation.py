@@ -13,22 +13,22 @@ from .case360_details import render_json
 
 ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
 PHASES = {
-    "INTAKE": "Interpretando tu solicitud",
-    "AUTHOR_EVIDENCE": "Buscando fuentes y comprobando columnas",
-    "AUTHOR_GENERATION": "Construyendo el SQL",
-    "TARGETED_SOURCE_RESOLUTION": "Comprobando fuentes pendientes",
-    "TARGETED_REPAIR": "Corrigiendo el SQL con la revisión",
-    "SAME_SESSION_REPAIR": "Corrigiendo el SQL con la revisión",
-    "WAITING_CLARIFICATION": "Necesito tus respuestas para continuar",
-    "WAITING_FINAL_CLARIFICATION": "La revisión encontró decisiones pendientes",
+    "INTAKE": "Interpreting your request",
+    "AUTHOR_EVIDENCE": "Finding sources and checking columns",
+    "AUTHOR_GENERATION": "Building the SQL",
+    "TARGETED_SOURCE_RESOLUTION": "Checking unresolved sources",
+    "TARGETED_REPAIR": "Revising the SQL after review",
+    "SAME_SESSION_REPAIR": "Revising the SQL after review",
+    "WAITING_CLARIFICATION": "Waiting for your answers",
+    "WAITING_FINAL_CLARIFICATION": "Review found unresolved decisions",
 }
 MODEL_PHASES = {
-    "intake": "Interpretación de la petición",
-    "evidence-1": "Búsqueda de fuentes",
-    "evidence-2": "Verificación de fuentes",
-    "generate": "Generación del SQL",
-    "review": "Revisión independiente",
-    "final-review": "Revisión final",
+    "intake": "Interpreting the request",
+    "evidence-1": "Finding sources",
+    "evidence-2": "Verifying sources",
+    "generate": "Generating SQL",
+    "review": "Independent review",
+    "final-review": "Final review",
 }
 
 
@@ -36,7 +36,7 @@ def configured_cap() -> float:
     location = discover().context_file
     policy = json.loads(location.read_text())["authorization_policy"] if location else {}
     if not policy.get("live_enabled") or policy.get("max_paid_usd", 0) <= 0:
-        raise ValueError("Completa la conexión y el presupuesto en Ajustes para comenzar.")
+        raise ValueError("Set up your connection and budget in Beta settings to begin.")
     return float(policy["max_paid_usd"])
 
 
@@ -57,16 +57,16 @@ def active_request(value: str | None = None, *, save: bool = False) -> str | Non
 def progress_text(item: dict) -> str:
     kind = item.get("kind")
     if kind == "stage":
-        return PHASES.get(item.get("stage"), "Procesando la solicitud")
+        return PHASES.get(item.get("stage"), "Processing the request")
     if kind == "model":
-        return MODEL_PHASES.get(item.get("phase"), "Análisis y revisión del agente")
+        return MODEL_PHASES.get(item.get("phase"), "Agent analysis and review")
     if kind == "sources_retrieved":
-        return "Consulté el índice local de fuentes de esta instalación"
-    tool = {"inspect_table_schema": "Esquema de BigQuery",
-            "starr_prior_lookup": "Índice de fuentes",
-            "historical_sql_search": "Patrones y documentación"}.get(
-                item.get("tool"), item.get("tool", "Fuente"))
-    verb = "Consultando" if kind == "source_started" else "Respuesta recibida de"
+        return "Searched this installation's local source index"
+    tool = {"inspect_table_schema": "BigQuery schema",
+            "starr_prior_lookup": "Source index",
+            "historical_sql_search": "Patterns and documentation"}.get(
+                item.get("tool"), item.get("tool", "Source"))
+    verb = "Consulting" if kind == "source_started" else "Response received from"
     return f"{verb} {tool}" + (f": {item['query']}" if item.get("query") else "")
 
 
@@ -76,22 +76,22 @@ def render_sources(preparation: dict) -> None:
         return
     names = []
     for row in evidence.get("sources", []):
-        names.append("BigQuery · " + str(row.get("table", "Fuente candidata")))
+        names.append("BigQuery · " + str(row.get("table", "Candidate source")))
     for row in evidence.get("documentation", []):
-        names.append("Epic · " + str(row.get("table_name", "Documento")))
+        names.append("Epic · " + str(row.get("table_name", "Document")))
     for row in evidence.get("repository_documents", []):
-        names.append("STARR · " + str(row.get("path", row.get("id", "Definición"))))
-    with ui.expansion(f"Fuentes encontradas · {len(names)}", value=bool(names)).classes("w-full"):
-        ui.label("Evidencia del snapshot importado. La disponibilidad y el significado "
-                 "se comprueban durante el análisis.").classes("text-sm text-slate-500")
+        names.append("STARR · " + str(row.get("path", row.get("id", "Definition"))))
+    with ui.expansion(f"Sources found · {len(names)}", value=bool(names)).classes("w-full"):
+        ui.label("Evidence from the imported snapshot. Availability and meaning "
+                 "are checked during analysis.").classes("text-sm text-slate-500")
         for name in names[:12]:
             ui.label(name).classes("text-sm break-all")
         if not names:
-            ui.label("La búsqueda inicial no encontró candidatos; "
-                     "el agente puede ampliar la búsqueda.")
-        with ui.expansion("Ver evidencia y cobertura completas").classes("w-full"):
+            ui.label("The initial search found no candidates; "
+                     "the agent may broaden its search.")
+        with ui.expansion("View full evidence and coverage").classes("w-full"):
             render_json({"resources": preparation.get("resources"), "evidence": evidence},
-                        "case360-fuentes.json")
+                        "case360-sources.json")
 
 
 def render(*, run_id: str | None = None) -> None:
@@ -99,15 +99,16 @@ def render(*, run_id: str | None = None) -> None:
                    "pending": None, "consent_cap": None}
     with ui.column().classes("w-full").style("max-width:900px;margin:0 auto;gap:20px"):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Case 360").style("font-size:20px;font-weight:650")
+            ui.label("Case 360 Beta").style("font-size:20px;font-weight:650")
             with ui.row().classes("gap-4"):
-                ui.link("Historial y limpiar datos", "/case360/history")
-                ui.link("Ajustes", "/settings")
-        ui.label("¿Qué datos necesitas?").style("font-size:32px;font-weight:600;margin-top:32px")
-        ui.label("Describe tu petición con tus palabras. Consultaré las fuentes y te "
-                 "preguntaré lo necesario antes de construir el SQL.").classes("text-slate-600")
-        request = ui.textarea("Tu petición", placeholder="Describe la población, los datos "
-                              "que necesitas y cualquier condición que ya conozcas.").props(
+                ui.link("History and clean data", "/case360/history")
+                ui.link("Beta settings", "/case360/settings")
+        ui.label("What data do you need?").style("font-size:32px;font-weight:600;margin-top:32px")
+        ui.label("Describe your request in your own words. The agent will consult sources and "
+                 "ask for any clarification needed before building the SQL.").classes(
+                     "text-slate-600")
+        request = ui.textarea("Your request", placeholder="Describe the population, the data "
+                              "you need, and any conditions you already know.").props(
                                   "outlined autogrow").classes("w-full")
         status = ui.label("").classes("text-slate-600")
         consent = ui.label("").classes("text-sm text-slate-500")
@@ -130,18 +131,18 @@ def render(*, run_id: str | None = None) -> None:
                 state["last_seq"] = items[-1]["seq"]
                 activity.clear()
                 with activity:
-                    ui.label("Actividad del agente").classes("font-medium")
+                    ui.label("Agent activity").classes("font-medium")
                     for item in items[-6:]:
                         ui.label(progress_text(item)).classes("text-sm break-all")
-                    with ui.expansion("Ver actividad registrada").classes("w-full"):
+                    with ui.expansion("View recorded activity").classes("w-full"):
                         for item in items:
                             ui.label(progress_text(item)).classes("text-sm break-all")
             budget = view.get("budget")
             if budget:
                 total = budget["charged_or_reserved_usd"] + state.get("spent_before", 0)
-                consent.text = (f"Solicitud: ${total:.4f} USD "
-                                f"usados o reservados · ${budget['remaining_usd']:.2f} "
-                                "disponibles.")
+                consent.text = (f"Request: ${total:.4f} USD "
+                                f"used or reserved · ${budget['remaining_usd']:.2f} "
+                                "remaining.")
 
         async def inspect(view: dict) -> None:
             c = session.client()
@@ -149,7 +150,7 @@ def render(*, run_id: str | None = None) -> None:
                 busy(True)
                 show_progress(view)
                 status.text = (progress_text(view["progress"][-1]) if view.get("progress")
-                               else "Iniciando el análisis…")
+                               else "Starting analysis…")
                 await asyncio.sleep(0.7)
                 view = await c.request("get_run", run_id=state["run_id"])
             show_progress(view)
@@ -157,12 +158,12 @@ def render(*, run_id: str | None = None) -> None:
             dialogue.clear()
             conversation = result.get("conversation", {})
             if conversation.get("answers"):
-                with dialogue, ui.expansion("Tus aclaraciones").classes("w-full"):
+                with dialogue, ui.expansion("Your clarifications").classes("w-full"):
                     for answer in conversation["answers"]:
                         ui.label(answer["question"]).classes("font-medium")
                         ui.label(answer["text"])
             if conversation.get("waiting"):
-                status.text = "Necesito aclarar lo siguiente antes de continuar."
+                status.text = "Please clarify the following before the agent continues."
                 state["remaining"] = result["budget"]["remaining_usd"]
                 with dialogue:
                     if result.get("interpretation"):
@@ -170,14 +171,14 @@ def render(*, run_id: str | None = None) -> None:
                     answers = {}
                     for question in result.get("questions", [])[:12]:
                         ui.label(question["text"]).classes("font-medium")
-                        answers[question["id"]] = ui.textarea("Tu respuesta").props(
+                        answers[question["id"]] = ui.textarea("Your answer").props(
                             "outlined autogrow maxlength=900").classes("w-full")
-                    ui.label(f"Continuar usa el presupuesto restante: hasta "
+                    ui.label(f"Continuing uses the remaining budget: up to "
                              f"${state['remaining']:.2f} USD.").classes("text-sm text-slate-500")
 
                     async def answer() -> None:
                         if any(not (field.value or "").strip() for field in answers.values()):
-                            status.text = "Responde cada pregunta. Si no lo sabes, indícalo."
+                            status.text = "Answer each question. If you are unsure, say so."
                             return
                         next_button.disable()
                         await launch([{"question_id": key, "text": field.value}
@@ -185,17 +186,17 @@ def render(*, run_id: str | None = None) -> None:
                         if not state["busy"]:
                             next_button.enable()
 
-                    next_button = ui.button("Continuar con mis respuestas", on_click=answer)
+                    next_button = ui.button("Continue with my answers", on_click=answer)
             elif "execution_status" in result:
-                status.text = ("SQL preparado para tu revisión." if result.get("packages")
-                               else "El análisis no pudo completar el SQL. Revisa el resultado.")
+                status.text = ("SQL is ready for your review." if result.get("packages")
+                               else "The analysis could not complete the SQL. Review the result.")
             else:
-                status.text = "Solicitud guardada; todavía no se ha iniciado el análisis."
+                status.text = "Request saved; analysis has not started yet."
                 state["pending"] = view
                 state["remaining"] = conversation.get("remaining_cap_usd")
                 if not view.get("authorized"):
                     with dialogue:
-                        retry = ui.button("Continuar esta solicitud",
+                        retry = ui.button("Continue this request",
                                           on_click=lambda: retry_pending())
                         retry.props("no-caps")
             output.clear()
@@ -211,17 +212,17 @@ def render(*, run_id: str | None = None) -> None:
                 return
             text = request.value or ""
             if answers is None and not text.strip():
-                status.text = "Escribe una petición para comenzar."
+                status.text = "Enter a request to begin."
                 return
             if answers is None and (len(text) > 20000 or len(text.encode()) > 24000):
-                status.text = "La petición es demasiado larga. Usa hasta 20.000 caracteres y 24 KB."
+                status.text = "The request is too long. Use up to 20,000 characters and 24 KB."
                 return
             busy(True)
             try:
                 cap = (state["remaining"] if answers is not None
                        else min(configured_cap(), state["consent_cap"] or configured_cap()))
                 c = session.client()
-                status.text = "Buscando evidencia en los recursos de esta instalación…"
+                status.text = "Searching this installation's resources for evidence…"
                 prepared = await c.request("prepare_conversation", {
                     "text": "" if answers is not None else text,
                     "previous_run_id": state["run_id"] if answers is not None else None,
@@ -238,11 +239,11 @@ def render(*, run_id: str | None = None) -> None:
                     render_sources(artifact)
                 await start_prepared(prepared, cap)
             except ERRORS as error:
-                status.text = "No pude continuar: " + str(error)
+                status.text = "Could not continue: " + str(error)
                 if state["pending"]:
                     dialogue.clear()
                     with dialogue:
-                        ui.button("Reintentar conexión", on_click=lambda: retry_pending())
+                        ui.button("Retry connection", on_click=lambda: retry_pending())
             finally:
                 busy(False)
 
@@ -250,7 +251,7 @@ def render(*, run_id: str | None = None) -> None:
             c = session.client()
             await c.request("confirm_contract", {
                 "contract_sha256": prepared["contract_sha256"]}, run_id=state["run_id"])
-            status.text = "Comprobando tu conexión y el presupuesto…"
+            status.text = "Checking your connection and budget…"
             proof = await c.request("probe_run", run_id=state["run_id"])
             await c.request("authorize_run", {
                 "contract_sha256": prepared["contract_sha256"],
@@ -268,7 +269,7 @@ def render(*, run_id: str | None = None) -> None:
             try:
                 await start_prepared(state["pending"], state["remaining"])
             except ERRORS as error:
-                status.text = "No pude continuar: " + str(error)
+                status.text = "Could not continue: " + str(error)
             finally:
                 busy(False)
 
@@ -295,17 +296,17 @@ def render(*, run_id: str | None = None) -> None:
             try:
                 cap = configured_cap()
                 state["consent_cap"] = cap
-                consent.text = (f"Al pulsar Analizar autorizas hasta ${cap:g} USD para esta "
-                                "solicitud, incluidas aclaraciones y revisión. "
-                                "El SQL no se ejecuta.")
+                consent.text = (f"By selecting Analyze, you authorize up to ${cap:g} USD for this "
+                                "request, including clarification and review. "
+                                "SQL is not executed.")
             except ERRORS as error:
                 consent.text = str(error)
 
         with actions:
-            submit = ui.button("Analizar solicitud", on_click=lambda: launch()).props(
+            submit = ui.button("Analyze request", on_click=lambda: launch()).props(
                 "unelevated no-caps")
-            cancel = ui.button("Detener", on_click=stop).props("flat no-caps")
-            new = ui.button("Nueva solicitud", on_click=reset).props("flat no-caps")
+            cancel = ui.button("Stop", on_click=stop).props("flat no-caps")
+            new = ui.button("New request", on_click=reset).props("flat no-caps")
         cancel.set_visibility(False)
         show_cap()
 
@@ -327,7 +328,7 @@ def render(*, run_id: str | None = None) -> None:
                         render_sources(result)
                 await inspect(view)
             except ERRORS as error:
-                status.text = "No pude abrir la solicitud guardada: " + str(error)
+                status.text = "Could not open the saved request: " + str(error)
             finally:
                 busy(False)
 

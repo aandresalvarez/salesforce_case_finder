@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **829 passing**, ~4 s, no network access required |
+| Automated tests | **831 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1801,7 +1801,7 @@ opt-in warehouse tests remain excluded.
 
 ### D46 — a conversation before SQL
 
-The private beta opens one free-text request field. Settings and local history
+The Case 360 Beta view opens one free-text request field. Beta settings and local history
 are separate destinations. Starting a request also approves the displayed
 maximum; connection checks and contract binding run automatically. The analyst
 sees observed source activity, relevant evidence, and focused model questions
@@ -1813,4 +1813,13 @@ The SQL view opens after generation and independent review. Reopening a saved
 conversation never starts a model call. Paged complete evidence, feedback,
 exports, confirmed cleaning and stable Case Finder remain available. Synthetic
 acceptance covers the question/answer/SQL path; it does not certify live clinical
-quality. The committed frontend suite has 829 tests, excluding 31 warehouse tests.
+quality. The committed frontend suite has 831 tests, excluding 31 warehouse tests.
+
+
+### D47 — keep Case Finder and English UI in the private beta
+
+The private distribution keeps Search as home and the complete Case Finder
+navigation and Settings page. Case 360 Beta is an additional destination, with
+its own local settings route and English controls throughout request, progress,
+clarification and cleanup. The beta can still be configured before cloud access
+is available. Regression coverage checks both navigation and settings boundaries.

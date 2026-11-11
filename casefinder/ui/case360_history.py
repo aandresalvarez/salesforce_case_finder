@@ -65,7 +65,7 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                         active_request(run_id, save=True)
                         ui.navigate.to("/case360")
 
-                    ui.button("Abrir conversación", on_click=open_conversation)
+                    ui.button("Open conversation", on_click=open_conversation)
                 if result:
                     from .case360_page import render_preparation, render_result
 
@@ -159,7 +159,7 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                 "run_ids": [] if all_runs.value else selection.value.copy(),
                 "all_runs": all_runs.value, "unused_resources": resources.value})
             with ui.dialog().props("persistent") as dialog, ui.card():
-                ui.label("Confirmar limpieza de datos")
+                ui.label("Confirm data cleanup")
                 ui.label(f"Requests: {len(plan['runs'])} · "
                          f"Resource snapshots: {len(plan['resources'])}")
                 ui.label('Removes request text, sessions, evidence, SQL and '
@@ -184,8 +184,8 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
                     dialog.close()
                     await apply_cleanup(plan)
 
-                ui.button("Cancelar", on_click=dialog.close)
-                confirm_button = ui.button("Confirmar limpieza", on_click=confirm)
+                ui.button("Cancel", on_click=dialog.close)
+                confirm_button = ui.button("Confirm cleanup", on_click=confirm)
             dialog.open()
         except ERRORS as error:
             status.text = str(error)
@@ -195,4 +195,4 @@ def render_history(on_clear: Callable[[], None] | None = None) -> None:
         ui.button("Reconnect local runtime", on_click=reconnect)
         ui.button("Open selected request", on_click=inspect)
         ui.button("Stop selected work", on_click=stop_selected)
-        ui.button("Limpiar datos", on_click=preview_cleanup)
+        ui.button("Clean data", on_click=preview_cleanup)

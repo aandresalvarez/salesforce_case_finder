@@ -33,6 +33,9 @@ def render() -> None:
         _cost_and_cache()
         _saved_views()
         _about()
+        if config.CASE360_ENABLED:
+            _section("Case 360 Beta")
+            ui.link("Case 360 Beta settings", "/case360/settings")
 
 
 def _section(title: str) -> None:

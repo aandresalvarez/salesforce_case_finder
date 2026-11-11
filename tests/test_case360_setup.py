@@ -33,18 +33,42 @@ def test_setup_saves_another_analyst_and_environment(render, tmp_path, monkeypat
     asyncio.run(check())
 
 
-def test_beta_home_and_settings_are_local_before_cloud_configuration(render, monkeypatch):
+def test_beta_routes_are_local_and_preserve_case_finder_navigation(render, monkeypatch):
     monkeypatch.setattr(config, "PRIVATE_BETA", True)
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     monkeypatch.setattr(main, "gated", lambda *_: (_ for _ in ()).throw(
         AssertionError("A beta landing page must not make a cloud access probe")))
-    home = render(main.index)
-    assert "¿Qué datos necesitas?" in home.text
+    home = render(main.case360_route)
+    assert "What data do you need?" in home.text
+    assert len(home.with_class("cf-rail")) == 1
+    assert "Case Finder" in home.text
+    assert all(label in home.text for label in ["Search", "Lists", "SQL", "Settings"])
     assert "Save analyst settings" not in home.button_labels()
-    settings = render(main.settings_route)
+    settings = render(main.case360_settings_route)
+    assert len(settings.with_class("cf-rail")) == 1
     assert "Save analyst settings" in settings.button_labels()
     assert "Record and export pilot assessment" in settings.button_labels()
     assert "Activate selected version / rollback" in settings.button_labels()
+
+
+def test_private_channel_keeps_original_home_and_settings(monkeypatch):
+    monkeypatch.setattr(config, "PRIVATE_BETA", True)
+    monkeypatch.setattr(config, "CASE360_ENABLED", True)
+    calls = []
+    monkeypatch.setattr(main, "gated", lambda active, render: calls.append((active, render)))
+    main.index()
+    main.settings_route()
+    assert calls == [("search", main.search.render), ("settings", main.settings.render)]
+
+
+def test_original_settings_keeps_sections_and_beta_link(render, warehouse, monkeypatch):
+    monkeypatch.setattr(config, "PRIVATE_BETA", True)
+    monkeypatch.setattr(config, "CASE360_ENABLED", True)
+    tree = render(main.settings.render)
+    for label in ["Connection", "Data era", "Cost and cache", "Saved views", "About"]:
+        assert label in tree.text
+    assert any(link.text == "Case 360 Beta settings" and
+               link._props.get("href") == "/case360/settings" for link in tree.of_type("Link"))
 
 
 def test_settings_refuse_switch_while_owned_work_is_active(monkeypatch):
