@@ -90,7 +90,12 @@ def render_resources() -> None:
                         arguments += ["--" + key, str(Path(element.value).expanduser().resolve())]
                 process = await asyncio.create_subprocess_exec(
                     *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                output, _ = await asyncio.wait_for(process.communicate(), 120)
+                try:
+                    output, _ = await asyncio.wait_for(process.communicate(), 120)
+                finally:
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
                 if process.returncode:
                     raise ValueError("Resource import failed. Verify the prepared files "
                                      "and profile.")
@@ -170,6 +175,8 @@ def render_pilot() -> None:
                 profile = preferences.read()
                 if not profile["analyst"] or not profile["environment"]:
                     raise ValueError("Save the analyst and environment labels first.")
+                if decision.value == "LIMITED_PILOT" and not all(v.value for v in checks.values()):
+                    raise ValueError("Complete the pilot checks before recording LIMITED_PILOT.")
                 client = session.client()
                 history = await session.history(client)
                 value = {"schema": "case360_pilot_assessment/1", "profile": profile,
@@ -186,3 +193,22 @@ def render_pilot() -> None:
                 status.text = str(error)
 
         ui.button("Record and export pilot assessment", on_click=record)
+
+        def clear_assessments() -> None:
+            with ui.dialog() as dialog, ui.card():
+                ui.label("Delete the locally saved pilot assessments? Exported copies remain.")
+
+                def confirm() -> None:
+                    folder = preferences.data_root() / "pilot"
+                    if folder.exists() and folder.resolve() == folder:
+                        for file in folder.glob("pilot-*.json"):
+                            if file.is_file() and not file.is_symlink():
+                                file.unlink()
+                    dialog.close()
+                    status.text = "Local pilot assessments cleared."
+
+                ui.button("Cancel", on_click=dialog.close)
+                ui.button("Clear pilot assessments", on_click=confirm)
+            dialog.open()
+
+        ui.button("Clear saved pilot assessments", on_click=clear_assessments)

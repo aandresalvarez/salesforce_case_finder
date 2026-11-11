@@ -66,3 +66,17 @@ def test_connection_settings_are_explicit_and_do_not_authorize_a_run(tmp_path):
         package.configure(context, "", REQUESTER_EMAIL, 5, "b" * 64)
     package.configure(context, "a" * 64, "", 0, "")
     assert json.loads(context.read_text())["authorization_policy"]["live_enabled"] is False
+
+
+def test_only_manifest_bound_relative_links_inside_package_are_allowed(tmp_path):
+    root = tmp_path / "release"
+    release(root)
+    (root / "alias").symlink_to("build.json")
+    manifest = json.loads((root / "release.json").read_text())
+    manifest["links"] = {"alias": "build.json"}
+    (root / "release.json").write_text(json.dumps(manifest))
+    assert package.verify(root)["links"] == manifest["links"]
+    (root / "alias").unlink()
+    (root / "alias").symlink_to("release.json")
+    with pytest.raises(ValueError):
+        package.verify(root)

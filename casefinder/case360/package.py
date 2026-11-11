@@ -24,12 +24,17 @@ def verify(root: Path, expected: str | None = None) -> dict:
             or not re.fullmatch(r"[a-zA-Z0-9._-]{1,100}", manifest.get("release_id", ""))):
         raise ValueError("Incompatible private beta package.")
     actual = set()
+    links = {}
     for file in root.rglob("*"):
         if file.is_symlink():
-            raise ValueError("A release may not depend on symbolic links.")
+            target = os.readlink(file)
+            if Path(target).is_absolute() or not file.resolve(strict=True).is_relative_to(root):
+                raise ValueError("A release link may not leave its package.")
+            links[file.relative_to(root).as_posix()] = target
+            continue
         if file.is_file() and file != root / "release.json":
             actual.add(file.relative_to(root).as_posix())
-    if actual != set(manifest["files"]):
+    if actual != set(manifest["files"]) or links != manifest.get("links", {}):
         raise ValueError("Package file inventory changed.")
     for name, expected_hash in manifest["files"].items():
         file = root / name
