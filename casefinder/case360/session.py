@@ -72,3 +72,15 @@ async def close() -> None:
     if _client is not None:
         await _client.close()
         _client = None
+
+
+async def prepare_reconfigure() -> None:
+    """No active or unverified owner may be hidden by switching configuration."""
+    if _client is None:
+        return
+    try:
+        if await begin_close():
+            raise RuntimeError("Stop active work before changing installation settings.")
+        await stop_for_close()
+    finally:
+        return_to_app()

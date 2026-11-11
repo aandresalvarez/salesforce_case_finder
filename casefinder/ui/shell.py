@@ -70,7 +70,8 @@ def rail(active: str) -> None:
             f"font-size:13.5px;font-weight:650;padding:2px 16px 16px 16px;color:{INK}"
         )
         for key, label, icon, target in DESTINATIONS:
-            _nav_item(label, icon, target, active == key)
+            _nav_item(label, icon, "/search" if config.PRIVATE_BETA and key == "search"
+                      else target, active == key)
         ui.space()
         if config.CASE360_ENABLED:
             _nav_item("Case 360 Beta", "science", "/case360", active == "case360")

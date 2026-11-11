@@ -266,7 +266,8 @@
               "type": "object",
               "properties": {
                 "artifact_id": {
-                  "const": "result"
+                  "type": "string",
+                  "pattern": "^(result|feedback|export-[a-f0-9-]{36})$"
                 },
                 "sha256": {
                   "type": "string",
@@ -908,6 +909,228 @@
               },
               "required": [
                 "checkpoint_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "list_feedback"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "save_feedback"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "artifact_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "contract_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "expected_revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 99
+                },
+                "analyst": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "environment": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "useful": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requirement_ids": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                  }
+                },
+                "category": {
+                  "enum": [
+                    "general",
+                    "missing_source",
+                    "incorrect_source",
+                    "omission",
+                    "semantic_failure"
+                  ]
+                },
+                "proposal": {
+                  "type": "string",
+                  "maxLength": 12000
+                },
+                "correction_minutes": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100000
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "artifact_sha256",
+                "contract_sha256",
+                "expected_revision",
+                "analyst",
+                "environment",
+                "useful",
+                "requirement_ids",
+                "category",
+                "proposal",
+                "correction_minutes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "create_export"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "artifact_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "contract_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "sections": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 9,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "contract",
+                      "plan",
+                      "requirements",
+                      "sql",
+                      "sources",
+                      "checks",
+                      "reviews",
+                      "feedback",
+                      "accounting"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "artifact_sha256",
+                "contract_sha256",
+                "sections"
               ],
               "additionalProperties": false
             }
