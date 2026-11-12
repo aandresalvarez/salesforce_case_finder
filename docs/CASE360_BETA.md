@@ -121,3 +121,11 @@ If admission fails, the request remains saved. **Retry and continue** is offered
 for connection failures and can start the analysis after reconnection. An internal
 package failure instead directs you to repair or update the beta. Opening a saved
 draft does not start it; **Continue this request** is the explicit next action.
+
+The private engine now supports source reading on demand for the SQL author.
+The original request and analyst answers stay visible, while source lookups appear
+in agent activity. For a verified saved interpretation whose next evidence request
+was blocked by context size, **Continue from saved progress** reuses that
+interpretation and the remaining budget. Opening the page makes no new model call.
+The original failure remains in history; recovery does not mark SQL as generated
+or reviewed. This update retains the original Case Finder navigation and English UI.

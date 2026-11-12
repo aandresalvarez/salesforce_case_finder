@@ -269,3 +269,47 @@ def test_continue_disables_duplicate_click_while_connection_is_pending(render, m
         assert calls.count('probe_run') == 1
 
     asyncio.run(check())
+
+
+def test_context_recovery_restores_answers_and_offers_saved_progress(render, monkeypatch):
+    timers = []
+    calls = []
+
+    class Client:
+        async def request(self, method, params=None, **kwargs):
+            calls.append((method, params))
+            if method == 'prepare_conversation':
+                await asyncio.Event().wait()
+            return {'execution_status': 'FAILED', 'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'execution_status': 'FAILED', 'packages': [],
+                    'conversation': {'original_text': 'Original request  \n',
+                                     'spent_before_usd': .17,
+                                     'answers': [{'question': 'Which year?', 'text': '2024'}]},
+                    'continuation_recovery': {'available': True},
+                    'interpretation': 'Use the saved year.',
+                    'budget': {'charged_or_reserved_usd': .61, 'remaining_usd': 49.22}}
+
+    monkeypatch.setattr(flow.session, 'client', Client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow.ui, 'timer', lambda interval, callback, **kw: timers.append(callback))
+    tree = render(lambda: flow.render(run_id='saved-request'))
+
+    async def check():
+        monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
+        with tree.client:
+            await timers[0]()
+            assert tree.of_type('Textarea')[0].value == 'Original request  \n'
+            assert '2024' in tree.text
+            assert '$49.22' in tree.text
+            assert not tree.of_type('Tabs')
+            assert calls == [('get_run', None)]
+            button = next(b for b in tree.buttons() if b.text == 'Continue from saved progress')
+            tree.press(button)
+            await asyncio.sleep(0)
+            assert not button.enabled
+            assert calls[-1] == ('prepare_conversation', {
+                'text': '', 'previous_run_id': 'saved-request', 'answers': []})
+
+    asyncio.run(check())

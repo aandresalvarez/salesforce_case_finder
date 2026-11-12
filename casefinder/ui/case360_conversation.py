@@ -64,6 +64,8 @@ def progress_text(item: dict) -> str:
     if kind == "stage":
         return PHASES.get(item.get("stage"), "Processing the request")
     if kind == "model":
+        if str(item.get("phase", "")).startswith("author-lookup-"):
+            return "Reading relevant sources and updating the query plan"
         return MODEL_PHASES.get(item.get("phase"), "Agent analysis and review")
     if kind == "sources_retrieved":
         return "Searched this installation's local source index"
@@ -237,7 +239,29 @@ def render(*, run_id: str | None = None) -> None:
                     for answer in conversation["answers"]:
                         ui.label(answer["question"]).classes("font-medium")
                         ui.label(answer["text"])
-            if conversation.get("waiting"):
+            if result.get("continuation_recovery", {}).get("available"):
+                stage(1)
+                heading.text = "Continue building your query"
+                subtitle.text = ("Your request and answers are saved. "
+                                 "The agent will read relevant sources as needed.")
+                status.text = "Ready to resume from your saved interpretation."
+                state["remaining"] = result["budget"]["remaining_usd"]
+                show_progress({"budget": result["budget"]})
+                with dialogue, ui.column().classes("c360-card"):
+                    ui.label("Your progress is saved").classes("c360-card-title")
+                    ui.label("The previous attempt stopped because its source context was too "
+                             "large. This version reads sources on demand and reuses the "
+                             "completed interpretation.").classes("c360-detail-note")
+                    with ui.expansion("How the agent understood your request"):
+                        ui.label(result.get("interpretation", "")).classes(
+                            "text-sm leading-relaxed")
+                    ui.label(f"Continue within your remaining "
+                             f"${state['remaining']:.2f} USD budget.").classes("c360-detail-note")
+                    resume_button = ui.button("Continue from saved progress", icon="arrow_forward",
+                                              on_click=lambda: launch([])).props(
+                                                  "unelevated no-caps")
+                    state["continue_controls"].append(resume_button)
+            elif conversation.get("waiting"):
                 stage(1)
                 heading.text = "Let's clarify your request"
                 subtitle.text = ("Answer the questions below. The agent will use your choices "
@@ -298,6 +322,7 @@ def render(*, run_id: str | None = None) -> None:
                         state["continue_controls"].append(retry)
             output.clear()
             if ("execution_status" in result
+                    and not result.get("continuation_recovery", {}).get("available")
                     and (result.get("packages") or not conversation.get("waiting"))):
                 from .case360_result import render_result
 
