@@ -309,7 +309,9 @@ def render(*, run_id: str | None = None) -> None:
             elif "execution_status" in result:
                 stage(2 if result.get("packages") else 1)
                 validations = result.get("validations", [])
-                compiled = bool(validations and validations[-1].get("objective", {}).get("dry", {}).get("valid"))
+                compiled = bool(
+                    validations and validations[-1].get("objective", {}).get("dry", {}).get("valid")
+                )
                 if result["execution_status"] != "COMPLETED":
                     status.text = "Analysis stopped. Your request and saved work are preserved."
                 elif result.get("packages") and compiled:
