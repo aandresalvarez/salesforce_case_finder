@@ -308,8 +308,14 @@ def render(*, run_id: str | None = None) -> None:
                         state["continue_controls"].append(next_button)
             elif "execution_status" in result:
                 stage(2 if result.get("packages") else 1)
-                status.text = ("SQL is ready for your review." if result.get("packages")
-                               else "The analysis could not complete the SQL. Review the result.")
+                validations = result.get("validations", [])
+                compiled = bool(validations and validations[-1].get("objective", {}).get("dry", {}).get("valid"))
+                if result["execution_status"] != "COMPLETED":
+                    status.text = "Analysis stopped. Your request and saved work are preserved."
+                elif result.get("packages") and compiled:
+                    status.text = "SQL passed compilation and is ready for your review."
+                else:
+                    status.text = "SQL still needs corrections. Review the checks below."
             else:
                 status.text = "Request saved; analysis has not started yet."
                 state["pending"] = view

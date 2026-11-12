@@ -63,6 +63,8 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
                 return {"resources": {}, "source_evidence": {"sources": []}}
             return {"conversation": conversation, "execution_status": "COMPLETED",
                     "quality_status": "HOLD", "interpretation": "I need a date.",
+                    "contract": {"requirements": []},
+                    "validations": [{"objective": {"dry": {"valid": True}}}],
                     "questions": [{"id": "intake-year", "text": "Which year?"}],
                     "budget": {"cap_usd": 50, "charged_or_reserved_usd": 1,
                                "remaining_usd": 49, "uncertain_reservation_usd": 0},
@@ -92,7 +94,7 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
             {"text": "", "previous_run_id": "run-1",
              "answers": [{"question_id": "intake-year", "text": "2024"}]}]
         assert [p["cap_usd"] for m, p, _ in client.calls if m == "authorize_run"] == [50, 49]
-        assert "SQL is ready" in tree.text
+        assert "SQL passed compilation" in tree.text
         assert "SELECT 2024 AS requested_year" in tree.text
 
     asyncio.run(check())
