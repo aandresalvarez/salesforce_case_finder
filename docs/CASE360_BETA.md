@@ -44,6 +44,20 @@ The packaged command below runs only local diagnostics:
 
 ## Review a request
 
+The conversation has three visible stages: Describe, Clarify and Review SQL.
+Saved request text and numbered clarification fields occupy the main column;
+status, remaining budget, observed activity and expandable source candidates
+stay alongside it. Configuration remains in Beta settings. Busy controls are
+disabled, and connection, authorization and agent startup have separate status
+messages.
+
+If an older beta rejected a verified intake because questions arrived as text
+instead of structured objects, the repaired engine can recover those questions
+from the saved response without another model call. The screen identifies this
+recovery. Original execution records and spending remain unchanged; answering
+the questions creates a continuation bound to the saved questions and remaining
+budget. Unverifiable or incomplete saved responses are not recovered.
+
 Write a request in the single **Your request** text field and press **Analyze request**. Free text does not need one requirement per line. Settings, source
 locations and budgets stay in **Beta settings**. The app does not assume SHC or LPCH
 when the request leaves the site unclear.

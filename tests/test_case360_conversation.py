@@ -199,3 +199,73 @@ def test_reopening_draft_preserves_literal_text_without_starting_analysis(render
         assert calls == ['get_run']
 
     asyncio.run(check())
+
+
+def test_recovered_questions_take_priority_over_failed_sql_panel(render, monkeypatch):
+    timers = []
+    text = 'Synthetic request, preserved.  \n'
+    calls = []
+
+    class Client:
+        async def request(self, method, **kwargs):
+            calls.append(method)
+            return {'execution_status': 'FAILED', 'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'execution_status': 'FAILED', 'conversation': {'waiting': True,
+                    'original_text': text}, 'clarification_recovery': {'additional_model_calls': 0},
+                    'questions': [{'id': 'q1', 'text': 'Which year?'}],
+                    'budget': {'charged_or_reserved_usd': .1715, 'remaining_usd': 49.8285},
+                    'interpretation': 'The year needs clarification.', 'packages': []}
+
+    monkeypatch.setattr(flow.session, 'client', Client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow.ui, 'timer', lambda interval, callback, **kw: timers.append(callback))
+    tree = render(lambda: flow.render(run_id='saved-request'))
+
+    async def check():
+        with tree.client:
+            await timers[0]()
+        assert tree.of_type('Textarea')[0].value == text
+        assert 'Which year?' in tree.text
+        assert 'No new model call was needed' in tree.text
+        assert 'Continue with my answers' in tree.button_labels()
+        assert '$49.83' in tree.text
+        assert not tree.of_type('Tabs')
+        assert calls == ['get_run']
+
+    asyncio.run(check())
+
+
+def test_continue_disables_duplicate_click_while_connection_is_pending(render, monkeypatch):
+    timers = []
+    calls = []
+
+    class Client:
+        async def request(self, method, params=None, **kwargs):
+            calls.append(method)
+            if method == 'probe_run':
+                await asyncio.Event().wait()
+            return {'run_id': 'saved', 'execution_status': 'READY', 'authorized': False,
+                    'contract_sha256': 'a' * 64, 'artifact': {'artifact_id': 'result'}}
+
+        async def artifact(self, *args):
+            return {'conversation': {'original_text': 'Synthetic', 'remaining_cap_usd': 50}}
+
+    monkeypatch.setattr(flow.session, 'client', Client)
+    monkeypatch.setattr(flow, 'configured_cap', lambda: 50)
+    monkeypatch.setattr(flow.ui, 'timer', lambda interval, callback, **kw: timers.append(callback))
+    tree = render(lambda: flow.render(run_id='saved'))
+
+    async def check():
+        monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
+        with tree.client:
+            await timers[0]()
+            button = next(b for b in tree.buttons() if b.text == 'Continue this request')
+            tree.press(button)
+            await asyncio.sleep(0)
+            assert not button.enabled
+            assert 'Checking your connection' in tree.text
+        assert calls.count('probe_run') == 1
+
+    asyncio.run(check())

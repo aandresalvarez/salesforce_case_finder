@@ -9,6 +9,7 @@ from nicegui import ui
 
 from ..case360 import preferences, session
 from ..case360.runtime import discover
+from . import case360_style  # noqa: F401  # Register before the page head is sent.
 from .case360_details import render_json
 
 ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
@@ -76,6 +77,18 @@ def progress_text(item: dict) -> str:
 
 def render_sources(preparation: dict) -> None:
     evidence = preparation.get("source_evidence") or {}
+    if isinstance(evidence, list):
+        for observation in evidence:
+            if observation.get("tool") == "source_map_lookup":
+                for part in observation.get("result", {}).get("content", []):
+                    if part.get("type") == "text":
+                        try:
+                            evidence = json.loads(part["text"])
+                        except (ValueError, KeyError):
+                            continue
+                        break
+                if isinstance(evidence, dict):
+                    break
     if not isinstance(evidence, dict):
         return
     names = []
@@ -85,11 +98,11 @@ def render_sources(preparation: dict) -> None:
         names.append("Epic · " + str(row.get("table_name", "Document")))
     for row in evidence.get("repository_documents", []):
         names.append("STARR · " + str(row.get("path", row.get("id", "Definition"))))
-    with ui.expansion(f"Sources found · {len(names)}", value=bool(names)).classes("w-full"):
+    with ui.expansion(f"Source candidates · {len(names)}", value=False).classes("w-full"):
         ui.label("Evidence from the imported snapshot. Availability and meaning "
-                 "are checked during analysis.").classes("text-sm text-slate-500")
+                 "are checked during analysis.").classes("c360-detail-note")
         for name in names[:12]:
-            ui.label(name).classes("text-sm break-all")
+            ui.label(name).classes("c360-source-name")
         if not names:
             ui.label("The initial search found no candidates; "
                      "the agent may broaden its search.")
@@ -100,27 +113,58 @@ def render_sources(preparation: dict) -> None:
 
 def render(*, run_id: str | None = None) -> None:
     state: dict = {"run_id": run_id, "busy": False, "last_seq": 0, "remaining": None,
-                   "pending": None, "consent_cap": None}
-    with ui.column().classes("w-full").style("max-width:900px;margin:0 auto;gap:20px"):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Case 360 Beta").style("font-size:20px;font-weight:650")
-            with ui.row().classes("gap-4"):
+                   "pending": None, "consent_cap": None, "continue_controls": []}
+    with ui.column().classes("c360"):
+        with ui.row().classes("c360-top"):
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Case 360").classes("c360-brand")
+                ui.label("BETA").classes("c360-beta")
+            with ui.row().classes("c360-links"):
                 ui.link("History and clean data", "/case360/history")
                 ui.link("Beta settings", "/case360/settings")
-        ui.label("What data do you need?").style("font-size:32px;font-weight:600;margin-top:32px")
-        ui.label("Describe your request in your own words. The agent will consult sources and "
-                 "ask for any clarification needed before building the SQL.").classes(
-                     "text-slate-600")
-        request = ui.textarea("Your request", placeholder="Describe the population, the data "
-                              "you need, and any conditions you already know.").props(
-                                  "outlined autogrow").classes("w-full")
-        status = ui.label("").classes("text-slate-600")
-        consent = ui.label("").classes("text-sm text-slate-500")
-        actions = ui.row().classes("items-center gap-3")
-        activity = ui.column().classes("w-full").style("gap:8px")
-        sources = ui.column().classes("w-full")
-        dialogue = ui.column().classes("w-full")
-        output = ui.column().classes("w-full")
+        heading = ui.label("What data do you need?").classes("c360-heading")
+        subtitle = ui.label("Describe your request in your own words. The agent will consult "
+                            "sources and ask for any clarification needed before building "
+                            "the SQL.").classes("c360-subtitle")
+        steps = []
+        with ui.element("div").classes("c360-steps"):
+            for index, title in enumerate(("Describe", "Clarify", "Review SQL"), 1):
+                with ui.element("div").classes("c360-step") as step:
+                    ui.label(str(index)).classes("c360-step-number")
+                    ui.label(title)
+                steps.append(step)
+        with ui.element("div").classes("c360-grid"):
+            with ui.column().classes("c360-main"):
+                with ui.column().classes("c360-card"):
+                    ui.label("YOUR REQUEST").classes("c360-eyebrow")
+                    request = ui.textarea("Your request", placeholder="Describe the population, "
+                        "the data you need, and any conditions you already know.").props(
+                            "outlined autogrow").classes("w-full")
+                    saved_text = ui.label("").classes("text-sm whitespace-pre-wrap leading-relaxed")
+                    saved_text.set_visibility(False)
+                    actions = ui.row().classes("c360-actions")
+                dialogue = ui.column().classes("c360-dialogue")
+                output = ui.column().classes("c360-output")
+            with ui.column().classes("c360-side"):
+                with ui.column().classes("c360-card"):
+                    ui.label("REQUEST STATUS").classes("c360-eyebrow")
+                    with ui.row().classes("c360-status-row"):
+                        spinner = ui.spinner(size="18px")
+                        spinner.set_visibility(False)
+                        status = ui.label("Ready when you are.").classes("c360-status").props(
+                            'role=status aria-live=polite')
+                    consent = ui.label("").classes("c360-budget")
+                activity = ui.column().classes("w-full").style("gap:8px")
+                with ui.column().classes("c360-card"):
+                    ui.label("SOURCES & EVIDENCE").classes("c360-eyebrow")
+                    ui.label("Candidates are checked during analysis.").classes("c360-detail-note")
+                    sources = ui.column().classes("w-full")
+
+        def stage(index: int) -> None:
+            for number, step in enumerate(steps):
+                step.classes(add="c360-step-active" if number == index else "",
+                             remove="c360-step-active" if number != index else "")
+        stage(0)
 
         def show_failure(error: Exception) -> None:
             code = getattr(error, "code", None)
@@ -144,8 +188,16 @@ def render(*, run_id: str | None = None) -> None:
             state["busy"] = value
             request.set_enabled(not value and state["run_id"] is None)
             submit.set_enabled(not value and state["run_id"] is None)
+            submit.set_visibility(state["run_id"] is None)
+            request.set_visibility(state["run_id"] is None)
+            saved_text.text = request.value or ""
+            saved_text.set_visibility(state["run_id"] is not None)
             new.set_enabled(not value)
             cancel.set_visibility(value and state["run_id"] is not None)
+            spinner.set_visibility(value)
+            for control in state["continue_controls"]:
+                if not control.is_deleted:
+                    control.set_enabled(not value)
 
         def show_progress(view: dict) -> None:
             items = view.get("progress", [])
@@ -153,9 +205,10 @@ def render(*, run_id: str | None = None) -> None:
                 state["last_seq"] = items[-1]["seq"]
                 activity.clear()
                 with activity:
-                    ui.label("Agent activity").classes("font-medium")
-                    for item in items[-6:]:
-                        ui.label(progress_text(item)).classes("text-sm break-all")
+                    ui.label("AGENT ACTIVITY").classes("c360-eyebrow")
+                    recent = list(dict.fromkeys(progress_text(item) for item in items[-6:]))
+                    for text in recent[-3:]:
+                        ui.label(text).classes("c360-activity-item")
                     with ui.expansion("View recorded activity").classes("w-full"):
                         for item in items:
                             ui.label(progress_text(item)).classes("text-sm break-all")
@@ -185,18 +238,32 @@ def render(*, run_id: str | None = None) -> None:
                         ui.label(answer["question"]).classes("font-medium")
                         ui.label(answer["text"])
             if conversation.get("waiting"):
+                stage(1)
+                heading.text = "Let's clarify your request"
+                subtitle.text = ("Answer the questions below. The agent will use your choices "
+                                 "to find the right sources and build the SQL.")
                 status.text = "Please clarify the following before the agent continues."
                 state["remaining"] = result["budget"]["remaining_usd"]
-                with dialogue:
+                show_progress({"budget": result["budget"]})
+                with dialogue, ui.column().classes("c360-card"):
+                    count = len(result.get("questions", [])[:12])
+                    ui.label("A few details before we build your SQL").classes("c360-card-title")
+                    ui.label(f"{count} questions · Your answers stay with this request.").classes(
+                        "c360-detail-note")
+                    if result.get("clarification_recovery"):
+                        ui.label("Your questions were recovered from the saved model response. "
+                                 "No new model call was needed.").classes("c360-note")
                     if result.get("interpretation"):
-                        ui.label(result["interpretation"]).classes("text-slate-700")
+                        with ui.expansion("How the agent understood your request"):
+                            ui.label(result["interpretation"]).classes("text-sm leading-relaxed")
                     answers = {}
-                    for question in result.get("questions", [])[:12]:
-                        ui.label(question["text"]).classes("font-medium")
-                        answers[question["id"]] = ui.textarea("Your answer").props(
-                            "outlined autogrow maxlength=900").classes("w-full")
-                    ui.label(f"Continuing uses the remaining budget: up to "
-                             f"${state['remaining']:.2f} USD.").classes("text-sm text-slate-500")
+                    for index, question in enumerate(result.get("questions", [])[:12], 1):
+                        with ui.column().classes("c360-question"):
+                            ui.label(f"QUESTION {index} OF {count}").classes("c360-question-count")
+                            ui.label(question["text"]).classes("c360-question-title")
+                            answers[question["id"]] = ui.textarea(f"Answer {index}",
+                                placeholder="Type your answer, or say what is unclear.").props(
+                                "outlined autogrow maxlength=900").classes("w-full")
 
                     async def answer() -> None:
                         if any(not (field.value or "").strip() for field in answers.values()):
@@ -208,8 +275,15 @@ def render(*, run_id: str | None = None) -> None:
                         if not state["busy"]:
                             next_button.enable()
 
-                    next_button = ui.button("Continue with my answers", on_click=answer)
+                    with ui.column().classes("c360-continue"):
+                        ui.label(f"Continue within your remaining "
+                                 f"${state['remaining']:.2f} USD budget.").classes(
+                                     "c360-detail-note")
+                        next_button = ui.button("Continue with my answers", icon="arrow_forward",
+                                                on_click=answer).props("unelevated no-caps")
+                        state["continue_controls"].append(next_button)
             elif "execution_status" in result:
+                stage(2 if result.get("packages") else 1)
                 status.text = ("SQL is ready for your review." if result.get("packages")
                                else "The analysis could not complete the SQL. Review the result.")
             else:
@@ -217,10 +291,11 @@ def render(*, run_id: str | None = None) -> None:
                 state["pending"] = view
                 state["remaining"] = conversation.get("remaining_cap_usd")
                 if not view.get("authorized"):
-                    with dialogue:
+                    with dialogue, ui.column().classes("c360-card"):
                         retry = ui.button("Continue this request",
                                           on_click=lambda: retry_pending())
                         retry.props("no-caps")
+                        state["continue_controls"].append(retry)
             output.clear()
             if ("execution_status" in result
                     and (result.get("packages") or not conversation.get("waiting"))):
@@ -273,12 +348,15 @@ def render(*, run_id: str | None = None) -> None:
             state["step"] = "connection"
             proof = await c.request("probe_run", run_id=state["run_id"])
             state["step"] = "authorization"
+            status.text = "Connection verified. Preparing the analysis…"
             await c.request("authorize_run", {
                 "contract_sha256": prepared["contract_sha256"],
                 "preflight_sha256": proof["sha256"], "cap_usd": min(cap, proof["max_paid_usd"])},
                 run_id=state["run_id"])
             state["pending"] = None
             state["step"] = "start"
+            status.text = "Starting the agent…"
+            dialogue.clear()
             view = await c.request("start_run", run_id=state["run_id"],
                                    request_id="start-" + state["run_id"])
             await inspect(view)
@@ -310,6 +388,10 @@ def render(*, run_id: str | None = None) -> None:
             for panel in (activity, sources, dialogue, output):
                 panel.clear()
             status.text = ""
+            heading.text = "What data do you need?"
+            subtitle.text = ("Describe your request in your own words. The agent will consult "
+                             "sources and ask for clarification before building the SQL.")
+            stage(0)
             busy(False)
             show_cap()
 
@@ -344,10 +426,9 @@ def render(*, run_id: str | None = None) -> None:
                 conversation = result.get("conversation", {})
                 state["spent_before"] = conversation.get("spent_before_usd", 0)
                 request.value = conversation.get("original_text", "")
-                if "execution_status" not in result:
-                    sources.clear()
-                    with sources:
-                        render_sources(result)
+                sources.clear()
+                with sources:
+                    render_sources(result)
                 await inspect(view)
             except ERRORS as error:
                 status.text = "Could not open the saved request: " + str(error)
