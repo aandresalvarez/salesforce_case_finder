@@ -124,8 +124,10 @@ def render_result(result: dict, run_id: str | None = None, reference: dict | Non
                 ui.label("No source evidence recorded.")
         with ui.tab_panel("SQL"):
             ui.label("Draft SQL. Export for review; execution is not offered here.")
-            for package in result.get("packages", []):
-                with ui.expansion(f"Package {package.get('version', '')}", value=True):
+            for index, package in enumerate(reversed(result.get("packages", []))):
+                label = "Current SQL" if index == 0 else "Previous SQL"
+                with ui.expansion(f"{label} · version {package.get('version', '')}",
+                                  value=index == 0):
                     ui.label("Package SHA256: " + str(package.get("package_sha256", "Unavailable")))
                     cohort = package.get("package", {}).get("cohort", {}).get("sql")
                     if cohort:
