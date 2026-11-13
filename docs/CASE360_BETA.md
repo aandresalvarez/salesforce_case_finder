@@ -4,6 +4,11 @@ The beta runs the existing private engine as a separate local process. It does
 not execute generated clinical SQL. Execution status and quality status are
 separate: a completed run can remain HOLD and require human review.
 
+Case Finder remains the application: Search is the home page, and Lists, Ask
+(when enabled), SQL and Settings keep their original routes and behavior.
+**Case 360 Beta** is an additional navigation option. All interface controls are
+in English; requests and analyst answers are preserved as entered.
+
 ## Install and configure
 
 Use the macOS Apple Silicon app supplied through the private delivery channel.
@@ -12,7 +17,7 @@ locked dependencies are included. The stable Case Finder installation and its
 preferences are separate. This local candidate has ad-hoc signatures; it is not
 Developer ID signed or notarized. Windows acceptance is deferred.
 
-Open **Analyst and installation settings**. Enter an analyst label and an
+Open **Case 360 Beta**, then **Beta settings**, then **Analyst and installation settings**. Enter an analyst label and an
 environment label, then save. These are editable settings, not compiled names.
 The packaged runtime is selected automatically; an explicit configuration file
 can select another prepared runtime. **Check local installation** makes no
@@ -25,7 +30,8 @@ Imported snapshots record provenance and integrity, not freshness or confirmed
 meaning. Set the snapshot, expected account, verified route proof and maximum
 budget. Zero disables live operation. Existing local Google credentials are
 used; the analyst profile stores no credentials. Each live request still needs
-a confirmed contract, a remote connection check and explicit budget approval.
+explicit approval through **Analyze request**. The maximum appears beside
+that action; the app binds the request and checks the connection automatically.
 Saved snapshot locations, account and budget policy are restored when the
 settings page is reopened. Editing the display labels does not change Google
 credentials.
@@ -38,10 +44,39 @@ The packaged command below runs only local diagnostics:
 
 ## Review a request
 
-Enter the original requirements and requested centers. Optional fields capture
-the objective, period, cohort, exclusions, deliverables, sources and pending
-decisions. Review the exact contract before confirming it. Editing starts a new
-revision and invalidates the previous confirmation.
+The conversation has three visible stages: Describe, Clarify and Review SQL.
+Saved request text and numbered clarification fields occupy the main column;
+status, remaining budget, observed activity and expandable source candidates
+stay alongside it. Configuration remains in Beta settings. Busy controls are
+disabled, and connection, authorization and agent startup have separate status
+messages.
+
+If an older beta rejected a verified intake because questions arrived as text
+instead of structured objects, the repaired engine can recover those questions
+from the saved response without another model call. The screen identifies this
+recovery. Original execution records and spending remain unchanged; answering
+the questions creates a continuation bound to the saved questions and remaining
+budget. Unverifiable or incomplete saved responses are not recovered.
+
+Write a request in the single **Your request** text field and press **Analyze request**. Free text does not need one requirement per line. Settings, source
+locations and budgets stay in **Beta settings**. The app does not assume SHC or LPCH
+when the request leaves the site unclear.
+
+The agent receives relevant imported evidence before interpreting the request.
+The activity panel reports actual source lookups, metadata checks, generation
+and review. It does not expose private model reasoning or simulate progress.
+Candidate sources and their complete evidence are available for inspection.
+
+If the agent identifies material ambiguity, SQL generation pauses. Answer the
+questions and press **Continue with my answers**. Each revision preserves
+the original request, literal questions and answers, and searches with the
+updated scope. Earlier model charges count against the same request budget;
+continuing cannot create a second authorization for the same remaining funds.
+No new model request is sent merely by reopening a conversation.
+
+The SQL tab opens when a draft is available. The result remains experimental
+and requires human review. **New request** starts a separate conversation;
+**History and clean data** opens saved work, recovery and confirmed cleaning.
 
 Results separate the requirement/field/center matrix, evidence, draft SQL,
 compilation checks, semantic checks, independent review, pending decisions and
@@ -60,7 +95,7 @@ included by default.
 
 ## History, cleaning and versions
 
-History, recovery and **Limpiar datos** are described in [P3](CASE360_P3.md).
+History, recovery and **Clean data** are described in [P3](CASE360_P3.md).
 Cleaning a request also removes its local feedback and generated export
 artifacts. Copies downloaded elsewhere must be deleted separately. Pilot
 assessments have their own confirmed **Clear saved pilot assessments** action.
@@ -81,3 +116,16 @@ assessment with reasons for DEMO_ONLY, BLOCKED or LIMITED_PILOT. This is a human
 report; it does not independently establish the identity or participation of a
 second analyst. Live runs remain optional and separately authorized. Synthetic
 passes do not establish clinical quality or generalization.
+
+If admission fails, the request remains saved. **Retry and continue** is offered
+for connection failures and can start the analysis after reconnection. An internal
+package failure instead directs you to repair or update the beta. Opening a saved
+draft does not start it; **Continue this request** is the explicit next action.
+
+The private engine now supports source reading on demand for the SQL author.
+The original request and analyst answers stay visible, while source lookups appear
+in agent activity. For a verified saved interpretation whose next evidence request
+was blocked by context size, **Continue from saved progress** reuses that
+interpretation and the remaining budget. Opening the page makes no new model call.
+The original failure remains in history; recovery does not mark SQL as generated
+or reviewed. This update retains the original Case Finder navigation and English UI.

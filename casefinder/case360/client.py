@@ -102,7 +102,9 @@ class Client:
                     "RUNTIME_UNAVAILABLE", "The local controller has stopped."
                 ) from None
         try:
-            return await asyncio.wait_for(future, timeout=30)
+            return await asyncio.wait_for(
+                future, timeout=150 if method in {"prepare_request", "prepare_conversation"} else 30
+            )
         finally:
             self._pending.pop(request_id, None)
 

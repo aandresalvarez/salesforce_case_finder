@@ -15,8 +15,6 @@ from pathlib import Path
 APP_NAME = "Case Finder"
 VERSION = "2.1.4"
 PRIVATE_BETA = os.environ.get("CASE360_CHANNEL") == "private-beta"
-if PRIVATE_BETA:
-    APP_NAME = "Case 360 Beta"
 
 
 def _flag(name: str, default: bool) -> bool:
