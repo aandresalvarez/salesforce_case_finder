@@ -270,6 +270,83 @@ def test_researcher_export_projects_only_public_wording():
     assert "Private" not in result
 
 
+def suggested_client():
+    client = IntakeClient(analyzed=True)
+    client.state["questions"][0]["suggestions"] = [{
+        "answer": "At the first qualifying visit.",
+        "rationale": "This keeps one consistent index event per participant.",
+        "analyst_rationale": "Verify pat_enc.contact_date against the live schema.",
+        "basis": "inference", "recommended": True,
+        "source_refs": [{"source_id": "REQUEST", "locator": "request",
+                         "quote": "Synthetic study request."}],
+    }]
+    return client
+
+
+def test_suggestion_is_optional_editable_shared_and_never_applied_on_render(render, monkeypatch):
+    client = suggested_client()
+    client.state["questions"][0]["answer"] = "My unfinished answer"
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            assert "Recommended answer" in tree.text
+            assert "AI inference — requires your decision" in tree.text
+            assert "pat_enc" not in tree.text
+            assert client.state["questions"][0]["answer"] == "My unfinished answer"
+            assert client.state["questions"][0]["status"] == "pending"
+            assert not any(m == "intake_update" for m, _ in client.calls)
+            press(tree, "Use this answer")
+            await asyncio.sleep(0)
+            assert client.state["questions"][0]["answer"] == "At the first qualifying visit."
+            assert client.state["questions"][0]["status"] == "answered"
+            field = next(f for f in tree.of_type("Textarea") if f._props["label"] == "Your answer")
+            field.value = "At the first qualifying visit after enrollment."
+            await asyncio.sleep(0)
+            tree.of_type("Toggle")[0].value = "Analyst"
+            await asyncio.sleep(0)
+            assert "pat_enc.contact_date" in tree.text
+            assert client.state["questions"][0]["answer"].endswith("after enrollment.")
+        assert not any(
+            m in {"prepare_intake", "authorize_run", "start_run"} for m, _ in client.calls
+        )
+
+    asyncio.run(check())
+
+
+def test_stale_suggestions_cannot_replace_an_answer(render, monkeypatch):
+    client = suggested_client()
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            client.state["analysis_stale"] = True
+            # Exercise the real stale-state path after a normal source-changing action.
+            tree.of_type("Textarea")[0].value = "Changed study request"
+            await asyncio.sleep(0)
+            press(tree, "Use this answer")
+            await asyncio.sleep(0)
+        assert client.state["questions"][0]["answer"] == ""
+        assert "Update scope analysis" in tree.text
+
+    asyncio.run(check())
+
+
+def test_export_includes_plain_suggestions_without_analyst_details_or_saved_answers():
+    client = suggested_client()
+    client.state["questions"][0]["answer"] = "Private answer"
+    exported = researcher_export(client.state)
+    assert "At the first qualifying visit." in exported
+    assert "AI inference" in exported
+    assert "pat_enc" not in exported and "Private answer" not in exported
+    client.state["analysis_stale"] = True
+    assert "At the first qualifying visit." not in researcher_export(client.state)
+
+
 def test_retry_after_authorization_does_not_authorize_again(render, monkeypatch):
     client = IntakeClient(prepared=True)
     client.fail_start = True

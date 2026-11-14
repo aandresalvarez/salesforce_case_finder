@@ -33,10 +33,35 @@ def researcher_text(question: dict) -> str:
     return value
 
 
+def question_suggestions(question: dict) -> list[dict]:
+    """Project only plain-language advice; technical detail stays in the analyst view."""
+    supplied = question.get("suggestions")
+    if not isinstance(supplied, list):
+        return []
+    return [
+        s for s in supplied[:3]
+        if isinstance(s, dict)
+        and s.get("basis") in {"documented", "inference"}
+        and all(
+            isinstance(s.get(key), str) and s[key].strip()
+            and researcher_text({"researcher_text": s[key]}) == s[key]
+            for key in ["answer", "rationale"]
+        )
+    ]
+
+
 def researcher_export(state: dict) -> str:
-    return "\n\n".join(
-        f"{i}. {researcher_text(q)}" for i, q in enumerate(state.get("questions", []), 1)
-    )
+    blocks = []
+    for i, q in enumerate(state.get("questions", []), 1):
+        lines = [f"{i}. {researcher_text(q)}"]
+        if not state.get("analysis_stale"):
+            for s in question_suggestions(q):
+                label = "AI inference" if s["basis"] == "inference" else "Source-based suggestion"
+                lines.extend(
+                    [f"Suggested answer ({label}): {s['answer']}", f"Why: {s['rationale']}"]
+                )
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 class IntakeSession:

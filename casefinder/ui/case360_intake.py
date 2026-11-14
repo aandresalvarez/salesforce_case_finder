@@ -9,7 +9,13 @@ from pathlib import Path
 from nicegui import ui
 
 from ..case360 import session
-from ..case360.intake import SCOPE_LABELS, IntakeSession, researcher_export, researcher_text
+from ..case360.intake import (
+    SCOPE_LABELS,
+    IntakeSession,
+    question_suggestions,
+    researcher_export,
+    researcher_text,
+)
 from . import case360_style  # noqa: F401
 from .case360_conversation import (
     ERRORS,
@@ -385,13 +391,14 @@ def render(*, run_id: str | None = None) -> None:
                             ui.label(
                                 "Required decision" if q.get("blocking") else "Optional detail"
                             ).classes("text-xs")
-                            ui.label(q.get("status", "pending").replace("_", " ").title()).classes(
-                                "text-xs"
-                            )
+                            answer_status = ui.label(
+                                q.get("status", "pending").replace("_", " ").title()
+                            ).classes("text-xs")
+                            advice_panel = ui.column().classes("w-full gap-2")
 
-                            async def answer(event, question=q) -> None:
+                            async def answer(event, question=q, badge=answer_status) -> None:
                                 value = event.value or ""
-                                await mutate(
+                                if await mutate(
                                     "answer",
                                     {
                                         "question_id": question["id"],
@@ -399,7 +406,8 @@ def render(*, run_id: str | None = None) -> None:
                                         "status": "answered" if value.strip() else "pending",
                                     },
                                     refresh=False,
-                                )
+                                ):
+                                    badge.text = "Answered" if value.strip() else "Pending"
 
                             field = (
                                 ui.textarea(
@@ -408,6 +416,85 @@ def render(*, run_id: str | None = None) -> None:
                                 .props("outlined autogrow maxlength=900 debounce=500")
                                 .classes("w-full")
                             )
+
+                            with advice_panel:
+                                if state.get("analysis_stale"):
+                                    ui.label(
+                                        "Update scope analysis to get suggestions for your changes."
+                                    ).classes("c360-detail-note")
+                                elif "suggestions" not in q:
+                                    ui.label(
+                                        "Update scope analysis to get informed answer suggestions."
+                                    ).classes("c360-detail-note")
+                                elif not question_suggestions(q):
+                                    ui.label(
+                                        q.get("suggestion_unavailable_reason")
+                                        or "Not enough source support to suggest an answer."
+                                    ).classes("c360-detail-note")
+                                else:
+                                    for suggestion in question_suggestions(q):
+                                        with ui.column().classes(
+                                            "w-full rounded-lg border bg-blue-50 p-3 gap-2"
+                                        ):
+                                            label = (
+                                                "Recommended answer"
+                                                if suggestion.get("recommended")
+                                                else "Alternative answer"
+                                            )
+                                            ui.label(label).classes("font-medium text-blue-900")
+                                            ui.label(suggestion["answer"]).classes("text-sm")
+                                            ui.label(
+                                                "AI inference — requires your decision"
+                                                if suggestion["basis"] == "inference"
+                                                else "Source-based suggestion — confirm it applies"
+                                            ).classes("text-xs text-blue-900")
+                                            rationale = (
+                                                suggestion.get("analyst_rationale")
+                                                if model["audience"] == "Analyst"
+                                                else suggestion["rationale"]
+                                            )
+                                            ui.label(rationale or suggestion["rationale"]).classes(
+                                                "text-sm"
+                                            )
+                                            with ui.expansion("Supporting evidence").classes(
+                                                "w-full"
+                                            ):
+                                                for ref in suggestion.get("source_refs", []):
+                                                    name = next(
+                                                        (
+                                                            s["name"] for s in state["sources"]
+                                                            if s["id"] == ref["source_id"]
+                                                        ),
+                                                        "Your request",
+                                                    )
+                                                    ui.label(
+                                                        f"{name} · {ref['locator']}"
+                                                    ).classes("text-xs font-medium")
+                                                    ui.label(ref["quote"]).classes(
+                                                        "text-sm whitespace-pre-wrap"
+                                                    )
+
+                                            def use_suggestion(
+                                                text=suggestion["answer"], answer_field=field
+                                            ) -> None:
+                                                if model["busy"]:
+                                                    return
+                                                if controller().state.get("analysis_stale"):
+                                                    status.text = (
+                                                        "Your inputs changed. "
+                                                        "Update scope analysis before "
+                                                        "using a suggestion."
+                                                    )
+                                                    return
+                                                answer_field.value = text
+
+                                            ui.button(
+                                                "Use this answer", on_click=use_suggestion
+                                            ).props("outline no-caps")
+                                    ui.label(
+                                        "Choose a suggestion or write your own answer below. "
+                                        "You can edit any suggested answer."
+                                    ).classes("c360-detail-note")
 
                             async def not_applicable(question=q, answer_field=field) -> None:
                                 await mutate(
