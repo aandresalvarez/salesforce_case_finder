@@ -103,7 +103,10 @@ class Client:
                 ) from None
         try:
             return await asyncio.wait_for(
-                future, timeout=150 if method in {"prepare_request", "prepare_conversation"} else 30
+                future, timeout=150 if method in {
+                    "prepare_request", "prepare_conversation",
+                    "prepare_intake", "intake_upload_finish"
+                } else 30
             )
         finally:
             self._pending.pop(request_id, None)

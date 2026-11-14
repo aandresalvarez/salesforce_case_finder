@@ -19,6 +19,7 @@ CONNECTION_ERRORS = {
 }
 PHASES = {
     "INTAKE": "Interpreting your request",
+    "INTAKE_SOURCES": "Reading your documents and meeting notes",
     "AUTHOR_EVIDENCE": "Finding sources and checking columns",
     "AUTHOR_GENERATION": "Building the SQL",
     "TARGETED_SOURCE_RESOLUTION": "Checking unresolved sources",
@@ -64,6 +65,8 @@ def progress_text(item: dict) -> str:
     if kind == "stage":
         return PHASES.get(item.get("stage"), "Processing the request")
     if kind == "model":
+        if str(item.get("phase", "")).startswith("intake-source-lookup-"):
+            return "AI is reading your attachments and meeting notes"
         if str(item.get("phase", "")).startswith("author-lookup-"):
             return "Reading relevant sources and updating the query plan"
         return MODEL_PHASES.get(item.get("phase"), "Agent analysis and review")
