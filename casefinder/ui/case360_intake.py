@@ -373,6 +373,12 @@ def render(*, run_id: str | None = None) -> None:
             if state.get("questions"):
                 with ui.column().classes("c360-card"):
                     ui.label("Clarification questions").classes("c360-card-title")
+                    if state.get("suggestion_recovery") and not state.get("analysis_stale"):
+                        ui.label(
+                            "Suggestions recovered from the interrupted response. "
+                            "Your previous scope and document review are preserved. "
+                            "Choose or edit your answers below."
+                        ).classes("c360-detail-note")
 
                     def audience(event) -> None:
                         model["audience"] = event.value
@@ -695,10 +701,21 @@ def render(*, run_id: str | None = None) -> None:
             render_sources(result)
         output.clear()
         with output:
-            if result.get("packages") or result.get("execution_status") == "FAILED":
+            recovered = (
+                result.get("execution_status") == "FAILED"
+                and c.state.get("suggestion_recovery")
+                and not c.state.get("analysis_stale")
+            )
+            if recovered:
+                with ui.expansion("Interrupted attempt details").classes("w-full"):
+                    render_result(result, c.run_id, view["artifact"])
+            elif result.get("packages") or result.get("execution_status") == "FAILED":
                 render_result(result, c.run_id, view["artifact"])
         redraw()
         status.text = (
+            "Suggestions recovered. Answer the questions and confirm the scope to continue."
+            if recovered
+            else
             "Review the questions, proposed decisions and scope summary."
             if result.get("scope_confirmation_required")
             else "Analysis stopped. Saved sources and results remain available."

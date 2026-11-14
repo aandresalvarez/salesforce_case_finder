@@ -366,3 +366,43 @@ def test_retry_after_authorization_does_not_authorize_again(render, monkeypatch)
         assert tree.of_type("Textarea")[0].value == "Synthetic study request.  \n"
 
     asyncio.run(check())
+
+
+def test_recovered_advice_can_be_answered_and_continued_without_another_intake_analysis(
+    render, monkeypatch
+):
+    class RecoveredClient(IntakeClient):
+        async def artifact(self, run_id, reference):
+            value = await super().artifact(run_id, reference)
+            if reference['artifact_id'] != 'intake':
+                value.update(
+                    execution_status='FAILED', quality_status='HOLD',
+                    stop_reason='Error: terminated',
+                    contract={'requirements': []},
+                )
+            return value
+
+    client = RecoveredClient(analyzed=True)
+    client.state['questions'] = suggested_client().state['questions']
+    client.state['suggestion_recovery'] = {
+        'prior_scope_retained': True, 'recovered_suggestions': 1, 'additional_model_calls': 0,
+    }
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            assert 'Suggestions recovered.' in tree.text
+            assert 'Your previous scope and document review are preserved.' in tree.text
+            assert 'Interrupted attempt details' in tree.text
+            assert not any(m in {'prepare_intake', 'start_run'} for m, _ in client.calls)
+            press(tree, 'Use this answer')
+            await asyncio.sleep(0)
+            assert client.state['questions'][0]['status'] == 'answered'
+            press(tree, 'Confirm summary and build SQL')
+            await asyncio.sleep(0)
+        assert [p['action'] for m, p in client.calls if m == 'prepare_intake'] == ['build']
+        assert [p['cap_usd'] for m, p in client.calls if m == 'authorize_run'] == [49]
+
+    asyncio.run(check())
