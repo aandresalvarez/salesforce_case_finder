@@ -25,8 +25,11 @@ ERROR_TEXT = {
     "INTAKE_FROZEN": "This revision is ready to start. Retry to continue its saved inputs.",
     "UPLOAD_CAPACITY_REACHED": "This request has reached its attachment limit.",
     "INTAKE_REVISION_CHANGED": "This request changed in another view. Reopen it before editing.",
-    "SOURCE_REVIEW_REQUIRED": "Review or exclude each attachment before analysis.",
-    "TRANSCRIPTION_REQUIRED": "This source needs readable text or a transcription.",
+    "SOURCE_REVIEW_REQUIRED": "An attachment is unavailable. Open its source details.",
+    "TRANSCRIPTION_REQUIRED": (
+        "An attachment has no readable text. Open View source to add a transcription, "
+        "or exclude it and attach a readable copy."
+    ),
     "CLARIFICATION_ANSWERS_REQUIRED": "Answer the blocking questions before confirming the scope.",
     "DECISION_REVIEW_REQUIRED": "Accept or reject each proposed meeting decision first.",
     "SCOPE_UNAVAILABLE": "Analyze the updated sources before confirming the scope.",
@@ -58,8 +61,8 @@ def render(*, run_id: str | None = None) -> None:
                 ui.link("Beta settings", "/case360/settings")
         ui.label("What data do you need?").classes("c360-heading")
         ui.label(
-            "Describe the study, add source documents or meeting notes, and confirm the "
-            "scope before the agent builds SQL."
+            "Describe the study and add documents or meeting notes. The AI will read them, "
+            "ask for clarification, and propose the scope before building SQL."
         ).classes("c360-subtitle")
         ui.label("Describe  →  Clarify  →  Confirm scope  →  Review SQL").classes(
             "c360-detail-note"
@@ -158,7 +161,7 @@ def render(*, run_id: str | None = None) -> None:
                 else "document"
             )
             await controller().upload(event.name, data, text=request.value or "", kind=kind)
-            status.text = "Attachment saved. Review its extracted text before analysis."
+            status.text = "Attachment saved. Select Analyze request for the AI to review it."
             redraw()
         except ERRORS as error:
             failure(error)
@@ -203,8 +206,8 @@ def render(*, run_id: str | None = None) -> None:
                     dialog.close()
                     redraw()
                     status.text = (
-                        "Meeting notes saved. Review the source, "
-                        "then analyze to see proposed decisions."
+                        "Meeting notes saved. Select Analyze request for the AI to read them "
+                        "and propose scope decisions."
                     )
                 except ERRORS as error:
                     failure(error)
@@ -266,7 +269,8 @@ def render(*, run_id: str | None = None) -> None:
                     .classes("w-full")
                 )
                 ui.label(
-                    "Confirm that the text covers the relevant content. Originals remain saved."
+                    "The AI reviews this source during analysis. You can optionally correct "
+                    "the extracted text or exclude the source. Originals remain saved."
                 ).classes("text-sm")
 
                 async def reviewed(disposition: str) -> None:
@@ -284,7 +288,7 @@ def render(*, run_id: str | None = None) -> None:
                     ui.download(await c.original(source), source["name"])
 
                 with ui.row():
-                    ui.button("Use reviewed text", on_click=lambda: reviewed("reviewed"))
+                    ui.button("Save text and include", on_click=lambda: reviewed("reviewed"))
                     ui.button("Exclude from analysis", on_click=lambda: reviewed("excluded")).props(
                         "flat"
                     )
@@ -342,12 +346,21 @@ def render(*, run_id: str | None = None) -> None:
                 with ui.row().classes("w-full items-center justify-between border rounded-lg p-3"):
                     with ui.column().classes("gap-1"):
                         ui.label(source["name"]).classes("font-medium")
-                        ui.label(
-                            f"{source['kind'].title()} · "
-                            f"{source['disposition'].replace('_', ' ')} · "
-                            f"{source['extraction_status'].replace('_', ' ').lower()}"
-                        ).classes("text-xs")
-                    ui.button("Review source", on_click=lambda s=source: preview(s)).props(
+                        source_status = (
+                            "Excluded from analysis"
+                            if source["disposition"] == "excluded"
+                            else "No readable text — add a transcription or readable copy"
+                            if not source.get("transcription") and not source.get("segments")
+                            else "Included in analysis"
+                            if state.get("analysis") and not state.get("analysis_stale")
+                            else "Included · AI will review"
+                        )
+                        ui.label(f"{source['kind'].title()} · {source_status}").classes("text-xs")
+                        if source.get("warnings") and source["disposition"] != "excluded":
+                            ui.label(
+                                "Extraction has limitations. View source for details."
+                            ).classes("text-xs text-amber-800")
+                    ui.button("View source", on_click=lambda s=source: preview(s)).props(
                         "flat no-caps"
                     )
         with questions:

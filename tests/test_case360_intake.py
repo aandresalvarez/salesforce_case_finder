@@ -197,6 +197,38 @@ def test_failed_save_cannot_start_analysis(render, monkeypatch):
     asyncio.run(check())
 
 
+def test_analyze_starts_ai_review_of_pending_documents_and_meeting_notes(render, monkeypatch):
+    client = IntakeClient()
+    client.state["sources"] = [
+        {"id": "source-" + kind, "name": kind + ".md", "kind": kind,
+         "disposition": "pending", "extraction_status": "EXTRACTED", "segments": 1,
+         "warnings": [], "transcription": ""}
+        for kind in ["document", "meeting"]
+    ]
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            assert tree.text.count("Included · AI will review") == 2
+            assert tree.button_labels().count("View source") == 2
+            assert "Review source" not in tree.button_labels()
+            press(tree, "Analyze request")
+            await asyncio.sleep(0)
+        assert [p["action"] for m, p in client.calls if m == "prepare_intake"] == ["analyze"]
+        assert len([m for m, _ in client.calls if m == "start_run"]) == 1
+        assert not any(
+            m == "intake_update" and p["action"] == "source_review" for m, p in client.calls
+        )
+        assert all(s["disposition"] == "pending" for s in client.state["sources"])
+        assert flow.progress_text({"kind": "model", "phase": "intake-source-lookup-1"}) == (
+            "AI is reading your attachments and meeting notes"
+        )
+
+    asyncio.run(check())
+
+
 def test_retry_uses_frozen_inputs_and_does_not_prepare_or_authorize_twice(render, monkeypatch):
     client = IntakeClient(prepared=True)
     client.fail_probe = True

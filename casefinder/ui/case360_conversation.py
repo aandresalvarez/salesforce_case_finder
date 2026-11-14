@@ -65,6 +65,8 @@ def progress_text(item: dict) -> str:
     if kind == "stage":
         return PHASES.get(item.get("stage"), "Processing the request")
     if kind == "model":
+        if str(item.get("phase", "")).startswith("intake-source-lookup-"):
+            return "AI is reading your attachments and meeting notes"
         if str(item.get("phase", "")).startswith("author-lookup-"):
             return "Reading relevant sources and updating the query plan"
         return MODEL_PHASES.get(item.get("phase"), "Agent analysis and review")
