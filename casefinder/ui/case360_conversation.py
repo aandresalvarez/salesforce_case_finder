@@ -19,6 +19,7 @@ CONNECTION_ERRORS = {
 }
 PHASES = {
     "INTAKE": "Interpreting your request",
+    "INTAKE_SOURCES": "Reading your documents and meeting notes",
     "AUTHOR_EVIDENCE": "Finding sources and checking columns",
     "AUTHOR_GENERATION": "Building the SQL",
     "TARGETED_SOURCE_RESOLUTION": "Checking unresolved sources",
