@@ -622,7 +622,7 @@ def render(*, run_id: str | None = None) -> None:
             c = controller()
             cap = configured_cap() if model["remaining"] is None else model["remaining"]
             prepared = (
-                pending
+                await c.client.request("get_run", run_id=c.run_id)
                 if pending and pending.get("phase") == "PREPARED"
                 else await c.prepare(action)
             )
@@ -647,7 +647,7 @@ def render(*, run_id: str | None = None) -> None:
         )
         status.text = "Checking your connection and remaining budget…"
         proof = await c.client.request("probe_run", run_id=c.run_id)
-        await c.client.request(
+        authorization = await c.client.request(
             "authorize_run",
             {
                 "contract_sha256": prepared["contract_sha256"],
@@ -656,6 +656,7 @@ def render(*, run_id: str | None = None) -> None:
             },
             run_id=c.run_id,
         )
+        prepared.update(authorization)
         view = await c.client.request("start_run", run_id=c.run_id, request_id="start-" + c.run_id)
         await inspect(view)
 

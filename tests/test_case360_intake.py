@@ -17,6 +17,8 @@ class IntakeClient:
         self.prepared = prepared
         self.fail_save = fail_save
         self.fail_probe = False
+        self.authorized = False
+        self.fail_start = False
         self.state = {
             "revision": 1,
             "original_text": "Synthetic study request.  \n",
@@ -53,7 +55,7 @@ class IntakeClient:
             "phase": "PREPARED" if self.prepared else "INTAKE",
             "execution_status": "COMPLETED" if self.analyzed else "DRAFT",
             "contract_sha256": "a" * 64,
-            "authorized": False,
+            "authorized": self.authorized,
             "artifact": {"artifact_id": "result"},
         }
 
@@ -87,7 +89,12 @@ class IntakeClient:
             if self.fail_probe:
                 raise BridgeError("PREFLIGHT_TIMEOUT", "Connection check timed out")
             return {"sha256": "b" * 64, "max_paid_usd": 50}
+        if method == "authorize_run":
+            self.authorized = True
         if method == "start_run":
+            if self.fail_start:
+                self.fail_start = False
+                raise BridgeError("COMMAND_INTERRUPTED", "Start response interrupted")
             self.prepared = False
             self.analyzed = True
         return self.view()
@@ -229,3 +236,24 @@ def test_researcher_export_projects_only_public_wording():
     assert "Which care locations?" in result
     assert "private_table" not in result
     assert "Private" not in result
+
+
+def test_retry_after_authorization_does_not_authorize_again(render, monkeypatch):
+    client = IntakeClient(prepared=True)
+    client.fail_start = True
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            press(tree, "Retry and continue")
+            await asyncio.sleep(0)
+            assert "Start response interrupted" in tree.text
+            press(tree, "Retry and continue")
+            await asyncio.sleep(0)
+        assert len([m for m, _ in client.calls if m == "authorize_run"]) == 1
+        assert len([m for m, _ in client.calls if m == "start_run"]) == 2
+        assert tree.of_type("Textarea")[0].value == "Synthetic study request.  \n"
+
+    asyncio.run(check())
