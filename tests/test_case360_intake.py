@@ -3,6 +3,7 @@
 import asyncio
 import copy
 
+import pytest
 from nicegui import core
 
 from casefinder.case360.client import BridgeError
@@ -368,8 +369,9 @@ def test_retry_after_authorization_does_not_authorize_again(render, monkeypatch)
     asyncio.run(check())
 
 
+@pytest.mark.parametrize('recovery', ['suggestion_recovery', 'scope_recovery'])
 def test_recovered_advice_can_be_answered_and_continued_without_another_intake_analysis(
-    render, monkeypatch
+    render, monkeypatch, recovery
 ):
     class RecoveredClient(IntakeClient):
         async def artifact(self, run_id, reference):
@@ -384,7 +386,7 @@ def test_recovered_advice_can_be_answered_and_continued_without_another_intake_a
 
     client = RecoveredClient(analyzed=True)
     client.state['questions'] = suggested_client().state['questions']
-    client.state['suggestion_recovery'] = {
+    client.state[recovery] = {
         'prior_scope_retained': True, 'recovered_suggestions': 1, 'additional_model_calls': 0,
     }
     tree, restore = setup(render, monkeypatch, client)
@@ -393,9 +395,14 @@ def test_recovered_advice_can_be_answered_and_continued_without_another_intake_a
         monkeypatch.setattr(core, 'loop', asyncio.get_running_loop())
         with tree.client:
             await restore()
-            assert 'Suggestions recovered.' in tree.text
-            assert 'Your previous scope and document review are preserved.' in tree.text
-            assert 'Interrupted attempt details' in tree.text
+            if recovery == 'scope_recovery':
+                assert 'Questions and scope recovered.' in tree.text
+                assert 'The document review was reused.' in tree.text
+                assert 'Previous attempt details' in tree.text
+            else:
+                assert 'Suggestions recovered.' in tree.text
+                assert 'Your previous scope and document review are preserved.' in tree.text
+                assert 'Interrupted attempt details' in tree.text
             assert not any(m in {'prepare_intake', 'start_run'} for m, _ in client.calls)
             press(tree, 'Use this answer')
             await asyncio.sleep(0)

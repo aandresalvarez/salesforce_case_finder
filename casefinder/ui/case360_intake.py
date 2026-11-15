@@ -373,7 +373,13 @@ def render(*, run_id: str | None = None) -> None:
             if state.get("questions"):
                 with ui.column().classes("c360-card"):
                     ui.label("Clarification questions").classes("c360-card-title")
-                    if state.get("suggestion_recovery") and not state.get("analysis_stale"):
+                    if state.get("scope_recovery") and not state.get("analysis_stale"):
+                        ui.label(
+                            "Your completed questions and scope were recovered "
+                            "from the saved response. The document review was reused. "
+                            "Answer the questions and confirm the scope below."
+                        ).classes("text-sm text-blue-800")
+                    elif state.get("suggestion_recovery") and not state.get("analysis_stale"):
                         ui.label(
                             "Suggestions recovered from the interrupted response. "
                             "Your previous scope and document review are preserved. "
@@ -703,17 +709,22 @@ def render(*, run_id: str | None = None) -> None:
         with output:
             recovered = (
                 result.get("execution_status") == "FAILED"
-                and c.state.get("suggestion_recovery")
+                and (c.state.get("suggestion_recovery") or c.state.get("scope_recovery"))
                 and not c.state.get("analysis_stale")
             )
             if recovered:
-                with ui.expansion("Interrupted attempt details").classes("w-full"):
+                with ui.expansion(
+                    "Previous attempt details"
+                    if c.state.get("scope_recovery") else "Interrupted attempt details"
+                ).classes("w-full"):
                     render_result(result, c.run_id, view["artifact"])
             elif result.get("packages") or result.get("execution_status") == "FAILED":
                 render_result(result, c.run_id, view["artifact"])
         redraw()
         status.text = (
-            "Suggestions recovered. Answer the questions and confirm the scope to continue."
+            (("Questions and scope recovered. " if c.state.get("scope_recovery")
+              else "Suggestions recovered. ")
+             + "Answer the questions and confirm the scope to continue.")
             if recovered
             else
             "Review the questions, proposed decisions and scope summary."
