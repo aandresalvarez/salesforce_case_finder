@@ -27,9 +27,83 @@ def verified_revisions(history: dict, result: dict, reference: dict) -> list[dic
             and r["parent"]["package_sha256"] in parents]
 
 
-def render_revision(record: dict) -> None:
+def matching_validation(record: dict, history: dict | None) -> dict | None:
+    if not history:
+        return None
+    if history.get("schema") != "case360_sql_validation_history/1":
+        raise ValueError("Unsupported dry-run history.")
+    sqls = [record["sql"], *(q["sql"] for q in record.get("additional_sql", []))]
+    hashes = [hashlib.sha256(sql.encode()).hexdigest() for sql in sqls]
+    matches = [v for v in history.get("records", [])
+               if v.get("run_id") == record.get("run_id")
+               and v.get("revision") == record["revision"]
+               and v.get("sql_sha256") == record["sql_sha256"]]
+    for value in sorted(matches, key=lambda v: v["sequence"], reverse=True):
+        results = value.get("results", [])
+        if [r.get("sql_sha256") for r in results] != hashes:
+            continue
+        if value.get("executed_queries") != 0 or value.get("clinical_approval") is not False:
+            raise ValueError("Invalid saved dry-run evidence.")
+        for item, sql in zip(results, sqls, strict=True):
+            if (item.get("request", {}).get("configuration", {}).get("dryRun") is not True
+                    or item["request"]["configuration"].get("query", {}).get("query") != sql):
+                raise ValueError("The dry run does not match this SQL.")
+            if item.get("status") == "PASS":
+                response = item.get("response", {})
+                if (item.get("http_status") != 200
+                        or response.get("configuration", {}).get("dryRun") is not True
+                        or not response.get("statistics")
+                        or response.get("status", {}).get("errorResult")):
+                    raise ValueError("Incomplete dry-run confirmation.")
+        if (value.get("status") == "PASS") != all(r.get("status") == "PASS" for r in results):
+            raise ValueError("Inconsistent dry-run result.")
+        return value
+    return None
+
+
+def render_revision(record: dict, run_id: str | None = None,
+                    validation_history: dict | None = None) -> None:
     ui.label(record["label"]).classes("cf-h2")
-    ui.label("Saved draft · Not executed · No dry run").classes("text-blue-800 font-medium")
+    history = {"value": validation_history}
+
+    @ui.refreshable
+    def checks() -> None:
+        value = matching_validation(record, history["value"])
+        status = "Dry run passed" if value and value["status"] == "PASS" else (
+            "Dry run needs attention" if value else "No dry run yet")
+        ui.label("Saved draft · SQL not executed · " + status).classes(
+            "text-blue-800 font-medium")
+        if value:
+            ui.label("Checked: " + value["checked_at"])
+            for item in value["results"]:
+                detail = (f"Estimated scan: {int(item['estimated_bytes']) / 1e9:.2f} GB"
+                          if item.get("estimated_bytes") is not None else "")
+                ui.label(f"{item['label']}: {item['status']} {detail}")
+                if item.get("error"):
+                    ui.label(item["error"]).classes("text-red-800")
+        ui.label("A dry run checks compilation and estimates data scanned. "
+                 "It does not execute SQL or establish clinical correctness.")
+    checks()
+    action_status = ui.label("").props("role=status aria-live=polite")
+
+    async def validate() -> None:
+        validate_button.disable()
+        action_status.text = "Checking this version with BigQuery… SQL will not execute."
+        try:
+            client = session.client()
+            saved = await client.request("validate_sql_revision", {
+                "revision": record["revision"], "sql_sha256": record["sql_sha256"]},
+                run_id=run_id)
+            history["value"] = await client.artifact(run_id, saved["artifact"])
+            checks.refresh()
+            action_status.text = "Dry-run result saved for this version."
+        except (RuntimeError, ValueError, OSError, TimeoutError) as error:
+            action_status.text = str(error)
+        finally:
+            validate_button.enable()
+    if run_id:
+        validate_button = ui.button("Validate SQL (dry run)", on_click=validate)
+
     ui.label("Your original answers and V1 remain unchanged. The scope changes below apply "
              "only to this version. V1 checks and model reviews do not validate this draft.")
     with ui.expansion("Scope changes for this version", value=True).classes("w-full"):
@@ -49,15 +123,17 @@ def render_revision(record: dict) -> None:
                 with ui.expansion(item["label"]).classes("w-full"):
                     ui.code(item["sql"], language="sql")
         with ui.tab_panel("Offline review"):
-            ui.label("Reported static comparison only. Compilation and patient-level "
-                     "equivalence have not been measured for this version.")
+            ui.label("Original static review, recorded before later dry runs. "
+                     "Patient-level equivalence has not been measured.")
             ui.label(record["static_review"]).classes("whitespace-pre-wrap")
         with ui.tab_panel("Provenance"):
             ui.label("SQL SHA256: " + record["sql_sha256"])
             ui.code(json.dumps({"parent": record["parent"], "source": record["provenance"]},
                                indent=2), language="json")
     ui.button("Download version and provenance", on_click=lambda: ui.download.content(
-        json.dumps(record, indent=2), "sql-review-revision.json")).props("flat")
+        json.dumps({"revision": record,
+                    "validation": matching_validation(record, history["value"])},
+                   indent=2), "sql-review-revision.json")).props("flat")
 
 
 def render_versions(result: dict, run_id: str, reference: dict,
@@ -72,6 +148,8 @@ def render_versions(result: dict, run_id: str, reference: dict,
             ref = view.get("sql_revisions_artifact")
             records = (verified_revisions(await client.artifact(run_id, ref), result, reference)
                        if ref else [])
+            checks_ref = view.get("sql_validations_artifact")
+            validations = (await client.artifact(run_id, checks_ref)) if checks_ref else None
         except (RuntimeError, ValueError, OSError, TimeoutError) as error:
             with host:
                 ui.label("Could not load SQL versions: " + str(error))
@@ -94,7 +172,8 @@ def render_versions(result: dict, run_id: str, reference: dict,
                     if selected.value == 0:
                         original()
                     else:
-                        render_revision(next(r for r in records if r["revision"] == selected.value))
+                        render_revision(next(r for r in records if r["revision"] == selected.value),
+                                        run_id, validations)
             selected.on_value_change(show)
             show()
     with host:

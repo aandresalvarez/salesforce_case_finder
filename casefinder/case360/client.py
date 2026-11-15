@@ -105,7 +105,7 @@ class Client:
             return await asyncio.wait_for(
                 future, timeout=150 if method in {
                     "prepare_request", "prepare_conversation",
-                    "prepare_intake", "intake_upload_finish"
+                    "prepare_intake", "intake_upload_finish", "validate_sql_revision"
                 } else 30
             )
         finally:

@@ -267,7 +267,7 @@
               "properties": {
                 "artifact_id": {
                   "type": "string",
-                  "pattern": "^(result|intake|feedback|sql_revisions|export-[a-f0-9-]{36})$"
+                  "pattern": "^(result|intake|feedback|sql_revisions|sql_validations|export-[a-f0-9-]{36})$"
                 },
                 "sha256": {
                   "type": "string",
@@ -1752,6 +1752,56 @@
                 "provenance",
                 "scope_changes",
                 "additional_sql"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "protocol",
+            "kind",
+            "request_id",
+            "run_id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "const": "case360.desktop/1"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "run_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,96}$"
+            },
+            "method": {
+              "const": "validate_sql_revision"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "sql_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "revision",
+                "sql_sha256"
               ],
               "additionalProperties": false
             }

@@ -84,7 +84,35 @@ def render_result(result: dict, run_id: str | None = None, reference: dict | Non
         _render_original_result(result, run_id, reference)
 
 
+def current_dry_run_status(result: dict) -> str:
+    packages = result.get("packages", [])
+    if not packages:
+        return "Not available"
+    package = packages[-1]
+    validations = [v for v in result.get("validations", [])
+                   if v.get("package_sha256") == package.get("package_sha256")]
+    if not validations:
+        return "Not verified for this SQL"
+    value = validations[-1]
+    cohort = value.get("cohort_check", {})
+    def sha(sql: str) -> str:
+        return hashlib.sha256(sql.encode()).hexdigest()
+    if cohort.get("cohort_sha256") != sha(package["package"]["cohort"]["sql"]):
+        return "Not verified for this SQL"
+    checks = [cohort.get("objective", {}).get("dry", {})]
+    for item in package.get("deliveries", []):
+        checked = next((d for d in value.get("domain_checks", [])
+                        if d.get("sql_sha256") == sha(item.get("sql", ""))), None)
+        if not checked:
+            return "Not verified for every output"
+        checks.append(checked.get("objective", {}).get("dry", {}))
+    return "Passed for this SQL and all outputs" if all(
+        c.get("valid") is True and c.get("sent") is True for c in checks
+    ) else "Needs attention — see Checks"
+
+
 def _render_original_result(result: dict, run_id: str | None, reference: dict | None) -> None:
+    ui.label("Dry run: " + current_dry_run_status(result)).classes("cf-h2")
     ui.label("Execution: " + result["execution_status"]).classes("cf-h2")
     ui.label("Quality: " + result["quality_status"]).classes("cf-h2")
     ui.label("Experimental draft for human review. Compilation is not approval.")
