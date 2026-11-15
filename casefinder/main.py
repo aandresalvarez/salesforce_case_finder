@@ -202,7 +202,7 @@ def main() -> None:
     # and the first page is served the moment the server is up. It is also the
     # one part of the application that has to survive the socket going down, so
     # it cannot be something a page sends over that socket — see `ui/reconnect`.
-    reconnect.install()
+    reconnect.install(case360_enabled=config.CASE360_ENABLED)
     # Expired entries hold case bodies until something deletes them, and an
     # idle window never asks for anything that would. Started here rather than
     # at import so that neither the tests nor the native window subprocess —
