@@ -75,6 +75,16 @@ def _json(value: object) -> None:
 
 
 def render_result(result: dict, run_id: str | None = None, reference: dict | None = None) -> None:
+    if run_id and reference:
+        from .case360_sql_revisions import render_versions
+
+        render_versions(result, run_id, reference,
+                        lambda: _render_original_result(result, run_id, reference))
+    else:
+        _render_original_result(result, run_id, reference)
+
+
+def _render_original_result(result: dict, run_id: str | None, reference: dict | None) -> None:
     ui.label("Execution: " + result["execution_status"]).classes("cf-h2")
     ui.label("Quality: " + result["quality_status"]).classes("cf-h2")
     ui.label("Experimental draft for human review. Compilation is not approval.")

@@ -45,8 +45,13 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 await client.close()
         return asyncio.run(check())
+    if args == ["--review"]:
+        # The first window goes directly to saved local work, without loading Search.
+        os.environ["CASE360_OPEN_SAVED_REVIEW"] = "1"
+        args = []
     if args:
-        print("usage: case360-beta [--version | --check]; manage private updates in the app")
+        print("usage: case360-beta [--version | --check | --review]; "
+              "manage private updates in the app")
         return 2
     from .cli import cli
 

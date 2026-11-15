@@ -18,6 +18,7 @@ process, which would open a second window and a second BigQuery client.
 from __future__ import annotations
 
 import importlib.util
+import os
 import socket
 import sys
 
@@ -37,10 +38,16 @@ from .ui import (
 from .ui.shell import gated
 
 HOST = "127.0.0.1"
+_review_pending = os.environ.get("CASE360_OPEN_SAVED_REVIEW") == "1"
 
 
 @ui.page("/")
 def index() -> None:
+    global _review_pending
+    if config.CASE360_ENABLED and _review_pending:
+        _review_pending = False
+        ui.navigate.to("/case360/review")
+        return
     # Search, not Lists — D17. The rail's Search entry points here rather than
     # at `/search`, so the landing page and the destination are one page and
     # not two that happen to render the same thing.
@@ -130,6 +137,18 @@ def case360_history_route() -> None:
     with layout("case360"):
         ui.link("Back to request", "/case360")
         render_history(on_clear=lambda: active_request(None, save=True))
+
+
+@ui.page("/case360/review")
+def case360_review_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui.case360_sql_revisions import render_saved_review
+    from .ui.shell import layout
+
+    with layout("case360"):
+        render_saved_review()
 
 
 def _free_port() -> int:
