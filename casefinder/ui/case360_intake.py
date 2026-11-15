@@ -841,11 +841,9 @@ def render(*, run_id: str | None = None) -> None:
             view = await c.client.request("get_run", run_id=saved)
             if view.get("process_active"):
                 busy(True)
-                await inspect(view)
-            else:
-                await c.load(saved)
-                request.value = c.state["original_text"]
-                await inspect(view)
+            await c.load(saved)
+            request.value = c.state["original_text"]
+            await inspect(view)
         except ERRORS as error:
             failure(error)
         finally:
