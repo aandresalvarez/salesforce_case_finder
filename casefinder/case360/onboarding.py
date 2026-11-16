@@ -23,6 +23,7 @@ class SetupError(ValueError):
 
 _login_process: asyncio.subprocess.Process | None = None
 _login_lock = asyncio.Lock()
+_login_cancelled = False
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 
@@ -103,6 +104,8 @@ def runtime_environment(context: dict, root: Path) -> dict[str, str]:
 
 
 async def cancel_login() -> None:
+    global _login_cancelled
+    _login_cancelled = True
     if _login_process is not None and _login_process.returncode is None:
         _login_process.terminate()
         try:
@@ -161,9 +164,9 @@ def _verify_tokens(directory: Path, cli_token: str, expected: str) -> None:
 
 
 async def sign_in(email: str, context_file: Path) -> None:
-    global _login_process
+    global _login_process, _login_cancelled
     email = email.strip().lower()
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+    if email.startswith("-") or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         raise SetupError("Enter your own work email address.")
     if _login_lock.locked():
         raise SetupError("A sign-in is already open. Finish or cancel it first.")
@@ -172,6 +175,7 @@ async def sign_in(email: str, context_file: Path) -> None:
         raise SetupError("Install the tester package that includes Google sign-in.")
     directory = preferences.data_root() / "google" / uuid.uuid4().hex
     async with _login_lock:
+        _login_cancelled = False
         try:
             _login_process = await asyncio.create_subprocess_exec(
                 str(root / "google-cloud-sdk/bin/gcloud"),
@@ -197,6 +201,8 @@ async def sign_in(email: str, context_file: Path) -> None:
             from . import session
 
             await session.prepare_reconfigure()
+            if _login_cancelled:
+                raise SetupError("Sign-in was cancelled. Your previous account is unchanged.")
             # The old account/context remains selected until both new credentials match.
             context = json.loads(context_file.read_text())
             old = context.get("authorization_policy", {})

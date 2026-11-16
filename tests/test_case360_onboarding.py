@@ -126,7 +126,7 @@ def test_own_browser_login_publishes_only_after_both_identities_match(install, m
     assert onboarding._login_process is None
 
 
-@pytest.mark.parametrize("failure", ["cancel", "mismatch", "active_run"])
+@pytest.mark.parametrize("failure", ["cancel", "mismatch", "active_run", "cancel_verifying"])
 def test_failed_sign_in_never_replaces_saved_account_or_request(install, monkeypatch, failure):
     root, context = install
     onboarding.provision(root, context)
@@ -138,6 +138,8 @@ def test_failed_sign_in_never_replaces_saved_account_or_request(install, monkeyp
     monkeypatch.setattr(onboarding, "_capture", AsyncMock(return_value="synthetic-token"))
 
     def verify(*_):
+        if failure == "cancel_verifying":
+            onboarding._login_cancelled = True
         if failure == "mismatch":
             raise onboarding.SetupError("Account mismatch")
 
@@ -276,3 +278,12 @@ def test_google_storage_refuses_symlink_to_host_credentials(install, tmp_path):
     link.symlink_to(host)
     with pytest.raises(onboarding.SetupError, match="links"):
         onboarding.credential_environment(root, link)
+
+
+def test_account_text_cannot_become_a_google_cli_flag(install, monkeypatch):
+    _, context = install
+    spawn = AsyncMock()
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(onboarding.SetupError, match="email"):
+        asyncio.run(onboarding.sign_in("--flags-file=path@example.edu", context))
+    spawn.assert_not_awaited()
