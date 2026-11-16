@@ -24,7 +24,9 @@ class SetupError(ValueError):
 _login_process: asyncio.subprocess.Process | None = None
 _login_lock = asyncio.Lock()
 _login_cancelled = False
-_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+_CLOUD_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+# A cloud-only refreshed token may omit the email needed for identity checks.
+_SCOPES = [_CLOUD_SCOPE, "https://www.googleapis.com/auth/userinfo.email"]
 
 
 def bundle_root() -> Path | None:
@@ -155,12 +157,43 @@ def _verify_tokens(directory: Path, cli_token: str, expected: str) -> None:
         if response.status_code != 200:
             raise SetupError("Google could not verify this sign-in. Sign in again.")
         identity = response.json()
-        if identity.get("email", "").lower() != expected.lower() or not set(_SCOPES).issubset(
-            identity.get("scope", "").split()
-        ):
+        actual = identity.get("email")
+        if not isinstance(actual, str) or not actual:
+            raise SetupError("Google did not return your account email. Sign in again.")
+        if actual.lower() != expected.lower():
             raise SetupError(
                 "Google returned a different account. Sign in with the email you entered."
             )
+        if _CLOUD_SCOPE not in str(identity.get("scope", "")).split():
+            raise SetupError(
+                "Google Cloud access was not authorized. Sign in again and allow "
+                "the requested Google Cloud access."
+            )
+
+
+async def _saved_sign_in(root: Path, email: str) -> Path | None:
+    """Recover a completed browser grant only after verifying both identities.
+
+    Search only this app's private stores, never the host's gcloud/ADC location.
+    A failed verification cannot select an account or change the saved policy.
+    """
+    parent = preferences.data_root() / "google"
+    if not parent.is_dir():
+        return None
+    candidates = [p for p in parent.iterdir()
+                  if re.fullmatch(r"[a-f0-9]{32}", p.name) and not p.is_symlink()
+                  and p.is_dir() and all((p / name).is_file() and not (p / name).is_symlink()
+                    for name in ("credentials.db", "application_default_credentials.json"))]
+    for directory in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)[:3]:
+        if _login_cancelled:
+            raise SetupError("Sign-in was cancelled. Your previous account is unchanged.")
+        try:
+            token = await _capture(root, directory, "auth", "print-access-token")
+            await asyncio.to_thread(_verify_tokens, directory, token, email)
+            return directory
+        except Exception:  # noqa: BLE001 - no provider diagnostics or secrets leave this probe
+            continue
+    return None
 
 
 async def sign_in(email: str, context_file: Path) -> None:
@@ -173,31 +206,35 @@ async def sign_in(email: str, context_file: Path) -> None:
     root = bundle_root()
     if root is None or not (root / "google-cloud-sdk/bin/gcloud").is_file():
         raise SetupError("Install the tester package that includes Google sign-in.")
-    directory = preferences.data_root() / "google" / uuid.uuid4().hex
     async with _login_lock:
         _login_cancelled = False
         try:
-            _login_process = await asyncio.create_subprocess_exec(
-                str(root / "google-cloud-sdk/bin/gcloud"),
-                "auth",
-                "login",
-                email,
-                "--update-adc",
-                "--force",
-                "--quiet",
-                "--brief",
-                env=credential_environment(root, directory),
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            code = await asyncio.wait_for(_login_process.wait(), 600)
-            if code:
-                raise SetupError(
-                    "Sign-in was cancelled or could not complete. Your saved work is unchanged."
+            directory = await _saved_sign_in(root, email)
+            if _login_cancelled:
+                raise SetupError("Sign-in was cancelled. Your previous account is unchanged.")
+            if directory is None:
+                directory = preferences.data_root() / "google" / uuid.uuid4().hex
+                _login_process = await asyncio.create_subprocess_exec(
+                    str(root / "google-cloud-sdk/bin/gcloud"),
+                    "auth",
+                    "login",
+                    email,
+                    "--update-adc",
+                    "--force",
+                    "--quiet",
+                    "--brief",
+                    env=credential_environment(root, directory),
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
                 )
-            token = await _capture(root, directory, "auth", "print-access-token")
-            await asyncio.to_thread(_verify_tokens, directory, token, email)
+                code = await asyncio.wait_for(_login_process.wait(), 600)
+                if code:
+                    raise SetupError(
+                        "Sign-in was cancelled or could not complete. Your saved work is unchanged."
+                    )
+                token = await _capture(root, directory, "auth", "print-access-token")
+                await asyncio.to_thread(_verify_tokens, directory, token, email)
             from . import session
 
             await session.prepare_reconfigure()

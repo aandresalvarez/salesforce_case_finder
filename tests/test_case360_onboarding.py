@@ -154,6 +154,43 @@ def test_own_browser_login_publishes_only_after_both_identities_match(install, m
     assert onboarding._login_process is None
 
 
+@pytest.mark.parametrize("failure", [None, "different_account", "cancelled", "active_work"])
+def test_retry_verifies_saved_grant_before_reusing_it(install, monkeypatch, failure):
+    _, context = install
+    directory = context.parent / "google" / ("d" * 32)
+    directory.mkdir(parents=True)
+    for name in ["credentials.db", "application_default_credentials.json"]:
+        (directory / name).write_text("synthetic")
+    before = context.read_bytes()
+    request = context.parent / "request.json"
+    request.write_text('{"answer":"keep"}')
+    spawn = AsyncMock(return_value=Process(1))
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(onboarding, "_capture", AsyncMock(return_value="synthetic-token"))
+
+    def verify(saved, token, email):
+        assert saved == directory and email == "tester@example.edu"
+        if failure == "different_account":
+            raise onboarding.SetupError("Different account")
+        if failure == "cancelled":
+            onboarding._login_cancelled = True
+
+    monkeypatch.setattr(onboarding, "_verify_tokens", verify)
+    monkeypatch.setattr(session, "prepare_reconfigure", AsyncMock(
+        side_effect=RuntimeError("Stop active work") if failure == "active_work" else None))
+    if failure:
+        with pytest.raises((onboarding.SetupError, RuntimeError)):
+            asyncio.run(onboarding.sign_in("tester@example.edu", context))
+        assert context.read_bytes() == before
+    else:
+        asyncio.run(onboarding.sign_in("tester@example.edu", context))
+        saved = json.loads(context.read_text())
+        assert saved["google_credentials"] == str(directory)
+        assert saved["google_account"] == "tester@example.edu"
+    assert spawn.await_count == (1 if failure == "different_account" else 0)
+    assert request.read_text() == '{"answer":"keep"}'
+
+
 @pytest.mark.parametrize("failure", ["cancel", "mismatch", "active_run", "cancel_verifying"])
 def test_failed_sign_in_never_replaces_saved_account_or_request(install, monkeypatch, failure):
     root, context = install
@@ -283,6 +320,44 @@ def test_token_identity_mismatch_is_rejected_without_exposing_tokens(install, mo
         onboarding._verify_tokens(context.parent, "synthetic-cli-secret", "tester@example.edu")
     assert "secret" not in str(caught.value)
     assert seen == ["Bearer synthetic-cli-secret"]
+
+
+def test_adc_refresh_keeps_email_scope_for_identity_verification(install, monkeypatch):
+    _, context = install
+    requested = []
+
+    def load(*_, scopes):
+        requested.extend(scopes)
+        return SimpleNamespace(token="synthetic-adc", refresh=lambda *_: None), None
+
+    def introspect(_, **kwargs):
+        info = {"scope": " ".join(requested)}
+        if kwargs["headers"]["Authorization"] == "Bearer synthetic-cli" or (
+            "https://www.googleapis.com/auth/userinfo.email" in requested
+        ):
+            info["email"] = "tester@example.edu"
+        return SimpleNamespace(status_code=200, json=lambda: info)
+
+    monkeypatch.setattr("google.auth.load_credentials_from_file", load)
+    monkeypatch.setattr("requests.post", introspect)
+    onboarding._verify_tokens(context.parent, "synthetic-cli", "tester@example.edu")
+    assert "https://www.googleapis.com/auth/cloud-platform" in requested
+
+
+@pytest.mark.parametrize("email,scope,message", [
+    (None, "https://www.googleapis.com/auth/cloud-platform", "account email"),
+    ("tester@example.edu", "https://www.googleapis.com/auth/userinfo.email", "Cloud access"),
+])
+def test_missing_identity_and_cloud_permission_are_distinct(
+    install, monkeypatch, email, scope, message
+):
+    _, context = install
+    monkeypatch.setattr("google.auth.load_credentials_from_file", lambda *_, **__: (
+        SimpleNamespace(token="synthetic-adc", refresh=lambda *_: None), None))
+    monkeypatch.setattr("requests.post", lambda *_, **__: SimpleNamespace(
+        status_code=200, json=lambda: {"email": email, "scope": scope}))
+    with pytest.raises(onboarding.SetupError, match=message):
+        onboarding._verify_tokens(context.parent, "synthetic-cli", "tester@example.edu")
 
 
 def test_cancel_sign_in_terminates_process_without_selecting_account(install):

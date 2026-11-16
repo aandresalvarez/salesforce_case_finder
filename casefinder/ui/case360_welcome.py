@@ -40,7 +40,9 @@ def render_welcome() -> None:
                 sign.disable()
                 email.disable()
                 cancel.enable()
-                sign_status.text = "Waiting for Google sign-in in your browser…"
+                sign_status.text = (
+                    "Checking your saved sign-in. Complete Google sign-in if a browser opens…"
+                )
                 try:
                     await session.prepare_reconfigure()
                     await onboarding.sign_in((email.value or "").strip(), context_file)
