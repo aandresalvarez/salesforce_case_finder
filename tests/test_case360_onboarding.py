@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from casefinder.case360 import onboarding, preferences, session
+from casefinder.case360 import onboarding, platforms, preferences, session
 from casefinder.case360.runtime import Runtime
 
 
@@ -54,8 +54,9 @@ def install(tmp_path, monkeypatch):
             {"schema": "case360_pilot_bootstrap/1", "snapshot": version, "route_sha256": "b" * 64}
         )
     )
-    (root / "google-cloud-sdk/bin").mkdir(parents=True)
-    (root / "google-cloud-sdk/bin/gcloud").touch()
+    executable = Path(platforms.google_command(root)[-1])
+    executable.parent.mkdir(parents=True)
+    executable.touch()
     private = tmp_path / "tester"
     monkeypatch.setenv("CASE360_DATA_ROOT", str(private))
     monkeypatch.setenv("CASE360_BUNDLE_ROOT", str(root))
