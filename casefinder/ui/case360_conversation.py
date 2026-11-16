@@ -16,6 +16,8 @@ ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
 CONNECTION_ERRORS = {
     "PREFLIGHT_FAILED", "PREFLIGHT_TIMEOUT", "BIGQUERY_PREFLIGHT_FAILED",
     "CREDENTIAL_UNVERIFIED", "PREFLIGHT_EXPIRED",
+    "GOOGLE_CLI_SIGN_IN_REQUIRED", "GOOGLE_ADC_SIGN_IN_REQUIRED",
+    "CREDENTIAL_PROBE_TIMEOUT", "CREDENTIAL_PROBE_FAILED",
 }
 PHASES = {
     "INTAKE": "Interpreting your request",
@@ -311,10 +313,9 @@ def render(*, run_id: str | None = None) -> None:
                         state["continue_controls"].append(next_button)
             elif "execution_status" in result:
                 stage(2 if result.get("packages") else 1)
-                validations = result.get("validations", [])
-                compiled = bool(
-                    validations and validations[-1].get("objective", {}).get("dry", {}).get("valid")
-                )
+                from .case360_result import current_dry_run_status
+
+                compiled = current_dry_run_status(result) == "Passed for this SQL and all outputs"
                 if result["execution_status"] != "COMPLETED":
                     status.text = "Analysis stopped. Your request and saved work are preserved."
                 elif result.get("packages") and compiled:

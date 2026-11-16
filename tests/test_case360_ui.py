@@ -25,6 +25,14 @@ def test_completed_hold_does_not_appear_approved(render):
     assert "Run query" not in tree.button_labels()
 
 
+def test_saved_preparation_can_open_review_before_analysis(render):
+    tree = render(lambda: case360_page.render_result({"contract": {"case_id": "DRAFT"}}))
+    assert "does not have an analysis result yet" in tree.text
+    assert "Execution:" not in tree.text
+    assert any(link.text == "Continue your saved request" and link._props.get("href") == "/case360"
+               for link in tree.of_type("Link"))
+
+
 def test_beta_navigation_is_optional(render, monkeypatch):
     monkeypatch.setattr(config, "CASE360_ENABLED", False)
     assert "Case 360 Beta" not in render(lambda: rail("search")).text

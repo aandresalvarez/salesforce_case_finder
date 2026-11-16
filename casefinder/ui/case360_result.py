@@ -112,6 +112,10 @@ def current_dry_run_status(result: dict) -> str:
 
 
 def _render_original_result(result: dict, run_id: str | None, reference: dict | None) -> None:
+    if not result.get("execution_status"):
+        ui.label("This request does not have an analysis result yet.")
+        ui.link("Continue your saved request", "/case360")
+        return
     ui.label("Dry run: " + current_dry_run_status(result)).classes("cf-h2")
     ui.label("Execution: " + result["execution_status"]).classes("cf-h2")
     ui.label("Quality: " + result["quality_status"]).classes("cf-h2")

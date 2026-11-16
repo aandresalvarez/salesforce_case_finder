@@ -1,5 +1,8 @@
 """Analyst flow through real NiceGUI elements; private transport is a synthetic double."""
 import asyncio
+import hashlib
+
+import pytest
 
 from nicegui import core
 
@@ -64,17 +67,23 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
             return {"conversation": conversation, "execution_status": "COMPLETED",
                     "quality_status": "HOLD", "interpretation": "I need a date.",
                     "contract": {"requirements": []},
-                    "validations": [{"objective": {"dry": {"valid": True}}}],
+                    "validations": [{"package_sha256": "current",
+                        "cohort_check": {"cohort_sha256": hashlib.sha256(
+                            b"SELECT 2024 AS requested_year").hexdigest(),
+                            "objective": {"dry": {"valid": True, "sent": True}}}}],
                     "questions": [{"id": "intake-year", "text": "Which year?"}],
                     "budget": {"cap_usd": 50, "charged_or_reserved_usd": 1,
                                "remaining_usd": 49, "uncertain_reservation_usd": 0},
-                    "packages": [] if self.round == 1 else [{"version": 1,
+                    "packages": [] if self.round == 1 else [{"version": 1, "package_sha256": "current",
                         "package": {"cohort": {"sql": "SELECT 2024 AS requested_year"}}}]}
 
     client = Client()
     monkeypatch.setattr(flow.session, "client", lambda: client)
     monkeypatch.setattr(flow, "configured_cap", lambda: 50)
     monkeypatch.setattr(flow, "active_request", lambda *a, **kw: None)
+    timers = []
+    monkeypatch.setattr(flow.ui, "timer", lambda interval, callback, **kw:
+                        timers.append(callback) if interval == 0 else None)
     tree = render(flow.render)
 
     async def check():
@@ -88,6 +97,8 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
             tree.of_type("Textarea")[-1].value = "2024"
             tree.press(next(b for b in tree.buttons() if b.text == "Continue with my answers"))
             await asyncio.sleep(0)
+            for callback in timers:
+                await callback()
         prepares = [p for m, p, _ in client.calls if m == "prepare_conversation"]
         assert prepares == [
             {"text": "Synthetic request", "previous_run_id": None, "answers": []},
@@ -134,7 +145,9 @@ def test_internal_failure_keeps_request_without_connection_retry(render, monkeyp
     asyncio.run(check())
 
 
-def test_connection_retry_reuses_saved_request_and_explains_continuation(render, monkeypatch):
+@pytest.mark.parametrize("code", ["PREFLIGHT_TIMEOUT", "GOOGLE_CLI_SIGN_IN_REQUIRED",
+                                  "GOOGLE_ADC_SIGN_IN_REQUIRED"])
+def test_connection_retry_reuses_saved_request_and_explains_continuation(render, monkeypatch, code):
     from casefinder.case360.client import BridgeError
 
     class Client:
@@ -144,7 +157,7 @@ def test_connection_retry_reuses_saved_request_and_explains_continuation(render,
         async def request(self, method, params=None, **kwargs):
             self.calls.append((method, kwargs.get('run_id')))
             if method == 'probe_run':
-                raise BridgeError('PREFLIGHT_TIMEOUT', 'Connection check timed out.')
+                raise BridgeError(code, 'Connection check needs attention.')
             return {'run_id': 'saved-request', 'contract_sha256': 'a' * 64,
                     'artifact': {'artifact_id': 'result'}}
 
