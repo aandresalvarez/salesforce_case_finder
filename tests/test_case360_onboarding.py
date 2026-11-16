@@ -4,12 +4,40 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from casefinder.case360 import onboarding, preferences, session
 from casefinder.case360.runtime import Runtime
+
+
+def test_native_readiness_probe_cannot_consume_setup_navigation(monkeypatch):
+    from casefinder import main
+
+    callbacks, destinations, searches = [], [], []
+    monkeypatch.setattr(main.config, "CASE360_ENABLED", True)
+    monkeypatch.setattr(main, "_setup_pending", True)
+    monkeypatch.setattr(main, "_review_pending", False)
+    monkeypatch.setattr(main, "gated", lambda *args: searches.append(args))
+    monkeypatch.setattr(main, "ui", SimpleNamespace(
+        context=SimpleNamespace(client=SimpleNamespace(on_connect=callbacks.append)),
+        navigate=SimpleNamespace(to=destinations.append),
+        label=lambda *_: None,
+    ))
+    # Native readiness polling performs an HTTP GET without connecting a window.
+    main.index()
+    assert main._setup_pending is True
+    assert destinations == [] and searches == []
+    main.index()
+    assert len(callbacks) == 2
+    # Only the real window's connection consumes the initial destination.
+    callbacks[-1]()
+    assert destinations == ["/case360/welcome"]
+    assert main._setup_pending is False
+    main.index()
+    assert len(searches) == 1
 
 
 @pytest.fixture

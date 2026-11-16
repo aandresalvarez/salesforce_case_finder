@@ -46,8 +46,15 @@ _setup_pending = os.environ.get("CASE360_OPEN_SETUP") == "1"
 def index() -> None:
     global _review_pending, _setup_pending
     if config.CASE360_ENABLED and _setup_pending:
-        _setup_pending = False
-        ui.navigate.to("/case360/welcome")
+        # The native host probes this URL before opening its window. Consume
+        # the destination only once a real UI client has connected.
+        def open_setup() -> None:
+            global _setup_pending
+            _setup_pending = False
+            ui.navigate.to("/case360/welcome")
+
+        ui.context.client.on_connect(open_setup)
+        ui.label("Opening tester setup…")
         return
     if config.CASE360_ENABLED and _review_pending:
         _review_pending = False
