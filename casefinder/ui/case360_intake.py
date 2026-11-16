@@ -94,6 +94,7 @@ def render(*, run_id: str | None = None) -> None:
                 questions = ui.column().classes("w-full gap-3")
                 decisions = ui.column().classes("w-full gap-3")
                 scope = ui.column().classes("w-full gap-3")
+                recovery = ui.column().classes("w-full gap-3")
                 output = ui.column().classes("c360-output")
             with ui.column().classes("c360-side"):
                 with ui.column().classes("c360-card"):
@@ -126,7 +127,7 @@ def render(*, run_id: str | None = None) -> None:
             control.set_enabled(not value and not frozen)
         for control in [analyze, new]:
             control.set_enabled(not value)
-        for panel in [attachments, questions, decisions, scope]:
+        for panel in [attachments, questions, decisions, scope, recovery]:
             if value or frozen:
                 panel.props("inert")
             else:
@@ -705,6 +706,17 @@ def render(*, run_id: str | None = None) -> None:
         evidence.clear()
         with evidence:
             render_sources(result)
+        recovery.clear()
+        if result.get("packages") and result.get("execution_status") in {"FAILED", "INTERRUPTED"}:
+            with recovery, ui.column().classes("c360-card"):
+                ui.label("Your SQL and completed checks are saved").classes("c360-card-title")
+                ui.label(
+                    "Continue from verified saved progress within the remaining request budget. "
+                    "Completed work will be reused; SQL will not be executed."
+                ).classes("c360-detail-note")
+                ui.button("Continue saved review", on_click=continue_review).props(
+                    "unelevated no-caps"
+                )
         output.clear()
         with output:
             recovered = (
@@ -735,6 +747,32 @@ def render(*, run_id: str | None = None) -> None:
             if result.get("execution_status")
             else "Request saved. Ready to analyze."
         )
+
+    async def continue_review() -> None:
+        if model["busy"]:
+            return
+        busy(True)
+        try:
+            c = controller()
+            status.text = "Verifying saved progress and remaining budget…"
+            proof = await c.client.request("prepare_resume", run_id=c.run_id)
+            if not proof.get("can_resume"):
+                status.text = (
+                    "Saved progress could not be verified for continuation. "
+                    "Your SQL, answers and recorded charges remain in history."
+                )
+                return
+            view = await c.client.request(
+                "resume_run",
+                {"checkpoint_sha256": proof["checkpoint_sha256"]},
+                run_id=c.run_id,
+                request_id="resume-" + proof["checkpoint_sha256"],
+            )
+            await inspect(view)
+        except ERRORS as error:
+            failure(error)
+        finally:
+            busy(False)
 
     async def launch(action="analyze") -> None:
         if model["busy"]:

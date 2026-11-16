@@ -198,6 +198,64 @@ def test_failed_save_cannot_start_analysis(render, monkeypatch):
     asyncio.run(check())
 
 
+@pytest.mark.parametrize("verified", [True, False])
+def test_saved_sql_continues_only_from_verified_checkpoint(render, monkeypatch, verified):
+    class SavedReviewClient(IntakeClient):
+        resumed = False
+
+        def view(self):
+            view = super().view()
+            view["execution_status"] = "COMPLETED" if self.resumed else "FAILED"
+            return view
+
+        async def request(self, method, params=None, **kwargs):
+            if method == "prepare_resume":
+                self.calls.append((method, copy.deepcopy(params)))
+                return {"can_resume": verified, "checkpoint_sha256": "c" * 64}
+            if method == "resume_run":
+                self.calls.append((method, copy.deepcopy(params)))
+                assert kwargs["run_id"] == "synthetic"
+                assert kwargs["request_id"] == "resume-" + "c" * 64
+                self.resumed = True
+                return self.view()
+            return await super().request(method, params, **kwargs)
+
+        async def artifact(self, run_id, reference):
+            result = await super().artifact(run_id, reference)
+            if reference["artifact_id"] == "result":
+                result.update(execution_status=self.view()["execution_status"],
+                              packages=[{"sql": "saved synthetic SQL"}],
+                              scope_confirmation_required=False)
+            return result
+
+    client = SavedReviewClient(analyzed=True)
+    client.state["questions"][0].update(answer="At index date", status="answered")
+    monkeypatch.setattr(flow, "render_result", lambda *args: flow.ui.label("Saved SQL"))
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            assert "Continue saved review" in tree.button_labels()
+            press(tree, "Continue saved review")
+            await asyncio.sleep(0)
+            assert client.resumed is verified
+            assert client.state["questions"][0]["answer"] == "At index date"
+            assert not any(m in {"prepare_intake", "authorize_run", "start_run"}
+                           for m, _ in client.calls)
+            if verified:
+                assert "Continue saved review" not in tree.button_labels()
+                assert [p for m, p in client.calls if m == "resume_run"] == [
+                    {"checkpoint_sha256": "c" * 64}
+                ]
+            else:
+                assert "could not be verified" in tree.text
+                assert not any(m == "resume_run" for m, _ in client.calls)
+
+    asyncio.run(check())
+
+
 def test_analyze_starts_ai_review_of_pending_documents_and_meeting_notes(render, monkeypatch):
     client = IntakeClient()
     client.state["sources"] = [
