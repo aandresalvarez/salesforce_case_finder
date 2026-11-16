@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import tarfile
+import zipfile
 from pathlib import Path
 
 from nicegui import app, ui
@@ -48,7 +50,7 @@ def render_install() -> None:
             await asyncio.to_thread(delivery.install_archive, Path(files[0]))
             status.text = "Beta installed. Close any older beta window, then select Open beta. " \
                 "Your requests and settings are preserved."
-        except (OSError, ValueError, KeyError, RuntimeError):
+        except (OSError, ValueError, KeyError, RuntimeError, zipfile.BadZipFile, tarfile.TarError):
             status.text = "Installation could not finish. Check that you selected the original " \
                 "pilot ZIP for this computer. Your saved work has not been removed."
         finally:

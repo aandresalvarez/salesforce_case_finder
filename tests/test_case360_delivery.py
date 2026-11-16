@@ -35,6 +35,18 @@ def test_wheel_offers_beta_without_enabling_runtime():
     assert not config.PRIVATE_BETA
 
 
+def test_regular_wheel_beta_route_preserves_navigation_without_cloud_probe(render, monkeypatch):
+    from casefinder import main
+
+    monkeypatch.setattr(config, "CASE360_ENABLED", False)
+    monkeypatch.setattr(main, "gated", lambda *_: pytest.fail("Installation must stay local"))
+    tree = render(main.case360_route)
+    assert all(label in tree.text for label in ["Search", "Lists", "SQL", "Settings"])
+    assert "Install beta or update beta" in tree.button_labels()
+    assert "Open beta" in tree.button_labels()
+    assert "Maximum authorized budget" not in tree.text
+
+
 def test_install_and_update_leave_existing_requests_and_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path / "private"))
     monkeypatch.setattr(platforms, "target", lambda: "darwin-arm64")
