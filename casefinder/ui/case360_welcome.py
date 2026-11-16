@@ -21,8 +21,9 @@ def render_welcome() -> None:
     signed = bool(context.get("google_account"))
     ready = onboarding.access_ready(context)
     busy = False
+    signing = False
 
-    with ui.column().classes("w-full cf-reading").style("max-width:820px;gap:24px"):
+    with ui.column().classes("w-full cf-reading").style("max-width:820px;gap:16px"):
         with ui.column().style("gap:8px"):
             ui.label("WELCOME TO CASE 360").style(
                 "color:#4263b4;font-size:12px;letter-spacing:.1em;font-weight:700"
@@ -33,7 +34,7 @@ def render_welcome() -> None:
             ui.card()
             .classes("w-full")
             .props("flat bordered")
-            .style("padding:24px;border-radius:14px;gap:16px")
+            .style("padding:20px;border-radius:14px;gap:12px")
         ):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("1. Sign in").classes("cf-h2")
@@ -44,8 +45,10 @@ def render_welcome() -> None:
             identity = ui.label(
                 "Signed in: " + context["google_account"] if signed else "Connect your work account"
             ).style("font-weight:600")
-            email = ui.input("Your work email", value=context.get("google_account", "")).classes(
-                "w-full"
+            email = (
+                ui.input("Your work email", value=context.get("google_account", ""))
+                .classes("w-full")
+                .props("dense outlined")
             )
             muted(
                 "Google/Stanford verifies your account in the browser. "
@@ -58,8 +61,8 @@ def render_welcome() -> None:
             ).props('role="status" aria-live="polite"')
 
             async def sign_in() -> None:
-                nonlocal signed, ready, busy
-                busy, ready = True, False
+                nonlocal signed, ready, busy, signing
+                busy, ready, signing = True, False, True
                 refresh()
                 sign_badge.set_text("Signing in…")
                 sign_badge.props("color=blue")
@@ -82,7 +85,7 @@ def render_welcome() -> None:
                 except Exception:  # noqa: BLE001 - never expose credential diagnostics
                     sign_status.text = "Sign-in could not finish. Check your network and try again."
                 finally:
-                    busy = False
+                    busy = signing = False
                     cancel.disable()
                     refresh()
 
@@ -95,7 +98,7 @@ def render_welcome() -> None:
             ui.card()
             .classes("w-full")
             .props("flat bordered")
-            .style("padding:24px;border-radius:14px;gap:16px")
+            .style("padding:20px;border-radius:14px;gap:12px")
         ):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("2. Check access").classes("cf-h2")
@@ -109,7 +112,9 @@ def render_welcome() -> None:
             access_status = ui.label(
                 "Access checks passed. You're ready to continue."
                 if ready
-                else "Check access after signing in."
+                else "Select Check my access to verify your permissions."
+                if signed
+                else "Sign in first, then check your access."
             ).props('role="status" aria-live="polite"')
             with ui.expansion("Access check details").classes("w-full"):
                 results = ui.column().classes("w-full")
@@ -186,7 +191,7 @@ def render_welcome() -> None:
             sign.set_text("Change account" if signed else "Sign in with Google")
             sign.set_enabled(not busy)
             email.set_enabled(not busy)
-            cancel.set_visibility(busy)
+            cancel.set_visibility(signing)
             check_button.set_enabled(signed and not busy)
             start.set_enabled(signed and ready and not busy)
             sign_badge.set_text("Signed in" if signed else "Not signed in")
