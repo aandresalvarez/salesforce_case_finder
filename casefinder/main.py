@@ -39,11 +39,16 @@ from .ui.shell import gated
 
 HOST = "127.0.0.1"
 _review_pending = os.environ.get("CASE360_OPEN_SAVED_REVIEW") == "1"
+_setup_pending = os.environ.get("CASE360_OPEN_SETUP") == "1"
 
 
 @ui.page("/")
 def index() -> None:
-    global _review_pending
+    global _review_pending, _setup_pending
+    if config.CASE360_ENABLED and _setup_pending:
+        _setup_pending = False
+        ui.navigate.to("/case360/welcome")
+        return
     if config.CASE360_ENABLED and _review_pending:
         _review_pending = False
         ui.navigate.to("/case360/review")
@@ -109,7 +114,22 @@ def case360_settings_route() -> None:
     with layout("case360"):
         ui.link("Back to request", "/case360")
         ui.label("Case 360 Beta settings").classes("cf-h1")
+        from .case360.onboarding import pilot
+        if pilot():
+            ui.link("Sign in and tester setup", "/case360/welcome")
         render_setup()
+
+
+@ui.page("/case360/welcome")
+def case360_welcome_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui.case360_welcome import render_welcome
+    from .ui.shell import layout
+
+    with layout("case360"):
+        render_welcome()
 
 
 @ui.page("/case360")

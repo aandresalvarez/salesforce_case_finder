@@ -23,6 +23,13 @@ def main(argv: list[str] | None = None) -> int:
             os.execv(str(selected / "launch"), [str(selected / "launch"), *args])
     manifest = package.verify(root)
     context = package.context_for(root, manifest)
+    from .case360 import onboarding
+
+    onboarding.provision(root, context)
+    saved = json.loads(context.read_text())
+    os.environ.update(onboarding.runtime_environment(saved, root))
+    if onboarding.pilot(root) and not saved.get("authorization_policy", {}).get("live_enabled"):
+        os.environ["CASE360_OPEN_SETUP"] = "1"
     os.environ.update(CASE360_CHANNEL="private-beta", CASE360_RUNTIME_CONTEXT=str(context),
                       CASEFINDER_CASE360="1", CASEFINDER_UPDATE_CHECK="0",
                       CASE360_RELEASE_VERSION=manifest["version"],
@@ -48,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     if args == ["--review"]:
         # The first window goes directly to saved local work, without loading Search.
         os.environ["CASE360_OPEN_SAVED_REVIEW"] = "1"
+        args = []
+    if args == ["--setup"]:
+        os.environ["CASE360_OPEN_SETUP"] = "1"
         args = []
     if args:
         print("usage: case360-beta [--version | --check | --review]; "

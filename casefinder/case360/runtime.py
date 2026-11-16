@@ -34,8 +34,14 @@ class Runtime:
         # unnecessary for this synthetic preview and must not select its runtime.
         names = ("PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "WINDIR",
                  "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL")
-        return {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
-                "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
+        result = {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
+                  "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
+        if self.context_file:
+            from .onboarding import runtime_environment
+
+            result.update(runtime_environment(json.loads(self.context_file.read_text()),
+                                              self.engine_root.parent))
+        return result
 
 
 def discover() -> Runtime:

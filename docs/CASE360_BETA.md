@@ -11,6 +11,14 @@ in English; requests and analyst answers are preserved as entered.
 
 ## Install and configure
 
+For a new tester, use the private wheel-based installer and
+[Mac tester quick start](CASE360_TESTER_QUICKSTART.md). It includes the ordinary
+Case Finder wheel and its private runtime/resources, opens a first-run setup
+screen, and keeps Google sign-in in an app-private credential store. The tester
+signs in through the browser from the app, checks access, and chooses a budget.
+No resource paths, repository checkout or developer account are required. The
+instructions below also describe the earlier app-bundle and advanced setup.
+
 Use the macOS Apple Silicon app supplied through the private delivery channel.
 Move **Case 360 Beta.app** to `~/Applications` and open it. Python, Node and the
 locked dependencies are included. The stable Case Finder installation and its
