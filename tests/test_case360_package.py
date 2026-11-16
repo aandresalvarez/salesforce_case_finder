@@ -29,6 +29,11 @@ def test_side_by_side_update_and_rollback_keep_requests(tmp_path, monkeypatch):
     run = context.parent / "runs" / "synthetic-request.json"
     run.parent.mkdir()
     run.write_text("Synthetic saved work")
+    original = json.loads(context.read_text())
+    original.update(google_account="tester@example.edu", google_credentials="/synthetic/private",
+                    tester_budget_file="/synthetic/budget.sqlite")
+    context.write_text(json.dumps(original))
+    context_before = context.read_bytes()
     second = tmp_path / "second"
     two = package.install(second, release(second, "synthetic-v2"))
     package.activate(two)
@@ -36,6 +41,9 @@ def test_side_by_side_update_and_rollback_keep_requests(tmp_path, monkeypatch):
     assert json.loads(newer_context.read_text())["resource_root"] != \
         json.loads(context.read_text())["resource_root"]
     assert run.read_text() == "Synthetic saved work"
+    assert context.read_bytes() == context_before
+    assert json.loads(newer_context.read_text())["google_account"] == "tester@example.edu"
+    assert json.loads(newer_context.read_text())["tester_budget_file"] == "/synthetic/budget.sqlite"
     package.activate(one)
     assert json.loads((tmp_path / "private/active-release.json").read_text())["root"] == str(one)
     assert len(package.installed()) == 2
@@ -58,7 +66,8 @@ def test_package_tampering_is_refused(tmp_path, mutation):
         package.verify(root, expected)
 
 
-def test_connection_settings_are_explicit_and_do_not_authorize_a_run(tmp_path):
+def test_connection_settings_are_explicit_and_do_not_authorize_a_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path))
     from synthetic import REQUESTER_EMAIL
 
     context = tmp_path / "context.json"

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 
@@ -247,6 +248,7 @@ async def sign_in(email: str, context_file: Path) -> None:
                 context["authorization_policy"] = {"live_enabled": False, "max_paid_usd": 0}
             context["google_credentials"] = str(directory)
             context["google_account"] = email
+            context.pop("setup_access", None)
             preferences.atomic_json(context_file, context)
             # Original Case Finder's client is initialized lazily after first-run setup.
             os.environ.update(credential_environment(root, directory))
@@ -285,6 +287,8 @@ def save_budget(context_file: Path, cap: float) -> None:
 
 async def check_access(context_file: Path) -> list[dict]:
     context = json.loads(context_file.read_text())
+    context.pop("setup_access", None)
+    preferences.atomic_json(context_file, context)
     root = bundle_root()
     settings = pilot(root)
     if root is None or not settings or not context.get("google_account"):
@@ -292,7 +296,54 @@ async def check_access(context_file: Path) -> list[dict]:
     directory = Path(context["google_credentials"])
     token = await _capture(root, directory, "auth", "print-access-token")
     await asyncio.to_thread(_verify_tokens, directory, token, context["google_account"])
-    return await asyncio.to_thread(_access_probes, root, settings, token)
+    checks = await asyncio.to_thread(_access_probes, root, settings, token)
+    current = json.loads(context_file.read_text())
+    if (
+        _access_binding(current) == _access_binding(context)
+        and checks
+        and all(c["passed"] for c in checks)
+    ):
+        current["setup_access"] = {
+            "binding": _access_binding(context),
+            "checked_at": time.time(),
+            "checks": checks,
+        }
+        preferences.atomic_json(context_file, current)
+    return checks
+
+
+def _access_binding(context: dict) -> list:
+    return [context.get(k) for k in ("google_account", "google_credentials", "source_profile")]
+
+
+def access_ready(context: dict) -> bool:
+    proof = context.get("setup_access", {})
+    checks = proof.get("checks", [])
+    age = time.time() - proof.get("checked_at", 0)
+    return bool(
+        context.get("google_account")
+        and checks
+        and all(c["passed"] for c in checks)
+        and proof.get("binding") == _access_binding(context)
+        and 0 <= age < 3600
+    )
+
+
+def complete_setup(context_file: Path) -> None:
+    from . import budgets
+
+    context = json.loads(context_file.read_text())
+    if not access_ready(context):
+        raise SetupError("Select Check my access to finish setup.")
+    cap = context.get("authorization_policy", {}).get("max_paid_usd", 0)
+    settings = budgets.ensure(context["google_account"], cap or budgets.DEFAULT_REQUEST)
+    save_budget(context_file, settings["request_usd"])
+    profile = preferences.read()
+    preferences.save(
+        profile["analyst"] or context["google_account"],
+        profile["environment"] or "Private Mac pilot",
+        profile["runtime_context"],
+    )
 
 
 def _access_probes(root: Path, settings: dict, token: str) -> list[dict]:

@@ -14,7 +14,9 @@ This installs a separate beta. Your existing Case Finder installation is unchang
 
 1. In **Set up your beta**, enter **Your work email** and select **Sign in with Google**. Complete Google/Stanford sign-in and MFA in your browser, then return to the app. Never paste passwords or sign-in codes into a request.
 2. Select **Check my access**. The app checks your identity, dataset metadata, BigQuery dry-run permission and model-project permissions. It makes no paid model call and executes no data query. If a check fails, first confirm your VPN connection. Signing in cannot grant missing organizational permissions; the pilot owner must arrange these for your account before testing.
-3. Enter your tester label and a **Maximum USD per request**, then select **Save my settings**. Zero disables live analysis. Saving does not spend money. Select **Start a request** when ready.
+3. When the two steps show **Signed in** and **Ready**, select **Continue to Case 360**. No budget entry is needed and continuing does not start a paid request.
+
+Each tester starts with **$500 USD total on their Mac** and **$50 USD per request**. Change these in **Beta settings → Pilot budget**, where usage and remaining funds are shown. The total is cumulative; it does not reset monthly, when clearing history, or when updating the beta. Uncertain calls retain their reservation until accounting can settle them. Setting the request limit to zero pauses live analysis.
 
 The included Epic/SHC/LPCH/STARR snapshot has recorded versions; a snapshot does not establish current table availability or clinical meaning. The agent checks relevant sources during analysis. You do not need repository access, resource paths or hashes for setup.
 

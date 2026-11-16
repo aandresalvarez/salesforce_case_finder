@@ -52,19 +52,41 @@ def context_for(root: Path, manifest: dict) -> Path:
     previous = json.loads(context.read_text()) if context.exists() else {}
     if previous.get("engine_root") == str(root / "engine"):
         return context
+    # Carry personal settings to a new release; keep old run roots and evidence intact.
+    if not previous and (data_root() / "active-release.json").is_file():
+        active = json.loads((data_root() / "active-release.json").read_text())
+        old_release = json.loads((Path(active["root"]) / "release.json").read_text())["release_id"]
+        old_context = data_root() / "installations" / old_release / "context.json"
+        if old_context.is_file():
+            old = json.loads(old_context.read_text())
+            previous = {
+                key: old[key]
+                for key in (
+                    "google_account",
+                    "google_credentials",
+                    "authorization_policy",
+                    "tester_budget_file",
+                )
+                if key in old
+            }
     build = root / "build.json"
-    value = {**previous, "schema": "case360_runtime_context/1",
-             "engine_root": str(root / "engine"), "node_executable": str(root / "node/bin/node"),
-             "python_executable": str(root / "python/bin/python3.13"),
-             "resource_root": str(location / "resources"),
-             "runs_root": str(location / "runs"),
-             "installation_id": "release-" + hashlib.sha256(
-                 manifest["release_id"].encode()).hexdigest()[:32],
-             "runtime_manifest": str(build),
-             "runtime_manifest_sha256": hashlib.sha256(build.read_bytes()).hexdigest(),
-             "source_profile": previous.get("source_profile"),
-             "authorization_policy": previous.get("authorization_policy", {
-                 "live_enabled": False, "max_paid_usd": 0})}
+    value = {
+        **previous,
+        "schema": "case360_runtime_context/1",
+        "engine_root": str(root / "engine"),
+        "node_executable": str(root / "node/bin/node"),
+        "python_executable": str(root / "python/bin/python3.13"),
+        "resource_root": str(location / "resources"),
+        "runs_root": str(location / "runs"),
+        "installation_id": "release-"
+        + hashlib.sha256(manifest["release_id"].encode()).hexdigest()[:32],
+        "runtime_manifest": str(build),
+        "runtime_manifest_sha256": hashlib.sha256(build.read_bytes()).hexdigest(),
+        "source_profile": previous.get("source_profile"),
+        "authorization_policy": previous.get(
+            "authorization_policy", {"live_enabled": False, "max_paid_usd": 0}
+        ),
+    }
     atomic_json(context, value)
     return context
 
@@ -123,11 +145,25 @@ def configure(context: Path, snapshot: str, principal: str, cap: float, route: s
         raise ValueError("Choose a verified resource snapshot SHA256.")
     policy = {"live_enabled": False, "max_paid_usd": 0}
     if cap:
-        if not (snapshot and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", principal)
-                and 0 < cap <= 1000 and re.fullmatch(r"[a-f0-9]{64}", route)):
+        if not (
+            snapshot
+            and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", principal)
+            and 0 < cap <= 1000
+            and re.fullmatch(r"[a-f0-9]{64}", route)
+        ):
             raise ValueError("Live preparation needs a snapshot, account, route proof and budget.")
-        policy = {"live_enabled": True, "max_paid_usd": cap, "expected_principal": principal,
-                  "bigquery_job_project": "som-rit-phi-starr-trek",
-                  "route_verification_sha256": route}
+        policy = {
+            "live_enabled": True,
+            "max_paid_usd": cap,
+            "expected_principal": principal,
+            "bigquery_job_project": "som-rit-phi-starr-trek",
+            "route_verification_sha256": route,
+        }
     value.update(source_profile=snapshot or None, authorization_policy=policy)
+    if principal:
+        from . import budgets
+
+        limits = budgets.ensure(principal, cap)
+        budgets.save(principal, limits["total_usd"], cap)
+        value["tester_budget_file"] = str(budgets.database())
     atomic_json(context, value)

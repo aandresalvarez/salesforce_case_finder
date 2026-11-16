@@ -246,12 +246,14 @@ def test_setup_ui_has_no_manual_resource_paths_or_terminal_login(render, install
         case360_welcome, "discover", lambda: Runtime(root / "engine", root, "node", context)
     )
     tree = render(case360_welcome.render_welcome)
-    assert {"Sign in with Google", "Check my access", "Save my settings"} <= set(
+    assert {"Sign in with Google", "Check my access", "Continue to Case 360"} <= set(
         tree.button_labels()
     )
     assert "gcloud" not in tree.text and "SHA256" not in tree.text
     assert "Your work email" in [x.props.get("label") for x in tree.of_type("Input")]
-    assert next(x for x in tree.of_type("Number")).value == 0
+    assert not tree.of_type("Number")
+    assert "Save my settings" not in tree.button_labels()
+    assert not next(b for b in tree.buttons() if b.text == "Continue to Case 360").enabled
 
 
 def test_access_checks_never_execute_sql_or_call_a_model(install, monkeypatch):
@@ -390,3 +392,85 @@ def test_account_text_cannot_become_a_google_cli_flag(install, monkeypatch):
     with pytest.raises(onboarding.SetupError, match="email"):
         asyncio.run(onboarding.sign_in("--flags-file=path@example.edu", context))
     spawn.assert_not_awaited()
+
+
+def test_complete_setup_requires_recent_account_bound_checks_and_applies_defaults(
+    install, monkeypatch
+):
+    import time
+
+    from casefinder.case360 import budgets
+
+    root, context_file = install
+    onboarding.provision(root, context_file)
+    context = json.loads(context_file.read_text())
+    context.update(google_account="tester@example.edu", google_credentials="/synthetic/credentials")
+    preferences.atomic_json(context_file, context)
+    with pytest.raises(onboarding.SetupError, match="Check my access"):
+        onboarding.complete_setup(context_file)
+    context["setup_access"] = {
+        "binding": onboarding._access_binding(context),
+        "checked_at": time.time(),
+        "checks": [{"name": "test", "passed": True, "detail": "OK"}],
+    }
+    preferences.atomic_json(context_file, context)
+    onboarding.complete_setup(context_file)
+    result = json.loads(context_file.read_text())
+    assert result["authorization_policy"]["max_paid_usd"] == 50
+    assert budgets.ensure("tester@example.edu")["total_usd"] == 500
+    assert result["tester_budget_file"] == str(budgets.database())
+    # Completing setup again cannot reset customized limits or usage.
+    budgets.save("tester@example.edu", 600, 25)
+    onboarding.complete_setup(context_file)
+    assert json.loads(context_file.read_text())["authorization_policy"]["max_paid_usd"] == 25
+    context["google_account"] = "someone-else@example.edu"
+    assert not onboarding.access_ready(context)
+    context["google_account"] = "tester@example.edu"
+    context["setup_access"]["checked_at"] -= 3601
+    assert not onboarding.access_ready(context)
+
+
+def test_welcome_continue_navigates_only_after_checks(render, install, monkeypatch):
+    import time
+
+    from casefinder.ui import case360_welcome
+
+    root, file = install
+    onboarding.provision(root, file)
+    context = json.loads(file.read_text())
+    context.update(google_account="tester@example.edu", google_credentials="/synthetic")
+    preferences.atomic_json(file, context)
+    monkeypatch.setattr(
+        case360_welcome, "discover", lambda: Runtime(root / "engine", root, "node", file)
+    )
+    monkeypatch.setattr(session, "prepare_reconfigure", AsyncMock())
+    destinations = []
+    monkeypatch.setattr(case360_welcome.ui.navigate, "to", destinations.append)
+
+    async def checked(_):
+        context["setup_access"] = {
+            "binding": onboarding._access_binding(context),
+            "checked_at": time.time(),
+            "checks": [{"name": "resource", "passed": True, "detail": "OK"}],
+        }
+        preferences.atomic_json(file, context)
+        return context["setup_access"]["checks"]
+
+    monkeypatch.setattr(onboarding, "check_access", checked)
+    tree = render(case360_welcome.render_welcome)
+    start = next(b for b in tree.buttons() if b.text == "Continue to Case 360")
+    assert not start.enabled
+
+    async def run():
+        from nicegui import core
+
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        tree.press(next(b for b in tree.buttons() if b.text == "Check my access"))
+        await asyncio.sleep(0)
+        assert start.enabled
+        assert "Access checks passed" in tree.text
+        tree.press(start)
+        await asyncio.sleep(0)
+        assert destinations == ["/case360"]
+
+    asyncio.run(run())

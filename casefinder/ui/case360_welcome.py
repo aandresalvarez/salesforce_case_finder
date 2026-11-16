@@ -1,4 +1,4 @@
-"""A tester-facing setup flow; advanced resource paths stay out of this screen."""
+"""Two-step onboarding with explicit identity, access and ready states."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 from nicegui import ui
 
-from ..case360 import onboarding, preferences, session
+from ..case360 import onboarding, session
 from ..case360.runtime import discover
 from .components.actions import muted, primary, secondary
 
@@ -18,131 +18,198 @@ def render_welcome() -> None:
         return
     context_file = runtime.context_file
     context = json.loads(context_file.read_text())
-    with ui.column().classes("w-full cf-reading").style("max-width:780px;gap:20px"):
-        ui.label("Set up your beta").classes("cf-h1")
-        muted("Use your own work account. Your requests and settings stay on this Mac.")
-        with ui.card().classes("w-full").props("flat bordered"):
-            ui.label("1. Sign in").classes("cf-h2")
+    signed = bool(context.get("google_account"))
+    ready = onboarding.access_ready(context)
+    busy = False
+
+    with ui.column().classes("w-full cf-reading").style("max-width:820px;gap:24px"):
+        with ui.column().style("gap:8px"):
+            ui.label("WELCOME TO CASE 360").style(
+                "color:#4263b4;font-size:12px;letter-spacing:.1em;font-weight:700"
+            )
+            ui.label("Set up your beta").classes("cf-h1")
+            muted("Two steps to get started. Your requests and settings stay on this Mac.")
+        with (
+            ui.card()
+            .classes("w-full")
+            .props("flat bordered")
+            .style("padding:24px;border-radius:14px;gap:16px")
+        ):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("1. Sign in").classes("cf-h2")
+                sign_badge = ui.badge(
+                    "Signed in" if signed else "Not signed in",
+                    color="positive" if signed else "grey-7",
+                )
+            identity = ui.label(
+                "Signed in: " + context["google_account"] if signed else "Connect your work account"
+            ).style("font-weight:600")
             email = ui.input("Your work email", value=context.get("google_account", "")).classes(
                 "w-full"
             )
             muted(
-                "Complete your organization's Google sign-in in the browser, then return here."
+                "Google/Stanford verifies your account in the browser. "
+                "Return here after signing in."
             )
-            identity = ui.label(
-                "Signed in: " + context["google_account"]
-                if context.get("google_account")
-                else "Not signed in"
-            )
-            sign_status = ui.label("").props('role="status"')
+            sign_status = ui.label(
+                "Account connected. Next, check your access."
+                if signed
+                else "Sign in to connect your account."
+            ).props('role="status" aria-live="polite"')
 
             async def sign_in() -> None:
-                sign.disable()
-                email.disable()
-                cancel.enable()
+                nonlocal signed, ready, busy
+                busy, ready = True, False
+                refresh()
+                sign_badge.set_text("Signing in…")
+                sign_badge.props("color=blue")
                 sign_status.text = (
-                    "Checking your saved sign-in. Complete Google sign-in if a browser opens…"
+                    "Checking saved sign-in. Complete Google/Stanford sign-in if a browser opens…"
                 )
+                cancel.enable()
                 try:
                     await session.prepare_reconfigure()
                     await onboarding.sign_in((email.value or "").strip(), context_file)
-                    identity.text = "Signed in: " + (email.value or "").strip()
-                    sign_status.text = "Your account is verified. Check access below."
+                    signed = True
+                    identity.text = (
+                        "Signed in: " + json.loads(context_file.read_text())["google_account"]
+                    )
+                    sign_status.text = "Account verified. Next, select Check my access."
+                    access_status.text = "Ready to check your data and model permissions."
                 except (onboarding.SetupError, RuntimeError) as error:
+                    signed = bool(json.loads(context_file.read_text()).get("google_account"))
                     sign_status.text = str(error)
-                except Exception:  # noqa: BLE001 - never expose provider credential diagnostics
+                except Exception:  # noqa: BLE001 - never expose credential diagnostics
                     sign_status.text = "Sign-in could not finish. Check your network and try again."
                 finally:
-                    sign.enable()
-                    email.enable()
+                    busy = False
                     cancel.disable()
+                    refresh()
 
             with ui.row():
-                sign = primary("Sign in with Google", sign_in)
+                sign = secondary("Change account" if signed else "Sign in with Google", sign_in)
                 cancel = secondary("Cancel sign-in", onboarding.cancel_login)
                 cancel.disable()
-        with ui.card().classes("w-full").props("flat bordered"):
-            ui.label("2. Check access").classes("cf-h2")
+                cancel.set_visibility(False)
+        with (
+            ui.card()
+            .classes("w-full")
+            .props("flat bordered")
+            .style("padding:24px;border-radius:14px;gap:16px")
+        ):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("2. Check access").classes("cf-h2")
+                access_badge = ui.badge(
+                    "Ready" if ready else "Not checked", color="positive" if ready else "grey-7"
+                )
             muted(
-                "Epic documentation, SHC/LPCH metadata and STARR definitions are included. "
-                "This checks your account and runs a compilation probe. "
-                "No model call or data query is executed."
+                "Check your access to Epic documentation, SHC/LPCH metadata, STARR and the model "
+                "project. No paid model call or data query is executed."
             )
-            access_status = ui.label("").props('role="status"')
-            results = ui.column().classes("w-full")
+            access_status = ui.label(
+                "Access checks passed. You're ready to continue."
+                if ready
+                else "Check access after signing in."
+            ).props('role="status" aria-live="polite"')
+            with ui.expansion("Access check details").classes("w-full"):
+                results = ui.column().classes("w-full")
+                with results:
+                    for item in context.get("setup_access", {}).get("checks", []) if ready else []:
+                        ui.label(item["name"] + ": " + item["detail"])
 
             async def check() -> None:
-                check_button.disable()
-                access_status.text = "Checking your account and pilot resources…"
+                nonlocal ready, busy
+                busy, ready = True, False
+                refresh()
+                access_badge.set_text("Checking…")
+                access_badge.props("color=blue")
+                access_status.text = (
+                    "Checking identity and permissions. This may take up to a minute…"
+                )
                 results.clear()
                 try:
                     checks = await onboarding.check_access(context_file)
                     with results:
                         for item in checks:
                             with ui.row().classes("items-center"):
-                                ui.icon("check_circle" if item["passed"] else "error_outline")
+                                ui.icon(
+                                    "check_circle" if item["passed"] else "error_outline",
+                                    color="positive" if item["passed"] else "negative",
+                                )
                                 ui.label(item["name"] + ": " + item["detail"])
+                    ready = onboarding.access_ready(json.loads(context_file.read_text()))
                     access_status.text = (
-                        "Access checks passed. Choose your budget below."
-                        if all(c["passed"] for c in checks)
-                        else "Some access is missing. Check VPN, then share the resource names "
-                        "with your access administrator."
+                        "Access checks passed. You're ready to continue."
+                        if ready
+                        else "Some access is missing. Check VPN and review the details below."
                     )
                 except onboarding.SetupError as error:
                     access_status.text = str(error)
-                except Exception:  # noqa: BLE001 - never expose provider credential diagnostics
+                except Exception:  # noqa: BLE001 - never expose credential diagnostics
                     access_status.text = (
-                        "Could not check access. Connect to the Stanford VPN and try again."
+                        "Could not check access. Connect to Stanford VPN and try again."
                     )
                 finally:
-                    check_button.enable()
+                    busy = False
+                    refresh()
 
             check_button = secondary("Check my access", check)
-        with ui.card().classes("w-full").props("flat bordered"):
-            ui.label("3. Choose your request budget").classes("cf-h2")
-            profile = preferences.read()
-            analyst = ui.input("Your name or tester label", value=profile["analyst"])
-            cap = ui.number(
-                "Maximum USD per request",
-                value=context.get("authorization_policy", {}).get("max_paid_usd", 0),
-                min=0,
-                max=1000,
+        with ui.column().classes("w-full").style("gap:12px"):
+            continue_status = ui.label("Complete both steps to start working.").props(
+                'role="status"'
             )
-            muted(
-                "Saving does not spend money. Analyze request authorizes work within this limit. "
-                "Zero keeps live analysis disabled. SQL is validated with dry runs, not executed."
-            )
-            budget_status = ui.label("").props('role="status"')
 
-            async def save() -> None:
+            async def continue_setup() -> None:
+                nonlocal busy, ready
+                busy = True
+                refresh()
                 try:
                     await session.prepare_reconfigure()
-                    onboarding.save_budget(context_file, float(cap.value or 0))
-                    preferences.save(
-                        analyst.value or "",
-                        profile["environment"] or "Private Mac pilot",
-                        profile["runtime_context"],
-                    )
-                    budget_status.text = (
-                        "Settings saved. You can start a request."
-                        if cap.value
-                        else "Settings saved. Live analysis is disabled."
-                    )
-                    start.set_visibility(bool(cap.value))
-                except (ValueError, RuntimeError) as error:
-                    budget_status.text = str(error)
+                    onboarding.complete_setup(context_file)
+                    ui.navigate.to("/case360")
+                except (ValueError, RuntimeError, OSError) as error:
+                    ready = onboarding.access_ready(json.loads(context_file.read_text()))
+                    continue_status.text = str(error)
+                finally:
+                    busy = False
+                    refresh(update_message=False)
 
-            secondary("Save my settings", save)
-            start = ui.link("Start a request", "/case360")
-            start.set_visibility(bool(context.get("authorization_policy", {}).get("live_enabled")))
+            start = primary("Continue to Case 360", continue_setup)
+            start.props("icon=arrow_forward")
+            muted(
+                "Pilot budget is already configured. You can change limits in Beta settings. "
+                "Continuing does not start a paid request."
+            )
+            ui.link("Beta settings", "/case360/settings")
+
+        def refresh(update_message: bool = True) -> None:
+            sign.set_text("Change account" if signed else "Sign in with Google")
+            sign.set_enabled(not busy)
+            email.set_enabled(not busy)
+            cancel.set_visibility(busy)
+            check_button.set_enabled(signed and not busy)
+            start.set_enabled(signed and ready and not busy)
+            sign_badge.set_text("Signed in" if signed else "Not signed in")
+            sign_badge.props("color=positive" if signed else "color=grey-7")
+            access_badge.set_text("Ready" if ready else "Not checked")
+            access_badge.props("color=positive" if ready else "color=grey-7")
+            if update_message:
+                continue_status.text = (
+                    "You're ready. Continue to describe your first request."
+                    if ready
+                    else "Complete both steps to start working."
+                )
+
+        refresh()
         with ui.expansion("Help with setup").classes("w-full"):
             ui.label(
-                "Use Apple Silicon and macOS 13 or later. Connect to Stanford VPN if required. "
-                "Signing in does not grant data or model permissions. "
-                "The pilot owner must grant them to your account."
+                "Use an Apple Silicon Mac with macOS 13 or later. "
+                "Connect to Stanford VPN if required. "
+                "Signing in does not grant data or model permissions; the pilot owner must grant "
+                "them to your account."
             )
             ui.label(
-                "If Google sign-in expires, return here and select Sign in with Google. "
-                "Your requests, answers and remaining budgets are preserved."
+                "If sign-in expires, return here to reconnect. "
+                "Your saved work and budget usage are "
+                "preserved. Model availability is checked on your first request."
             )
-            ui.link("Advanced beta settings", "/case360/settings")
