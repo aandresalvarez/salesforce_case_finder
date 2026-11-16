@@ -217,7 +217,11 @@ def test_saved_sql_continues_only_from_verified_checkpoint(render, monkeypatch, 
                 assert kwargs["run_id"] == "synthetic"
                 assert kwargs["request_id"] == "resume-" + "c" * 64
                 self.resumed = True
-                return self.view()
+                return {**self.view(), "execution_status": "RUNNING"}
+            if method == "get_run" and self.resumed:
+                assert "Analysis in progress" in tree.text
+                assert "Saved SQL" not in tree.text
+                assert "Continue saved review" not in tree.button_labels()
             return await super().request(method, params, **kwargs)
 
         async def artifact(self, run_id, reference):
@@ -235,11 +239,14 @@ def test_saved_sql_continues_only_from_verified_checkpoint(render, monkeypatch, 
 
     async def check():
         monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        real_sleep = asyncio.sleep
+        monkeypatch.setattr(flow.asyncio, "sleep", lambda _: real_sleep(0))
         with tree.client:
             await restore()
             assert "Continue saved review" in tree.button_labels()
             press(tree, "Continue saved review")
-            await asyncio.sleep(0)
+            for _ in range(5):
+                await real_sleep(0)
             assert client.resumed is verified
             assert client.state["questions"][0]["answer"] == "At index date"
             assert not any(m in {"prepare_intake", "authorize_run", "start_run"}

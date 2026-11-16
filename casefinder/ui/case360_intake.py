@@ -677,6 +677,13 @@ def render(*, run_id: str | None = None) -> None:
     async def inspect(view: dict) -> None:
         c = controller()
         model["view"] = view
+        if view["execution_status"] in {"STARTING", "RUNNING", "CANCEL_REQUESTED"}:
+            recovery.clear()
+            output.clear()
+            with output:
+                ui.label(
+                    "Analysis in progress. Saved SQL and completed work remain in history."
+                ).classes("c360-detail-note")
         while view["execution_status"] in {"STARTING", "RUNNING", "CANCEL_REQUESTED"}:
             progress = view.get("progress", [])
             status.text = progress_text(progress[-1]) if progress else "Starting analysis…"
