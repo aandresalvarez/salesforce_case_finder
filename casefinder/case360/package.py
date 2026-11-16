@@ -101,11 +101,15 @@ def install(source: Path, expected: str) -> Path:
     manifest = verify(source, expected)
     if manifest.get("platform") and manifest["platform"] != platforms.target():
         raise ValueError("This package is for a different operating system or processor.")
-    folder = data_root() / "releases"
+    # Short Windows paths leave room for the bundled SDK's nested modules even
+    # on machines which have not enabled the system-wide long-path policy.
+    folder = data_root() / ("r" if os.name == "nt" else "releases")
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     if folder.resolve() != folder:
         raise ValueError("Release storage must not contain links.")
-    target = folder / manifest["release_id"]
+    name = hashlib.sha256(manifest["release_id"].encode()).hexdigest()[:16] \
+        if os.name == "nt" else manifest["release_id"]
+    target = folder / name
     if target.exists():
         verify(target, expected)
         return target
@@ -127,9 +131,8 @@ def install(source: Path, expected: str) -> Path:
 
 
 def installed() -> list[Path]:
-    folder = data_root() / "releases"
-    roots = {p for p in folder.iterdir() if (p / "release.json").is_file()} \
-        if folder.exists() else set()
+    roots = {p for name in ("releases", "r") for p in (data_root() / name).glob("*")
+             if (p / "release.json").is_file()}
     # Include the original app bundle so the first update can roll back to it.
     for context in (data_root() / "installations").glob("*/context.json"):
         try:
