@@ -86,6 +86,10 @@ def open_beta(root: Path) -> None:
     for name in ("PYTHONHOME", "PYTHONPATH", "NODE_OPTIONS", "CASE360_RUNTIME_CONTEXT"):
         env.pop(name, None)
     with log.open("ab") as output:
-        subprocess.Popen(platforms.launch_command(root, "--setup"), env=env,
+        options = (
+            {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+            if os.name == "nt" else {"start_new_session": True}
+        )
+        subprocess.Popen(platforms.launch_command(root, "--setup", windowed=True), env=env,
                          stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                         start_new_session=True)
+                         **options)

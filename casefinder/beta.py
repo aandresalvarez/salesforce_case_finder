@@ -20,7 +20,9 @@ def main(argv: list[str] | None = None) -> int:
         selected = Path(selection["root"]).resolve(strict=True)
         if selected != root:
             package.verify(selected, selection["manifest_sha256"])
-            command = platforms.launch_command(selected, *args)
+            command = platforms.launch_command(
+                selected, *args, windowed=Path(sys.executable).name.lower() == "pythonw.exe"
+            )
             os.execv(command[0], command)
     manifest = package.verify(root)
     context = package.context_for(root, manifest)

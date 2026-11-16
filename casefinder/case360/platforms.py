@@ -38,9 +38,12 @@ def google_command(root: Path, *, windows: bool | None = None) -> list[str]:
     return [str(root / "google-cloud-sdk/bin/gcloud")]
 
 
-def launch_command(root: Path, *args: str) -> list[str]:
+def launch_command(root: Path, *args: str, windowed: bool = False) -> list[str]:
     if os.name == "nt":
-        return [str(python_path(root)), "-P", "-B", str(root / "launch.py"), *args]
+        python = python_path(root)
+        if windowed:
+            python = python.with_name("pythonw.exe")
+        return [str(python), "-P", "-B", str(root / "launch.py"), *args]
     return [str(root / "launch"), *args]
 
 
