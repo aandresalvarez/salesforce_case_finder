@@ -27,7 +27,9 @@ class Runtime:
             raise RuntimeError("The compatible Case 360 desktop runtime is not installed.")
         arguments = (["--context", str(self.context_file.resolve(strict=True))]
                      if self.context_file else [str(self.runs_root.resolve())])
-        return [self.node, "--import", str(loader), str(worker), *arguments]
+        # ESM treats C:\\paths as a URL scheme. File URLs also preserve spaces
+        # and non-ASCII names on both supported desktop platforms.
+        return [self.node, "--import", loader.as_uri(), str(worker), *arguments]
 
     def environment(self) -> dict[str, str]:
         # Carry only OS essentials. Ask configuration and provider credentials are
