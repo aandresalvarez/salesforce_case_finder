@@ -142,7 +142,11 @@ def case360_welcome_route() -> None:
 @ui.page("/case360")
 def case360_route() -> None:
     if not config.CASE360_ENABLED:
-        ui.navigate.to("/")
+        from .ui.case360_install import render_install
+        from .ui.shell import layout
+
+        with layout("case360"):
+            render_install()
         return
     from .ui import case360_page
     from .ui.shell import layout

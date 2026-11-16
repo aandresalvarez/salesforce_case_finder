@@ -35,7 +35,7 @@ class Runtime:
         names = ("PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "WINDIR",
                  "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL")
         result = {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
-                  "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
+                  "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1", "PYTHONUTF8": "1"}
         if self.context_file:
             from .onboarding import runtime_environment
 

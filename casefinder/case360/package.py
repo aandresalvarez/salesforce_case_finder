@@ -9,6 +9,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from . import platforms
 from .preferences import atomic_json, data_root
 
 
@@ -25,12 +26,15 @@ def verify(root: Path, expected: str | None = None) -> dict:
         raise ValueError("Incompatible private beta package.")
     actual = set()
     links = {}
-    for file in root.rglob("*"):
-        if file.is_symlink():
-            target = os.readlink(file)
-            if Path(target).is_absolute() or not file.resolve(strict=True).is_relative_to(root):
+    for file in platforms.payload_files(root):
+        if platforms.is_link(file):
+            name = file.relative_to(root).as_posix()
+            target = manifest.get("links", {}).get(name, "")
+            if (not target or Path(target).is_absolute()
+                    or not file.resolve(strict=True).is_relative_to(root)
+                    or file.resolve() != (file.parent / target).resolve()):
                 raise ValueError("A release link may not leave its package.")
-            links[file.relative_to(root).as_posix()] = target
+            links[name] = target
             continue
         if file.is_file() and file != root / "release.json":
             actual.add(file.relative_to(root).as_posix())
@@ -74,8 +78,8 @@ def context_for(root: Path, manifest: dict) -> Path:
         **previous,
         "schema": "case360_runtime_context/1",
         "engine_root": str(root / "engine"),
-        "node_executable": str(root / "node/bin/node"),
-        "python_executable": str(root / "python/bin/python3.13"),
+        "node_executable": str(platforms.node_path(root)),
+        "python_executable": str(platforms.python_path(root)),
         "resource_root": str(location / "resources"),
         "runs_root": str(location / "runs"),
         "installation_id": "release-"
@@ -95,6 +99,8 @@ def install(source: Path, expected: str) -> Path:
     if not re.fullmatch(r"[a-f0-9]{64}", expected):
         raise ValueError("Supply the manifest SHA256 from the private delivery channel.")
     manifest = verify(source, expected)
+    if manifest.get("platform") and manifest["platform"] != platforms.target():
+        raise ValueError("This package is for a different operating system or processor.")
     folder = data_root() / "releases"
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     if folder.resolve() != folder:
@@ -105,9 +111,14 @@ def install(source: Path, expected: str) -> Path:
         return target
     temporary = folder / (".install-" + uuid.uuid4().hex)
     try:
-        shutil.copytree(source, temporary, symlinks=True)
+        platforms.copy_payload(source, temporary, manifest.get("links", {}))
         verify(temporary, expected)
+        # Windows junctions are absolute. Recreate them after moving the stage.
+        if os.name == "nt":
+            for name in manifest.get("links", {}):
+                os.rmdir(temporary / name)
         os.rename(temporary, target)
+        platforms.restore_links(target, manifest.get("links", {}))
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)

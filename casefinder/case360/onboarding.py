@@ -15,7 +15,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import package, preferences
+from . import package, platforms, preferences
 
 
 class SetupError(ValueError):
@@ -85,13 +85,18 @@ def credential_environment(root: Path, directory: Path) -> dict[str, str]:
     if not directory.is_absolute() or directory.resolve() != directory:
         raise SetupError("Google sign-in storage must not contain links.")
     directory.chmod(0o700)
-    names = ("HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE")
+    names = ("HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE",
+             "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE",
+             "LOCALAPPDATA", "APPDATA", "TEMP", "TMP")
     return {
         **{k: os.environ[k] for k in names if k in os.environ},
-        "PATH": str(root / "google-cloud-sdk/bin") + ":/usr/bin:/bin:/usr/sbin:/sbin",
+        "PATH": os.pathsep.join([str(root / "google-cloud-sdk/bin"),
+            str(Path(os.environ.get("SYSTEMROOT", "C:/Windows")) / "System32")]
+            if os.name == "nt" else [str(root / "google-cloud-sdk/bin"),
+                                    "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
         "CLOUDSDK_CONFIG": str(directory),
         "GOOGLE_APPLICATION_CREDENTIALS": str(directory / "application_default_credentials.json"),
-        "CLOUDSDK_PYTHON": str(root / "python/bin/python3.13"),
+        "CLOUDSDK_PYTHON": str(platforms.python_path(root)),
         "CLOUDSDK_PYTHON_SITEPACKAGES": "0",
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -120,7 +125,7 @@ async def cancel_login() -> None:
 
 async def _capture(root: Path, directory: Path, *arguments: str) -> str:
     process = await asyncio.create_subprocess_exec(
-        str(root / "google-cloud-sdk/bin/gcloud"),
+        *platforms.google_command(root),
         *arguments,
         env=credential_environment(root, directory),
         stdin=asyncio.subprocess.DEVNULL,
@@ -205,7 +210,7 @@ async def sign_in(email: str, context_file: Path) -> None:
     if _login_lock.locked():
         raise SetupError("A sign-in is already open. Finish or cancel it first.")
     root = bundle_root()
-    if root is None or not (root / "google-cloud-sdk/bin/gcloud").is_file():
+    if root is None or not Path(platforms.google_command(root)[-1]).is_file():
         raise SetupError("Install the tester package that includes Google sign-in.")
     async with _login_lock:
         _login_cancelled = False
@@ -216,7 +221,7 @@ async def sign_in(email: str, context_file: Path) -> None:
             if directory is None:
                 directory = preferences.data_root() / "google" / uuid.uuid4().hex
                 _login_process = await asyncio.create_subprocess_exec(
-                    str(root / "google-cloud-sdk/bin/gcloud"),
+                    *platforms.google_command(root),
                     "auth",
                     "login",
                     email,
@@ -341,7 +346,7 @@ def complete_setup(context_file: Path) -> None:
     profile = preferences.read()
     preferences.save(
         profile["analyst"] or context["google_account"],
-        profile["environment"] or "Private Mac pilot",
+        profile["environment"] or "Private pilot",
         profile["runtime_context"],
     )
 

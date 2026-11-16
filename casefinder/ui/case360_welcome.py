@@ -29,7 +29,7 @@ def render_welcome() -> None:
                 "color:#4263b4;font-size:12px;letter-spacing:.1em;font-weight:700"
             )
             ui.label("Set up your beta").classes("cf-h1")
-            muted("Two steps to get started. Your requests and settings stay on this Mac.")
+            muted("Two steps to get started. Your requests and settings stay on this computer.")
         with (
             ui.card()
             .classes("w-full")
@@ -208,7 +208,7 @@ def render_welcome() -> None:
         refresh()
         with ui.expansion("Help with setup").classes("w-full"):
             ui.label(
-                "Use an Apple Silicon Mac with macOS 13 or later. "
+                "Use Windows x64 or a supported Mac. "
                 "Connect to Stanford VPN if required. "
                 "Signing in does not grant data or model permissions; the pilot owner must grant "
                 "them to your account."

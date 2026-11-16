@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .case360 import package, preferences
+    from .case360 import package, platforms, preferences
 
     args = sys.argv[1:] if argv is None else argv
     root = Path(os.environ["CASE360_BUNDLE_ROOT"]).resolve(strict=True)
@@ -20,7 +20,8 @@ def main(argv: list[str] | None = None) -> int:
         selected = Path(selection["root"]).resolve(strict=True)
         if selected != root:
             package.verify(selected, selection["manifest_sha256"])
-            os.execv(str(selected / "launch"), [str(selected / "launch"), *args])
+            command = platforms.launch_command(selected, *args)
+            os.execv(command[0], command)
     manifest = package.verify(root)
     context = package.context_for(root, manifest)
     from .case360 import onboarding

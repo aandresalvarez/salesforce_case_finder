@@ -71,7 +71,7 @@ def render_budgets() -> None:
     with ui.card().classes("w-full").props("flat bordered"):
         ui.label("Pilot budget").classes("cf-h2")
         ui.label(
-            "A total budget for your account on this Mac, shared across your requests. "
+            "A total budget for your account on this computer, shared across your requests. "
             "Usage is retained when you clear history or update the beta."
         )
         if not principal:
