@@ -63,13 +63,20 @@ def main() -> None:
         if args.published:
             update = subprocess.run([str(entry), "--update"], env=env, cwd=root,
                                     text=True, capture_output=True, timeout=180)
-            assert published in update.stdout, update.stdout + update.stderr
-            assert update.returncode == (1 if os.name == "nt" else 0), update.stderr
+            if os.name == "nt":
+                assert published in update.stdout, update.stdout + update.stderr
+            assert update.returncode == (1 if os.name == "nt" else 0), (
+                update.stdout + update.stderr)
         if not args.published or os.name == "nt":
             run(["uv", "tool", "install", "--force", "--python", "3.13", candidate])
         assert args.version in run([str(entry), "--version"]).stdout
         python = root / "tools/casefinder" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
+        if args.published:
+            run([str(python), "-c", "import json,sys; "
+                 "from importlib.metadata import distribution; "
+                 "receipt=json.loads(distribution('casefinder').read_text('direct_url.json')); "
+                 "assert receipt['url']==sys.argv[1], receipt", published])
         run([str(python), "-c", "from casefinder import config,main; from nicegui import app; "
              "assert config.CASE360_AVAILABLE and not config.CASE360_ENABLED; "
              "assert {'/search','/lists','/sql','/case360'} <= {r.path for r in app.routes}; "
