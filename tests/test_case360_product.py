@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import os
 import zipfile
 
 import pytest
@@ -73,7 +74,8 @@ def test_analyst_and_environment_are_local_editable_settings(tmp_path, monkeypat
     assert preferences.read()["environment"] == "Synthetic workstation"
     preferences.save("Another synthetic analyst", "Another environment", "")
     assert preferences.read()["analyst"] == "Another synthetic analyst"
-    assert (tmp_path / "analyst-profile.json").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":  # Windows uses the containing user directory's ACL, not POSIX bits.
+        assert (tmp_path / "analyst-profile.json").stat().st_mode & 0o777 == 0o600
 
 
 def test_profile_refuses_relative_runtime_and_linked_storage(tmp_path, monkeypatch):

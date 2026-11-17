@@ -33,6 +33,7 @@ def no_network(monkeypatch):
         raise AssertionError("a test tried to contact GitHub")
 
     monkeypatch.setattr(urllib.request, "urlopen", explode)
+    monkeypatch.setattr(config, "UPDATE_CHECK", True)
 
 
 _CAN_REPLACE_ITSELF = update.can_replace_itself

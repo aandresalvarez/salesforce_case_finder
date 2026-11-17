@@ -1,5 +1,7 @@
 """Synthetic presentation only: completion and quality remain independent."""
 
+import pytest
+
 from casefinder import config, main
 from casefinder.ui import case360_page
 from casefinder.ui.shell import connection_screen, rail
@@ -33,14 +35,16 @@ def test_saved_preparation_can_open_review_before_analysis(render):
                for link in tree.of_type("Link"))
 
 
-def test_beta_navigation_is_optional(render, monkeypatch):
-    monkeypatch.setattr(config, "CASE360_ENABLED", False)
-    assert "Case 360 Beta" not in render(lambda: rail("search")).text
-    monkeypatch.setattr(config, "CASE360_ENABLED", True)
-    assert "Case 360 Beta" in render(lambda: rail("case360")).text
+@pytest.mark.parametrize("available,enabled,visible", [
+    (False, False, False), (True, False, True), (False, True, True), (True, True, True),
+])
+def test_beta_navigation_is_optional(render, monkeypatch, available, enabled, visible):
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", available)
+    monkeypatch.setattr(config, "CASE360_ENABLED", enabled)
+    assert ("Case 360 Beta" in render(lambda: rail("search")).text) is visible
     gate = render(connection_screen, "Synthetic offline account")
     assert any(link.text == "Open Case 360 Beta" and link._props.get("href") == "/case360"
-               for link in gate.of_type("Link"))
+               for link in gate.of_type("Link")) is visible
 
 
 def test_demo_route_does_not_probe_bigquery(render, monkeypatch):
