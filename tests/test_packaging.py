@@ -133,7 +133,7 @@ def test_every_file_in_the_package_is_tracked_by_git():
         ).stdout.split("\0")
     )
     on_disk = {
-        str(path.relative_to(REPO))
+        path.relative_to(REPO).as_posix()
         for path in PACKAGE.rglob("*")
         if path.is_file() and "__pycache__" not in path.parts
     }

@@ -3,7 +3,6 @@ import asyncio
 import hashlib
 
 import pytest
-
 from nicegui import core
 
 from casefinder.ui import case360_conversation as flow
@@ -74,7 +73,8 @@ def test_answer_is_sent_with_question_id_and_remaining_budget(render, monkeypatc
                     "questions": [{"id": "intake-year", "text": "Which year?"}],
                     "budget": {"cap_usd": 50, "charged_or_reserved_usd": 1,
                                "remaining_usd": 49, "uncertain_reservation_usd": 0},
-                    "packages": [] if self.round == 1 else [{"version": 1, "package_sha256": "current",
+                    "packages": [] if self.round == 1 else [{
+                        "version": 1, "package_sha256": "current",
                         "package": {"cohort": {"sql": "SELECT 2024 AS requested_year"}}}]}
 
     client = Client()

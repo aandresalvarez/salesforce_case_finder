@@ -198,7 +198,7 @@ wheels = [
 
 [[package]]
 name = "casefinder"
-version = "2.1.4"
+version = "2.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },

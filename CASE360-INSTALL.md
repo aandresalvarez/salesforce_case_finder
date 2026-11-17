@@ -1,8 +1,7 @@
 # Optional Case 360 Beta
 
 Case Finder still ships as a universal Python wheel for Mac and Windows. Its
-ordinary release updater is unchanged. Once a release containing this PR is
-published, updating Case Finder adds a **Case 360 Beta** entry alongside Search,
+ordinary release updater is unchanged. Updating to version 2.2.0 adds a **Case 360 Beta** entry alongside Search,
 Lists and SQL. Installing this wheel does not authorize model calls or replace
 Case Finder's configuration.
 
@@ -28,7 +27,6 @@ opens the same localhost UI in the default browser. Mac keeps its native window.
 Windows images use installed Windows OCR language packs; documents and meeting
 notes share the same parser and workflow on both platforms.
 
-This PR provides the private test package and update entry. It does **not**
-publish a general Case Finder release or distribute private documentation through
-the public wheel channel. The existing Windows public updater continues to ask
+The public Case Finder update provides the beta entry. Private documentation
+and companion tools are supplied separately through the pilot owner. The existing Windows public updater continues to ask
 users to close the running app before replacing its wheel environment.

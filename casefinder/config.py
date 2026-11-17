@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Case Finder"
-VERSION = "2.1.4"
+VERSION = "2.2.0"
 PRIVATE_BETA = os.environ.get("CASE360_CHANNEL") == "private-beta"
 
 

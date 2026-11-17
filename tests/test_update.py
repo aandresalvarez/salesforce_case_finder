@@ -36,6 +36,7 @@ def no_network(monkeypatch):
 
 
 _CAN_REPLACE_ITSELF = update.can_replace_itself
+FUTURE_VERSION = f"{int(config.VERSION.split('.')[0]) + 1}.0.0"
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +57,7 @@ def installed(monkeypatch):
     monkeypatch.setattr(update, "running_from_checkout", lambda: False)
 
 
-def _payload(tag="v2.2.0", assets=None):
+def _payload(tag=f"v{FUTURE_VERSION}", assets=None):
     return {
         "tag_name": tag,
         "html_url": f"https://github.com/{update.REPO}/releases/tag/{tag}",
@@ -65,9 +66,9 @@ def _payload(tag="v2.2.0", assets=None):
         else [
             {"name": "requirements-lock.txt", "browser_download_url": "https://x/lock.txt"},
             {
-                "name": "casefinder-2.2.0-py3-none-any.whl",
+                "name": f"casefinder-{FUTURE_VERSION}-py3-none-any.whl",
                 "browser_download_url": f"https://github.com/{update.REPO}"
-                f"/releases/download/{tag}/casefinder-2.2.0-py3-none-any.whl",
+                f"/releases/download/{tag}/casefinder-{FUTURE_VERSION}-py3-none-any.whl",
             },
         ],
     }
@@ -114,7 +115,7 @@ def test_the_wheel_is_picked_out_of_the_assets(monkeypatch):
     `uv tool install`, which fails in a way that reads like a corrupt download.
     """
     _answers(monkeypatch, _payload())
-    assert update.latest().wheel_url.endswith("casefinder-2.2.0-py3-none-any.whl")
+    assert update.latest().wheel_url.endswith(f"casefinder-{FUTURE_VERSION}-py3-none-any.whl")
 
 
 def test_the_tag_loses_its_v_before_being_compared():
@@ -304,7 +305,7 @@ def test_a_newer_release_is_installed_from_its_wheel_url(monkeypatch, installed,
     _answers(monkeypatch, _payload())
     assert update.run(io.StringIO()) == 0
     assert uv.argv[1:4] == ["tool", "install", "--force"]
-    assert uv.argv[-1].endswith("casefinder-2.2.0-py3-none-any.whl")
+    assert uv.argv[-1].endswith(f"casefinder-{FUTURE_VERSION}-py3-none-any.whl")
 
 
 def test_the_ask_extra_survives_an_update(monkeypatch, installed, uv):
@@ -426,7 +427,7 @@ def test_on_windows_the_update_is_printed_rather_than_run(monkeypatch, installed
     assert uv.argv is None, "uv was run on Windows, over the files running it"
     text = out.getvalue()
     assert f"uv tool install --force --python {config.python_label()} " in text
-    assert "casefinder-2.2.0-py3-none-any.whl" in text
+    assert f"casefinder-{FUTURE_VERSION}-py3-none-any.whl" in text
     assert "Close Case Finder" in text
 
 
@@ -532,7 +533,7 @@ def test_the_self_check_says_when_a_newer_release_exists(monkeypatch, installed)
     _answers(monkeypatch, _payload())
     code, status, text = _update_check(monkeypatch)
 
-    assert "2.2.0" in text
+    assert FUTURE_VERSION in text
     assert "casefinder --update" in text
     assert status == selfcheck.WARN
     assert code == 0, "being a version behind is not a broken machine"
