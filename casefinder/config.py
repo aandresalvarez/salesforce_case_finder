@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Case Finder"
-VERSION = "2.1.4"
+VERSION = "2.2.0"
 PRIVATE_BETA = os.environ.get("CASE360_CHANNEL") == "private-beta"
 
 
@@ -80,6 +80,9 @@ CACHE_TTL_SECONDS = int(os.environ.get("CASEFINDER_CACHE_TTL", 900))
 # not be the thing standing between a corpus and a third party.
 ASK_ENABLED = _flag("CASEFINDER_ASK", False)
 CASE360_ENABLED = _flag("CASEFINDER_CASE360", False)
+# The ordinary wheel offers the companion beta; only its pinned launcher enables
+# the runtime in this process. Search, Lists, SQL and stable updates are unchanged.
+CASE360_AVAILABLE = _flag("CASEFINDER_CASE360_AVAILABLE", True)
 
 # Vertex AI region for the optional natural-language mode.
 VERTEX_LOCATION = os.environ.get("CASEFINDER_VERTEX_LOCATION", "us-central1")

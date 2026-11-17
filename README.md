@@ -1,10 +1,11 @@
 # Case Finder
 
 A small desktop app for searching the historical Salesforce support-case archive
-in BigQuery. It runs on your own laptop, signs in as you, and never copies case
-data to disk.
+in BigQuery. It runs on your own laptop and signs in as you. Archive search
+keeps its results in memory; the optional Case 360 Beta stores your research
+requests locally as described below.
 
-**Version 2.1.4** · macOS and Windows · [full specification](SPECS.md)
+**Version 2.2.0** · macOS and Windows · [full specification](SPECS.md)
 
 Everything through **Uninstall** is for people who use the app. Everything after
 it is for people who change it.
@@ -31,6 +32,20 @@ Two slices of the archive are available, switchable in Settings:
   audit trail and attachment records were not retained for the older era.
 
 ---
+
+
+## Case 360 Beta
+
+Version 2.2.0 adds **Case 360 Beta** beside Search, Lists and SQL. Select it to
+install or open the private pilot package for your computer. The public wheel
+contains the entry and interface; the pilot owner supplies the separate runtime
+and documentation. See the [beta installation guide](CASE360-INSTALL.md).
+
+Updating Case Finder preserves personal views, settings and existing beta
+requests. The beta retains the requests, attachments and meeting notes you add
+locally until you choose **History and clean data**. It drafts SQL and validates
+it with dry runs; it does not execute clinical SQL. Each tester signs in with
+their own account. Installing the update grants no data or model access.
 
 ## Install
 
@@ -83,7 +98,7 @@ the window was opened before the install finished: close it and open another.
 is nothing to download first:
 
 ```bash
-uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.4/casefinder-2.1.4-py3-none-any.whl"
+uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.2.0/casefinder-2.2.0-py3-none-any.whl"
 ```
 
 Keep the `--python 3.13`. Case Finder does not run on Python 3.14 yet, and
@@ -96,7 +111,7 @@ started before.
 If someone handed you the `.whl` file directly instead, point at the file:
 
 ```bash
-cd ~/Downloads && uv tool install --python 3.13 "./casefinder-2.1.4-py3-none-any.whl"
+cd ~/Downloads && uv tool install --python 3.13 "./casefinder-2.2.0-py3-none-any.whl"
 ```
 
 **Step 3 — connect to the VPN, check the machine, then start it.** Case Finder
@@ -129,11 +144,11 @@ quotes are required either way, because a bare `[ask]` means something else to
 the shell:
 
 ```bash
-uv tool install --force --python 3.13 "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.4/casefinder-2.1.4-py3-none-any.whl"
+uv tool install --force --python 3.13 "casefinder[ask] @ https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.2.0/casefinder-2.2.0-py3-none-any.whl"
 ```
 
 ```bash
-uv tool install --force --python 3.13 "./casefinder-2.1.4-py3-none-any.whl[ask]"
+uv tool install --force --python 3.13 "./casefinder-2.2.0-py3-none-any.whl[ask]"
 ```
 
 That installs the mode without switching it on; see `CASEFINDER_ASK` below.
@@ -169,7 +184,7 @@ tries to replace the program while it runs, which Windows stops partway. After
 this one time, `casefinder --update` is enough:
 
 ```bash
-uv tool install --force --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.1.4/casefinder-2.1.4-py3-none-any.whl"
+uv tool install --force --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.2.0/casefinder-2.2.0-py3-none-any.whl"
 ```
 
 You do not have to remember to check: `casefinder --check` says when a newer

@@ -537,12 +537,35 @@ _JS = """
 """
 
 
-def head_html() -> str:
+def head_html(*, case360_enabled: bool = False) -> str:
     """The stylesheet, the markup and the script, as one head fragment."""
+    wording = {state: dict(words) for state, words in _WORDING.items()}
+    if case360_enabled:
+        saved_work = (
+            "Case 360 keeps saved requests, attachments and answers on this computer. "
+            "Copy any text that has not finished saving before closing this window."
+        )
+        wording["waiting"]["what"] = (
+            "This window lost its link to the Case Finder program on your computer. "
+            "This is not a BigQuery problem. " + saved_work
+        )
+        wording["stopped"]["what"] = (
+            "The program behind this window is no longer answering. "
+            "This is not a BigQuery problem. " + saved_work
+        )
+        wording["unstartable"]["what"] = (
+            "The new copy did not start. This window cannot determine why. " + saved_work
+        )
+        for state in ("stopped", "unstartable"):
+            for action in ("act", "actNative"):
+                if action in wording[state]:
+                    wording[state][action] += (
+                        " After reopening, use Case 360 History to resume your saved request."
+                    )
     script = (
         _JS.replace("__TUNING__", json.dumps(TUNING))
         .replace("__PROBE_PATH__", json.dumps(PROBE_PATH))
-        .replace("__WORDING__", json.dumps(_WORDING))
+        .replace("__WORDING__", json.dumps(wording))
         .replace("__MARKUP__", json.dumps(_MARKUP))
     )
     return f"<style>{_CSS}</style>\n<script>{script}</script>"
@@ -551,7 +574,7 @@ def head_html() -> str:
 _installed = False
 
 
-def install() -> None:
+def install(*, case360_enabled: bool = False) -> None:
     """Put the notice in the head of every page, once per process.
 
     Shared rather than per-client, and at startup rather than on first draw,
@@ -563,4 +586,4 @@ def install() -> None:
     if _installed:
         return
     _installed = True
-    ui.add_head_html(head_html(), shared=True)
+    ui.add_head_html(head_html(case360_enabled=case360_enabled), shared=True)

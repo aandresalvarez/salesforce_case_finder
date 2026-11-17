@@ -18,6 +18,7 @@ process, which would open a second window and a second BigQuery client.
 from __future__ import annotations
 
 import importlib.util
+import os
 import socket
 import sys
 
@@ -37,10 +38,28 @@ from .ui import (
 from .ui.shell import gated
 
 HOST = "127.0.0.1"
+_review_pending = os.environ.get("CASE360_OPEN_SAVED_REVIEW") == "1"
+_setup_pending = os.environ.get("CASE360_OPEN_SETUP") == "1"
 
 
 @ui.page("/")
 def index() -> None:
+    global _review_pending, _setup_pending
+    if config.CASE360_ENABLED and _setup_pending:
+        # The native host probes this URL before opening its window. Consume
+        # the destination only once a real UI client has connected.
+        def open_setup() -> None:
+            global _setup_pending
+            _setup_pending = False
+            ui.navigate.to("/case360/welcome")
+
+        ui.context.client.on_connect(open_setup)
+        ui.label("Opening tester setup…")
+        return
+    if config.CASE360_ENABLED and _review_pending:
+        _review_pending = False
+        ui.navigate.to("/case360/review")
+        return
     # Search, not Lists — D17. The rail's Search entry points here rather than
     # at `/search`, so the landing page and the destination are one page and
     # not two that happen to render the same thing.
@@ -102,13 +121,32 @@ def case360_settings_route() -> None:
     with layout("case360"):
         ui.link("Back to request", "/case360")
         ui.label("Case 360 Beta settings").classes("cf-h1")
+        from .case360.onboarding import pilot
+        if pilot():
+            ui.link("Sign in and tester setup", "/case360/welcome")
         render_setup()
+
+
+@ui.page("/case360/welcome")
+def case360_welcome_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui.case360_welcome import render_welcome
+    from .ui.shell import layout
+
+    with layout("case360"):
+        render_welcome()
 
 
 @ui.page("/case360")
 def case360_route() -> None:
     if not config.CASE360_ENABLED:
-        ui.navigate.to("/")
+        from .ui.case360_install import render_install
+        from .ui.shell import layout
+
+        with layout("case360"):
+            render_install()
         return
     from .ui import case360_page
     from .ui.shell import layout
@@ -130,6 +168,18 @@ def case360_history_route() -> None:
     with layout("case360"):
         ui.link("Back to request", "/case360")
         render_history(on_clear=lambda: active_request(None, save=True))
+
+
+@ui.page("/case360/review")
+def case360_review_route() -> None:
+    if not config.CASE360_ENABLED:
+        ui.navigate.to("/")
+        return
+    from .ui.case360_sql_revisions import render_saved_review
+    from .ui.shell import layout
+
+    with layout("case360"):
+        render_saved_review()
 
 
 def _free_port() -> int:
@@ -183,7 +233,7 @@ def main() -> None:
     # and the first page is served the moment the server is up. It is also the
     # one part of the application that has to survive the socket going down, so
     # it cannot be something a page sends over that socket — see `ui/reconnect`.
-    reconnect.install()
+    reconnect.install(case360_enabled=config.CASE360_ENABLED)
     # Expired entries hold case bodies until something deletes them, and an
     # idle window never asks for anything that would. Started here rather than
     # at import so that neither the tests nor the native window subprocess —

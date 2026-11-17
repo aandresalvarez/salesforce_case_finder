@@ -72,7 +72,7 @@ def rail(active: str) -> None:
         for key, label, icon, target in DESTINATIONS:
             _nav_item(label, icon, target, active == key)
         ui.space()
-        if config.CASE360_ENABLED:
+        if config.CASE360_AVAILABLE or config.CASE360_ENABLED:
             _nav_item("Case 360 Beta", "science", "/case360", active == "case360")
         _nav_item("Settings", "settings", "/settings", active == "settings")
 
@@ -151,7 +151,7 @@ def connection_screen(reason: str) -> None:
         ).classes("cf-muted").style("max-width:390px;text-align:center;margin-top:8px")
         with ui.element("div").style("margin-top:18px"):
             primary("Retry", retry)
-        if config.CASE360_ENABLED:
+        if config.CASE360_AVAILABLE or config.CASE360_ENABLED:
             ui.link("Open Case 360 Beta", "/case360").style("margin-top:12px")
         if off_vpn:
             with ui.expansion("Details").classes("cf-muted").style(

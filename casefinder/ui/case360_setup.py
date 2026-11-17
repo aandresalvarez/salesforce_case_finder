@@ -8,10 +8,11 @@ from pathlib import Path
 
 from nicegui import ui
 
-from ..case360 import package, preferences, session
+from ..case360 import budgets, onboarding, package, preferences, session
 
 
 def render_setup() -> None:
+    render_budgets()
     profile = preferences.read()
     with ui.expansion("Analyst and installation settings").classes("w-full"):
         ui.label("Configure this installation for any analyst. "
@@ -54,6 +55,76 @@ def render_setup() -> None:
         render_resources()
         render_updates()
         render_pilot()
+
+
+def render_budgets() -> None:
+    from ..case360.runtime import discover
+
+    try:
+        location = discover().context_file
+    except (RuntimeError, ValueError, OSError):
+        location = None
+    saved = json.loads(location.read_text()) if location else {}
+    principal = saved.get("google_account") or saved.get("authorization_policy", {}).get(
+        "expected_principal"
+    )
+    with ui.card().classes("w-full").props("flat bordered"):
+        ui.label("Pilot budget").classes("cf-h2")
+        ui.label(
+            "A total budget for your account on this computer, shared across your requests. "
+            "Usage is retained when you clear history or update the beta."
+        )
+        if not principal:
+            ui.label(
+                "Default: $500 USD total and $50 USD per request. "
+                "Sign in to view or change your limits."
+            )
+            ui.link("Sign in and tester setup", "/case360/welcome")
+            return
+        try:
+            limits = budgets.ensure(
+                principal, saved.get("authorization_policy", {}).get("max_paid_usd") or 50
+            )
+        except (OSError, ValueError) as error:
+            ui.label(str(error))
+            return
+        ui.label(principal)
+        usage = ui.label(
+            f"${limits['used_usd']:.2f} USD used or reserved · "
+            f"${limits['remaining_usd']:.2f} USD remaining"
+        )
+        total = ui.number("Total pilot budget (USD)", value=limits["total_usd"], min=0, max=9000)
+        request = ui.number(
+            "Maximum per request (USD)", value=limits["request_usd"], min=0, max=1000
+        )
+        ui.label(
+            "The total does not reset each month. Set the request limit to zero to pause live "
+            "analysis. Saving does not spend money."
+        )
+        status = ui.label("").props('role="status"')
+
+        async def save() -> None:
+            try:
+                await session.prepare_reconfigure()
+                value = budgets.save(principal, float(total.value or 0), float(request.value or 0))
+                if onboarding.pilot() and saved.get("google_account"):
+                    onboarding.save_budget(location, value["request_usd"])
+                else:
+                    policy = saved.get("authorization_policy", {})
+                    package.configure(
+                        location,
+                        saved.get("source_profile") or "",
+                        principal,
+                        value["request_usd"],
+                        policy.get("route_verification_sha256", ""),
+                    )
+                usage.text = (f"${value['used_usd']:.2f} USD used or reserved · "
+                              f"${value['remaining_usd']:.2f} USD remaining")
+                status.text = "Budget limits saved. Usage and saved requests are preserved."
+            except (ValueError, RuntimeError, OSError) as error:
+                status.text = str(error)
+
+        ui.button("Save budget limits", on_click=save)
 
 
 def render_resources() -> None:

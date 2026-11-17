@@ -16,9 +16,12 @@ ERRORS = (RuntimeError, OSError, ValueError, TimeoutError)
 CONNECTION_ERRORS = {
     "PREFLIGHT_FAILED", "PREFLIGHT_TIMEOUT", "BIGQUERY_PREFLIGHT_FAILED",
     "CREDENTIAL_UNVERIFIED", "PREFLIGHT_EXPIRED",
+    "GOOGLE_CLI_SIGN_IN_REQUIRED", "GOOGLE_ADC_SIGN_IN_REQUIRED",
+    "CREDENTIAL_PROBE_TIMEOUT", "CREDENTIAL_PROBE_FAILED",
 }
 PHASES = {
     "INTAKE": "Interpreting your request",
+    "INTAKE_SOURCES": "Reading your documents and meeting notes",
     "AUTHOR_EVIDENCE": "Finding sources and checking columns",
     "AUTHOR_GENERATION": "Building the SQL",
     "TARGETED_SOURCE_RESOLUTION": "Checking unresolved sources",
@@ -64,6 +67,8 @@ def progress_text(item: dict) -> str:
     if kind == "stage":
         return PHASES.get(item.get("stage"), "Processing the request")
     if kind == "model":
+        if str(item.get("phase", "")).startswith("intake-source-lookup-"):
+            return "AI is reading your attachments and meeting notes"
         if str(item.get("phase", "")).startswith("author-lookup-"):
             return "Reading relevant sources and updating the query plan"
         return MODEL_PHASES.get(item.get("phase"), "Agent analysis and review")
@@ -308,10 +313,9 @@ def render(*, run_id: str | None = None) -> None:
                         state["continue_controls"].append(next_button)
             elif "execution_status" in result:
                 stage(2 if result.get("packages") else 1)
-                validations = result.get("validations", [])
-                compiled = bool(
-                    validations and validations[-1].get("objective", {}).get("dry", {}).get("valid")
-                )
+                from .case360_result import current_dry_run_status
+
+                compiled = current_dry_run_status(result) == "Passed for this SQL and all outputs"
                 if result["execution_status"] != "COMPLETED":
                     status.text = "Analysis stopped. Your request and saved work are preserved."
                 elif result.get("packages") and compiled:

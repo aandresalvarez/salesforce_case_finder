@@ -1,0 +1,477 @@
+"""Fresh testers must not borrow the developer's account or authorize hidden work."""
+
+import asyncio
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from casefinder.case360 import onboarding, platforms, preferences, session
+from casefinder.case360.runtime import Runtime
+
+
+def test_native_readiness_probe_cannot_consume_setup_navigation(monkeypatch):
+    from casefinder import main
+
+    callbacks, destinations, searches = [], [], []
+    monkeypatch.setattr(main.config, "CASE360_ENABLED", True)
+    monkeypatch.setattr(main, "_setup_pending", True)
+    monkeypatch.setattr(main, "_review_pending", False)
+    monkeypatch.setattr(main, "gated", lambda *args: searches.append(args))
+    monkeypatch.setattr(main, "ui", SimpleNamespace(
+        context=SimpleNamespace(client=SimpleNamespace(on_connect=callbacks.append)),
+        navigate=SimpleNamespace(to=destinations.append),
+        label=lambda *_: None,
+    ))
+    # Native readiness polling performs an HTTP GET without connecting a window.
+    main.index()
+    assert main._setup_pending is True
+    assert destinations == [] and searches == []
+    main.index()
+    assert len(callbacks) == 2
+    # Only the real window's connection consumes the initial destination.
+    callbacks[-1]()
+    assert destinations == ["/case360/welcome"]
+    assert main._setup_pending is False
+    main.index()
+    assert len(searches) == 1
+
+
+@pytest.fixture
+def install(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    root = tmp_path / "package"
+    resources = root / "pilot-resources"
+    version = "a" * 64
+    (resources / version).mkdir(parents=True)
+    (resources / version / "profile.json").write_text("{}")
+    (resources / "vertex_serving_route_verification.json").write_text("{}")
+    (resources / "bootstrap.json").write_text(
+        json.dumps(
+            {"schema": "case360_pilot_bootstrap/1", "snapshot": version, "route_sha256": "b" * 64}
+        )
+    )
+    executable = Path(platforms.google_command(root)[-1])
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    private = tmp_path / "tester"
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(private))
+    monkeypatch.setenv("CASE360_BUNDLE_ROOT", str(root))
+    context = private / "context.json"
+    preferences.atomic_json(
+        context,
+        {
+            "resource_root": str(private / "resources"),
+            "engine_root": str(root / "engine"),
+            "runs_root": str(private / "runs"),
+            "node_executable": str(root / "node/bin/node"),
+            "source_profile": None,
+            "authorization_policy": {"live_enabled": False, "max_paid_usd": 0},
+        },
+    )
+    return root, context
+
+
+def test_fresh_setup_is_local_and_cannot_fall_back_to_host_credentials(install, monkeypatch):
+    root, context = install
+    monkeypatch.setenv("CLOUDSDK_CONFIG", "/outside/host-google")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/outside/host-adc.json")
+    monkeypatch.setenv("GOOGLE_CLOUD_API_KEY", "synthetic-must-not-inherit")
+    onboarding.provision(root, context)
+    saved = json.loads(context.read_text())
+    assert saved["source_profile"] == "a" * 64
+    assert saved["authorization_policy"] == {"live_enabled": False, "max_paid_usd": 0}
+    assert "google_account" not in saved
+    runtime = Runtime(root / "engine", context.parent / "runs", "node", context)
+    env = runtime.environment()
+    assert env["CLOUDSDK_CONFIG"] == str(context.parent / "google/pending")
+    assert not Path(env["GOOGLE_APPLICATION_CREDENTIALS"]).exists()
+    assert "GOOGLE_CLOUD_API_KEY" not in env
+    assert "/outside" not in str(env)
+    assert env["PATH"].startswith(str(root / "google-cloud-sdk/bin"))
+    assert env["CLOUDSDK_CORE_DISABLE_FILE_LOGGING"] == "true"
+
+
+def test_reopen_keeps_account_configuration_and_selected_resources(install):
+    root, context = install
+    onboarding.provision(root, context)
+    saved = json.loads(context.read_text())
+    saved.update(
+        google_account="tester@example.edu",
+        google_credentials=str(context.parent / "google/own"),
+        source_profile="c" * 64,
+    )
+    preferences.atomic_json(context, saved)
+    onboarding.provision(root, context)
+    assert json.loads(context.read_text()) == saved
+
+
+class Process:
+    def __init__(self, code=0):
+        self.returncode = None
+        self.code = code
+        self.terminated = False
+
+    async def wait(self):
+        self.returncode = self.code
+        return self.code
+
+    def terminate(self):
+        self.terminated = True
+        self.code = -15
+
+
+def test_own_browser_login_publishes_only_after_both_identities_match(install, monkeypatch):
+    root, context = install
+    onboarding.provision(root, context)
+    calls = []
+
+    async def spawn(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Process()
+
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(onboarding, "_capture", AsyncMock(return_value="synthetic-token"))
+    verified = []
+    monkeypatch.setattr(
+        onboarding,
+        "_verify_tokens",
+        lambda directory, token, email: verified.append((directory, token, email)),
+    )
+    monkeypatch.setattr(session, "prepare_reconfigure", AsyncMock())
+    asyncio.run(onboarding.sign_in("second-tester@example.edu", context))
+    saved = json.loads(context.read_text())
+    assert saved["google_account"] == "second-tester@example.edu"
+    assert verified[0][2] == saved["google_account"]
+    assert saved["authorization_policy"]["live_enabled"] is False
+    assert "--update-adc" in calls[0][0] and "--force" in calls[0][0]
+    assert calls[0][1]["stdout"] == asyncio.subprocess.DEVNULL
+    assert calls[0][1]["stderr"] == asyncio.subprocess.DEVNULL
+    assert calls[0][1]["env"]["CLOUDSDK_CONFIG"] == saved["google_credentials"]
+    assert "synthetic-token" not in context.read_text()
+    assert onboarding._login_process is None
+
+
+@pytest.mark.parametrize("failure", [None, "different_account", "cancelled", "active_work"])
+def test_retry_verifies_saved_grant_before_reusing_it(install, monkeypatch, failure):
+    _, context = install
+    directory = context.parent / "google" / ("d" * 32)
+    directory.mkdir(parents=True)
+    for name in ["credentials.db", "application_default_credentials.json"]:
+        (directory / name).write_text("synthetic")
+    before = context.read_bytes()
+    request = context.parent / "request.json"
+    request.write_text('{"answer":"keep"}')
+    spawn = AsyncMock(return_value=Process(1))
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(onboarding, "_capture", AsyncMock(return_value="synthetic-token"))
+
+    def verify(saved, token, email):
+        assert saved == directory and email == "tester@example.edu"
+        if failure == "different_account":
+            raise onboarding.SetupError("Different account")
+        if failure == "cancelled":
+            onboarding._login_cancelled = True
+
+    monkeypatch.setattr(onboarding, "_verify_tokens", verify)
+    monkeypatch.setattr(session, "prepare_reconfigure", AsyncMock(
+        side_effect=RuntimeError("Stop active work") if failure == "active_work" else None))
+    if failure:
+        with pytest.raises((onboarding.SetupError, RuntimeError)):
+            asyncio.run(onboarding.sign_in("tester@example.edu", context))
+        assert context.read_bytes() == before
+    else:
+        asyncio.run(onboarding.sign_in("tester@example.edu", context))
+        saved = json.loads(context.read_text())
+        assert saved["google_credentials"] == str(directory)
+        assert saved["google_account"] == "tester@example.edu"
+    assert spawn.await_count == (1 if failure == "different_account" else 0)
+    assert request.read_text() == '{"answer":"keep"}'
+
+
+@pytest.mark.parametrize("failure", ["cancel", "mismatch", "active_run", "cancel_verifying"])
+def test_failed_sign_in_never_replaces_saved_account_or_request(install, monkeypatch, failure):
+    root, context = install
+    onboarding.provision(root, context)
+    before = context.read_bytes()
+    request = context.parent / "request.json"
+    request.write_text('{"answer":"keep this"}')
+    spawn = AsyncMock(return_value=Process(1 if failure == "cancel" else 0))
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(onboarding, "_capture", AsyncMock(return_value="synthetic-token"))
+
+    def verify(*_):
+        if failure == "cancel_verifying":
+            onboarding._login_cancelled = True
+        if failure == "mismatch":
+            raise onboarding.SetupError("Account mismatch")
+
+    monkeypatch.setattr(onboarding, "_verify_tokens", verify)
+    monkeypatch.setattr(
+        session,
+        "prepare_reconfigure",
+        AsyncMock(
+            side_effect=RuntimeError("Stop active work") if failure == "active_run" else None
+        ),
+    )
+    with pytest.raises((onboarding.SetupError, RuntimeError)):
+        asyncio.run(onboarding.sign_in("tester@example.edu", context))
+    assert context.read_bytes() == before
+    assert request.read_text() == '{"answer":"keep this"}'
+
+
+def test_budget_requires_own_sign_in_and_does_not_create_run_authorization(install):
+    root, context = install
+    onboarding.provision(root, context)
+    with pytest.raises(onboarding.SetupError, match="Sign in"):
+        onboarding.save_budget(context, 10)
+    saved = json.loads(context.read_text())
+    saved["google_account"] = "tester@example.edu"
+    preferences.atomic_json(context, saved)
+    onboarding.save_budget(context, 10)
+    value = json.loads(context.read_text())
+    assert value["authorization_policy"]["expected_principal"] == "tester@example.edu"
+    assert value["authorization_policy"]["max_paid_usd"] == 10
+    assert not (context.parent / "runs").exists()
+
+
+def test_setup_ui_has_no_manual_resource_paths_or_terminal_login(render, install, monkeypatch):
+    root, context = install
+    from casefinder.ui import case360_welcome
+
+    onboarding.provision(root, context)
+    monkeypatch.setattr(
+        case360_welcome, "discover", lambda: Runtime(root / "engine", root, "node", context)
+    )
+    tree = render(case360_welcome.render_welcome)
+    assert {"Sign in with Google", "Check my access", "Continue to Case 360"} <= set(
+        tree.button_labels()
+    )
+    assert "gcloud" not in tree.text and "SHA256" not in tree.text
+    assert "Your work email" in [x.props.get("label") for x in tree.of_type("Input")]
+    assert not tree.of_type("Number")
+    assert "Save my settings" not in tree.button_labels()
+    assert not next(b for b in tree.buttons() if b.text == "Continue to Case 360").enabled
+
+
+def test_access_checks_never_execute_sql_or_call_a_model(install, monkeypatch):
+    root, _ = install
+    settings = onboarding.pilot(root)
+    settings.update(bigquery_job_project="synthetic-jobs", vertex_project="synthetic-model")
+    (root / "pilot-resources" / settings["snapshot"] / "profile.json").write_text(
+        json.dumps(
+            {
+                "datasets": [{"dataset": "synthetic-project.dataset"}],
+                "epic": {"dataset": "synthetic-project.epic"},
+            }
+        )
+    )
+    calls = []
+
+    def request(url, **kwargs):
+        calls.append((url, kwargs))
+        return type(
+            "Reply",
+            (),
+            {
+                "status_code": 200,
+                "json": lambda _: {
+                    "permissions": ["aiplatform.endpoints.predict", "serviceusage.services.use"]
+                },
+            },
+        )()
+
+    monkeypatch.setattr("requests.get", request)
+    monkeypatch.setattr("requests.post", request)
+    assert all(c["passed"] for c in onboarding._access_probes(root, settings, "synthetic"))
+    job = next(kwargs["json"] for url, kwargs in calls if url.endswith("/jobs"))
+    assert job == {
+        "configuration": {"dryRun": True, "query": {"query": "SELECT 1", "useLegacySql": False}}
+    }
+    assert not any("generateContent" in url or "aiplatform.googleapis" in url for url, _ in calls)
+
+
+def test_token_identity_mismatch_is_rejected_without_exposing_tokens(install, monkeypatch):
+    _, context = install
+    credential = type(
+        "Credential", (), {"token": "synthetic-adc-secret", "refresh": lambda *args: None}
+    )()
+    monkeypatch.setattr(
+        "google.auth.load_credentials_from_file", lambda *a, **k: (credential, None)
+    )
+    seen = []
+
+    def introspect(url, **kwargs):
+        seen.append(kwargs["headers"]["Authorization"])
+        return type(
+            "Response",
+            (),
+            {
+                "status_code": 200,
+                "json": lambda _: {
+                    "email": "wrong@example.edu",
+                    "scope": "https://www.googleapis.com/auth/cloud-platform",
+                },
+            },
+        )()
+
+    monkeypatch.setattr("requests.post", introspect)
+    with pytest.raises(onboarding.SetupError, match="different account") as caught:
+        onboarding._verify_tokens(context.parent, "synthetic-cli-secret", "tester@example.edu")
+    assert "secret" not in str(caught.value)
+    assert seen == ["Bearer synthetic-cli-secret"]
+
+
+def test_adc_refresh_keeps_email_scope_for_identity_verification(install, monkeypatch):
+    _, context = install
+    requested = []
+
+    def load(*_, scopes):
+        requested.extend(scopes)
+        return SimpleNamespace(token="synthetic-adc", refresh=lambda *_: None), None
+
+    def introspect(_, **kwargs):
+        info = {"scope": " ".join(requested)}
+        if kwargs["headers"]["Authorization"] == "Bearer synthetic-cli" or (
+            "https://www.googleapis.com/auth/userinfo.email" in requested
+        ):
+            info["email"] = "tester@example.edu"
+        return SimpleNamespace(status_code=200, json=lambda: info)
+
+    monkeypatch.setattr("google.auth.load_credentials_from_file", load)
+    monkeypatch.setattr("requests.post", introspect)
+    onboarding._verify_tokens(context.parent, "synthetic-cli", "tester@example.edu")
+    assert "https://www.googleapis.com/auth/cloud-platform" in requested
+
+
+@pytest.mark.parametrize("email,scope,message", [
+    (None, "https://www.googleapis.com/auth/cloud-platform", "account email"),
+    ("tester@example.edu", "https://www.googleapis.com/auth/userinfo.email", "Cloud access"),
+])
+def test_missing_identity_and_cloud_permission_are_distinct(
+    install, monkeypatch, email, scope, message
+):
+    _, context = install
+    monkeypatch.setattr("google.auth.load_credentials_from_file", lambda *_, **__: (
+        SimpleNamespace(token="synthetic-adc", refresh=lambda *_: None), None))
+    monkeypatch.setattr("requests.post", lambda *_, **__: SimpleNamespace(
+        status_code=200, json=lambda: {"email": email, "scope": scope}))
+    with pytest.raises(onboarding.SetupError, match=message):
+        onboarding._verify_tokens(context.parent, "synthetic-cli", "tester@example.edu")
+
+
+def test_cancel_sign_in_terminates_process_without_selecting_account(install):
+    _, context = install
+    before = context.read_bytes()
+    process = Process()
+    onboarding._login_process = process
+    try:
+        asyncio.run(onboarding.cancel_login())
+        assert process.terminated
+        assert context.read_bytes() == before
+    finally:
+        onboarding._login_process = None
+
+
+def test_google_storage_refuses_symlink_to_host_credentials(install, tmp_path):
+    root, _ = install
+    host = tmp_path / "host-credentials"
+    host.mkdir()
+    link = tmp_path / "borrowed"
+    link.symlink_to(host)
+    with pytest.raises(onboarding.SetupError, match="links"):
+        onboarding.credential_environment(root, link)
+
+
+def test_account_text_cannot_become_a_google_cli_flag(install, monkeypatch):
+    _, context = install
+    spawn = AsyncMock()
+    monkeypatch.setattr(onboarding.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(onboarding.SetupError, match="email"):
+        asyncio.run(onboarding.sign_in("--flags-file=path@example.edu", context))
+    spawn.assert_not_awaited()
+
+
+def test_complete_setup_requires_recent_account_bound_checks_and_applies_defaults(
+    install, monkeypatch
+):
+    import time
+
+    from casefinder.case360 import budgets
+
+    root, context_file = install
+    onboarding.provision(root, context_file)
+    context = json.loads(context_file.read_text())
+    context.update(google_account="tester@example.edu", google_credentials="/synthetic/credentials")
+    preferences.atomic_json(context_file, context)
+    with pytest.raises(onboarding.SetupError, match="Check my access"):
+        onboarding.complete_setup(context_file)
+    context["setup_access"] = {
+        "binding": onboarding._access_binding(context),
+        "checked_at": time.time(),
+        "checks": [{"name": "test", "passed": True, "detail": "OK"}],
+    }
+    preferences.atomic_json(context_file, context)
+    onboarding.complete_setup(context_file)
+    result = json.loads(context_file.read_text())
+    assert result["authorization_policy"]["max_paid_usd"] == 50
+    assert budgets.ensure("tester@example.edu")["total_usd"] == 500
+    assert result["tester_budget_file"] == str(budgets.database())
+    # Completing setup again cannot reset customized limits or usage.
+    budgets.save("tester@example.edu", 600, 25)
+    onboarding.complete_setup(context_file)
+    assert json.loads(context_file.read_text())["authorization_policy"]["max_paid_usd"] == 25
+    context["google_account"] = "someone-else@example.edu"
+    assert not onboarding.access_ready(context)
+    context["google_account"] = "tester@example.edu"
+    context["setup_access"]["checked_at"] -= 3601
+    assert not onboarding.access_ready(context)
+
+
+def test_welcome_continue_navigates_only_after_checks(render, install, monkeypatch):
+    import time
+
+    from casefinder.ui import case360_welcome
+
+    root, file = install
+    onboarding.provision(root, file)
+    context = json.loads(file.read_text())
+    context.update(google_account="tester@example.edu", google_credentials="/synthetic")
+    preferences.atomic_json(file, context)
+    monkeypatch.setattr(
+        case360_welcome, "discover", lambda: Runtime(root / "engine", root, "node", file)
+    )
+    monkeypatch.setattr(session, "prepare_reconfigure", AsyncMock())
+    destinations = []
+    monkeypatch.setattr(case360_welcome.ui.navigate, "to", destinations.append)
+
+    async def checked(_):
+        context["setup_access"] = {
+            "binding": onboarding._access_binding(context),
+            "checked_at": time.time(),
+            "checks": [{"name": "resource", "passed": True, "detail": "OK"}],
+        }
+        preferences.atomic_json(file, context)
+        return context["setup_access"]["checks"]
+
+    monkeypatch.setattr(onboarding, "check_access", checked)
+    tree = render(case360_welcome.render_welcome)
+    start = next(b for b in tree.buttons() if b.text == "Continue to Case 360")
+    assert not start.enabled
+
+    async def run():
+        from nicegui import core
+
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        tree.press(next(b for b in tree.buttons() if b.text == "Check my access"))
+        await asyncio.sleep(0)
+        assert start.enabled
+        assert "Access checks passed" in tree.text
+        tree.press(start)
+        await asyncio.sleep(0)
+        assert destinations == ["/case360"]
+
+    asyncio.run(run())

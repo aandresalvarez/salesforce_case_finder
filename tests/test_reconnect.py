@@ -279,7 +279,19 @@ def test_the_notice_is_built_with_nothing_left_in_it():
         assert json.dumps(words["title"])[1:-1] in html
 
 
-def test_starting_the_app_installs_the_notice(monkeypatch):
+def test_beta_reconnect_explains_saved_history_without_promising_unsaved_text():
+    html = reconnect.head_html(case360_enabled=True)
+    assert "saves nothing" not in html
+    assert "nothing to this computer" not in html
+    assert "saved requests, attachments and answers" in html
+    assert "has not finished saving" in html
+    assert "History to resume your saved request" in html
+    # Rendering beta copy does not mutate the original Case Finder notice.
+    assert "saves nothing" in reconnect.head_html()
+
+
+@pytest.mark.parametrize("beta", [False, True])
+def test_starting_the_app_installs_the_notice(monkeypatch, beta):
     """It has to be in the head the server sends, not in a page.
 
     A page's own head is composed when its page function returns and reaches the
@@ -294,6 +306,8 @@ def test_starting_the_app_installs_the_notice(monkeypatch):
 
     monkeypatch.setattr(reconnect, "_installed", False)
     monkeypatch.setattr(Client, "shared_head_html", "")
+    monkeypatch.setattr(main.config, "CASE360_ENABLED", beta)
+    monkeypatch.setattr(main, "_free_port", lambda: 12345)
     started: list[bool] = []
     monkeypatch.setattr(main.ui, "run", lambda **kwargs: started.append(True))
 
@@ -301,6 +315,7 @@ def test_starting_the_app_installs_the_notice(monkeypatch):
 
     assert started
     assert "cf-outage" in Client.shared_head_html
+    assert ("saved requests, attachments and answers" in Client.shared_head_html) == beta
 
 
 def test_installing_twice_leaves_one_notice(monkeypatch):

@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .case360 import package, preferences
+    from .case360 import package, platforms, preferences
 
     args = sys.argv[1:] if argv is None else argv
     root = Path(os.environ["CASE360_BUNDLE_ROOT"]).resolve(strict=True)
@@ -20,9 +20,19 @@ def main(argv: list[str] | None = None) -> int:
         selected = Path(selection["root"]).resolve(strict=True)
         if selected != root:
             package.verify(selected, selection["manifest_sha256"])
-            os.execv(str(selected / "launch"), [str(selected / "launch"), *args])
+            command = platforms.launch_command(
+                selected, *args, windowed=Path(sys.executable).name.lower() == "pythonw.exe"
+            )
+            os.execv(command[0], command)
     manifest = package.verify(root)
     context = package.context_for(root, manifest)
+    from .case360 import onboarding
+
+    onboarding.provision(root, context)
+    saved = json.loads(context.read_text())
+    os.environ.update(onboarding.runtime_environment(saved, root))
+    if onboarding.pilot(root) and not saved.get("authorization_policy", {}).get("live_enabled"):
+        os.environ["CASE360_OPEN_SETUP"] = "1"
     os.environ.update(CASE360_CHANNEL="private-beta", CASE360_RUNTIME_CONTEXT=str(context),
                       CASEFINDER_CASE360="1", CASEFINDER_UPDATE_CHECK="0",
                       CASE360_RELEASE_VERSION=manifest["version"],
@@ -45,8 +55,16 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 await client.close()
         return asyncio.run(check())
+    if args == ["--review"]:
+        # The first window goes directly to saved local work, without loading Search.
+        os.environ["CASE360_OPEN_SAVED_REVIEW"] = "1"
+        args = []
+    if args == ["--setup"]:
+        os.environ["CASE360_OPEN_SETUP"] = "1"
+        args = []
     if args:
-        print("usage: case360-beta [--version | --check]; manage private updates in the app")
+        print("usage: case360-beta [--version | --check | --review]; "
+              "manage private updates in the app")
         return 2
     from .cli import cli
 

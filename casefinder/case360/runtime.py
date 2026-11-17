@@ -27,15 +27,23 @@ class Runtime:
             raise RuntimeError("The compatible Case 360 desktop runtime is not installed.")
         arguments = (["--context", str(self.context_file.resolve(strict=True))]
                      if self.context_file else [str(self.runs_root.resolve())])
-        return [self.node, "--import", str(loader), str(worker), *arguments]
+        # ESM treats C:\\paths as a URL scheme. File URLs also preserve spaces
+        # and non-ASCII names on both supported desktop platforms.
+        return [self.node, "--import", loader.as_uri(), str(worker), *arguments]
 
     def environment(self) -> dict[str, str]:
         # Carry only OS essentials. Ask configuration and provider credentials are
         # unnecessary for this synthetic preview and must not select its runtime.
         names = ("PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "WINDIR",
                  "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL")
-        return {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
-                "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
+        result = {**{key: os.environ[key] for key in names if key in os.environ}, "PI_OFFLINE": "1",
+                  "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1", "PYTHONUTF8": "1"}
+        if self.context_file:
+            from .onboarding import runtime_environment
+
+            result.update(runtime_environment(json.loads(self.context_file.read_text()),
+                                              self.engine_root.parent))
+        return result
 
 
 def discover() -> Runtime:

@@ -532,15 +532,17 @@ def _rail_labels(tree) -> list[str]:
     ]
 
 
-def test_the_rail_holds_the_destinations_and_settings(render, warehouse):
-    """Nav rule 1 caps the rail at four destinations plus Settings. Ask is
-    conditional, so the assertion is against the destination list rather than
-    against a hardcoded five — but the ceiling is still asserted, because the
-    rule the rail is protecting is "no more than four", not "however many".
-    """
+@pytest.mark.parametrize("beta_available", [False, True])
+def test_the_rail_holds_the_destinations_and_settings(
+    render, warehouse, monkeypatch, beta_available,
+):
+    """Keep the primary destinations and the optional beta entry before Settings."""
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", beta_available)
+    monkeypatch.setattr(config, "CASE360_ENABLED", False)
     tree = render(shell.rail, "lists")
     items = [e for e in tree.elements if "cf-nav" in e._classes]
-    expected = [label for _, label, _, _ in shell.DESTINATIONS] + ["Settings"]
+    expected = [label for _, label, _, _ in shell.DESTINATIONS]
+    expected += (["Case 360 Beta"] if beta_available else []) + ["Settings"]
 
     assert len(shell.DESTINATIONS) <= 4
     assert len(items) == len(expected)
@@ -622,7 +624,10 @@ def test_the_ask_route_sends_you_home_rather_than_breaking(monkeypatch):
     assert went_to == ["/"]
 
 
-def test_ask_is_offered_when_it_is_switched_on(render, warehouse, monkeypatch):
+@pytest.mark.parametrize("beta_available", [False, True])
+def test_ask_is_offered_when_it_is_switched_on(render, warehouse, monkeypatch, beta_available):
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", beta_available)
+    monkeypatch.setattr(config, "CASE360_ENABLED", False)
     monkeypatch.setattr(shell, "DESTINATIONS", shell._ALL_DESTINATIONS)
     monkeypatch.setattr(config, "ASK_ENABLED", True)
     monkeypatch.setattr(ask, "model_name", lambda: "gemini-2.5-flash")
@@ -632,8 +637,7 @@ def test_ask_is_offered_when_it_is_switched_on(render, warehouse, monkeypatch):
         "Lists",
         "Ask",
         "SQL",
-        "Settings",
-    ]
+    ] + (["Case 360 Beta"] if beta_available else []) + ["Settings"]
     assert "Vertex AI" in render(settings.render).text
 
 

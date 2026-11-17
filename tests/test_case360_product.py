@@ -2,12 +2,31 @@
 import hashlib
 import io
 import json
+import os
 import zipfile
 
 import pytest
 
 from casefinder.case360 import preferences
-from casefinder.ui.case360_result import bundle_zip, requirement_rows
+from casefinder.ui.case360_result import bundle_zip, current_dry_run_status, requirement_rows
+
+
+def test_generated_sql_status_requires_exact_cohort_and_every_output():
+    cohort, delivery = "SELECT 1", "SELECT 2"
+    def sha(value):
+        return hashlib.sha256(value.encode()).hexdigest()
+    result = {"packages": [{"package_sha256": "package", "package": {"cohort": {"sql": cohort}},
+                           "deliveries": [{"sql": delivery}]}],
+              "validations": [{"package_sha256": "package",
+                  "cohort_check": {"cohort_sha256": sha(cohort),
+                                   "objective": {"dry": {"valid": True, "sent": True}}},
+                  "domain_checks": [{"sql_sha256": sha(delivery),
+                                     "objective": {"dry": {"valid": True, "sent": True}}}]}]}
+    assert current_dry_run_status(result) == "Passed for this SQL and all outputs"
+    result["packages"][0]["deliveries"][0]["sql"] = "SELECT 3"
+    assert current_dry_run_status(result) == "Not verified for every output"
+    result["packages"][0]["package"]["cohort"]["sql"] = "SELECT 4"
+    assert current_dry_run_status(result) == "Not verified for this SQL"
 
 
 def test_missing_fields_and_centers_stay_visible():
@@ -55,7 +74,8 @@ def test_analyst_and_environment_are_local_editable_settings(tmp_path, monkeypat
     assert preferences.read()["environment"] == "Synthetic workstation"
     preferences.save("Another synthetic analyst", "Another environment", "")
     assert preferences.read()["analyst"] == "Another synthetic analyst"
-    assert (tmp_path / "analyst-profile.json").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":  # Windows uses the containing user directory's ACL, not POSIX bits.
+        assert (tmp_path / "analyst-profile.json").stat().st_mode & 0o777 == 0o600
 
 
 def test_profile_refuses_relative_runtime_and_linked_storage(tmp_path, monkeypatch):

@@ -196,6 +196,7 @@ def test_the_handshake_directory_does_not_outlive_the_handshake(launches):
     assert api.ready() == "ready"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits; Windows uses ACLs")
 def test_nobody_else_on_the_machine_can_send_the_signal(monkeypatch):
     """The file's appearance closes a window, so who may create it matters.
 

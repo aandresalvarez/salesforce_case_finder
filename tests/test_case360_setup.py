@@ -92,6 +92,7 @@ def test_settings_refuse_switch_while_owned_work_is_active(monkeypatch):
 
 
 def test_resource_settings_reload_saved_policy_and_locations(render, tmp_path, monkeypatch):
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path))
     from casefinder.case360.runtime import Runtime
 
     version = "a" * 64

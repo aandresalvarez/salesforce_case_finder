@@ -1,0 +1,57 @@
+name: Public wheel compatibility
+on:
+  push:
+    branches: [main, alvaro/case360-intake-sources]
+  workflow_dispatch:
+    inputs:
+      published:
+        description: Verify the public update from version 2.1.4 after publication
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  wheel:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CASEFINDER_UPDATE_CHECK: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.9'
+      - name: Install locked test dependencies
+        run: uv sync --frozen --extra ask --extra dev
+      - name: Check source and corpus guard
+        run: uv run --frozen ruff check .
+      - name: Run offline tests
+        run: uv run --frozen pytest -q
+      - name: Build the public wheel
+        run: uv build --wheel
+      - name: Verify upgrade and saved work
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem dist/*.whl).FullName
+          $version = uv run --frozen python -c 'from casefinder.config import VERSION; print(VERSION)'
+          $mode = @()
+          if ('${{ inputs.published }}' -eq 'true') { $mode = @('--published') }
+          uv run --frozen python tools/verify_wheel_upgrade.py --wheel $wheel --version $version --report wheel-upgrade.json @mode
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wheel-check-${{ matrix.os }}
+          path: wheel-upgrade.json
+          retention-days: 14
