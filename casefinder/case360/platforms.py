@@ -43,7 +43,7 @@ def launch_command(root: Path, *args: str, windowed: bool = False) -> list[str]:
         python = python_path(root)
         if windowed:
             python = python.with_name("pythonw.exe")
-        return [str(python), "-P", "-B", str(root / "launch.py"), *args]
+        return [str(python), "-X", "utf8", "-P", "-B", str(root / "launch.py"), *args]
     return [str(root / "launch"), *args]
 
 
