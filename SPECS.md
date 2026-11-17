@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **834 passing**, ~4 s, no network access required |
+| Automated tests | **850 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1655,6 +1655,57 @@ before.
 **Effect on requirements:** adds a row to §12 — *request refused off the VPN →
 a Connect-to-the-VPN state with one Retry, raw error one disclosure away.*
 Nothing the app reads, shows or stores changes.
+
+### D39 — a free-form result is capped at what a screen can draw, and waited for off the event loop
+
+**Spec:** FR-SQL-2 puts a result table directly under the editor, and FR-ASK-2
+puts one under the generated query. Neither says how big it may be. The byte
+cap bounds what a query scans and D8 how long it runs; nothing bounded what it
+returns, or how long Run could hold the window while it waited.
+
+**Built:** `data.run_sql`, the one path for SQL the app did not write, fetches
+at most 1,000 rows. The cap is handed to BigQuery as `max_results`, so the rest
+never cross the wire. Of those, it keeps only as many as fit in 10,000 cells,
+so a wide result keeps fewer. The count reads `First 1,000 of 41,533 rows`,
+from BigQuery's own total, and one line under it names the cap that applied and
+what to do about it: filter or aggregate a long result, select fewer columns
+from a wide one. Copy as TSV copies what is shown, and says so.
+
+Run on both pages hands the query to a worker thread (`loading.in_background`)
+behind a "Running the query…" placeholder. A second Run while one is on its way
+does nothing. Clear, a new question, or another era drops the answer to a query
+that has been replaced.
+
+**Why:** both halves were measured failing on the real SQL page, with BigQuery
+stubbed out and synthetic rows:
+- A query that took twenty seconds dropped the window's connection at five. At
+  nine, the window said Case Finder had stopped responding (D20), while Case
+  Finder was only waiting for BigQuery.
+- 41,533 rows of three columns — `SELECT case_number, subject, status` over the
+  whole archive — became about 290,000 elements. The process went from 108 MB
+  to 1.4 GB, the window said the same thing, and then it reloaded itself in a
+  loop: the result lives in module-level page state, so every reload drew it
+  again.
+
+Neither guard saw it coming. The query was cheap to scan and quick to run;
+drawing its answer was the expensive part.
+
+Cells rather than only rows, because a result table is one NiceGUI element per
+cell. Measured on NiceGUI 2.24, 20,000 elements draw in under a second and
+100,000 take four, and the loop building them answers nothing else meanwhile.
+A thousand rows is about 7,000 elements at three columns and 160,000 at eighty.
+Ten thousand cells is at most about 21,000, whatever the width.
+
+**Verified** against the same stub after the change. The twenty-second query
+kept its connection and showed the placeholder until the answer arrived.
+41,533 rows drew `First 1,000 of 41,533 rows` in 0.7 s, with the process at
+139 MB. Eighty columns drew 125 rows and said why.
+
+**Effect on requirements:** the tables under FR-SQL-2 and FR-ASK-2 show at most
+1,000 rows, fewer when a result is wide. D13's reading of FR-SEARCH-11 — no
+single response may be unbounded — now covers the two screens it did not
+reach. Cell text is still not clamped, for the reason `table.Column` gives, so
+the cap bounds how many cells are drawn and not how much text is in them.
 
 ---
 

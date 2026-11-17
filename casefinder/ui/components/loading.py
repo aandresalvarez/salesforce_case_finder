@@ -21,7 +21,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from nicegui import run, ui
+from nicegui import background_tasks, run, ui
 
 
 def _can_defer() -> bool:
@@ -102,3 +102,48 @@ def while_loading(
     # fires on the next pass of the loop, which is after that flush.
     ui.timer(0, run_it, once=True)
     return container
+
+
+def in_background(
+    load: Callable[[], Any],
+    then: Callable[[Any], None],
+    *,
+    on_error: Callable[[Exception], None],
+) -> None:
+    """`while_loading` for work a click starts rather than a page (D39).
+
+    A button's handler runs on the event loop just as a page function does, so
+    a query inside one holds the loop for as long as BigQuery takes — and the
+    loop is also what answers the window. Measured on the SQL page: a query
+    that took twenty seconds dropped the window's connection at five, and at
+    nine the window said Case Finder had stopped responding (D20), while Case
+    Finder was only waiting for an answer.
+
+    `load` runs on a worker thread and must not touch the UI; `then` and
+    `on_error` run back on the loop and may. Unlike `while_loading` this draws
+    no placeholder: a handler has no container of its own to put one in, so
+    the caller draws it where the answer will go.
+
+    A background task rather than `while_loading`'s timer: a click arrives
+    over a connection that is already open, so there is no first flush to wait
+    for. Inline when there is no event loop, for the same reason as
+    `while_loading` — that is how the tests press buttons.
+    """
+    if not _can_defer():
+        try:
+            result = load()
+        except Exception as exc:  # noqa: BLE001
+            on_error(exc)
+            return
+        then(result)
+        return
+
+    async def run_it() -> None:
+        try:
+            result = await run.io_bound(load)
+        except Exception as exc:  # noqa: BLE001
+            on_error(exc)
+            return
+        then(result)
+
+    background_tasks.create(run_it(), name="casefinder: in background")

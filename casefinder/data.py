@@ -330,6 +330,21 @@ def related(era: Era, case_number: str) -> list[RelatedCase]:
 # Free-form SQL (user- or model-written)
 # --------------------------------------------------------------------------
 
+# How much of a free-form answer is brought back and drawn (D39). Every other
+# screen asks for a page at a time; these two run a query nobody here wrote,
+# so they are the ones that could ask for everything — and a query that is
+# cheap to scan and quick to run can still return every row of a table.
+#
+# Counted in cells as well as rows, because a result table is one NiceGUI
+# element per cell: a Python object here and a piece of JSON for the window.
+# Measured on NiceGUI 2.24, 20,000 elements draw in under a second and 100,000
+# take four, while the loop building them answers nothing else. Held for about
+# five seconds, that loop loses the window's connection, and the window then
+# says Case Finder has stopped responding (D20). A row cap that suits a
+# three-column lookup is that hang for a `SELECT *` over a wide table.
+FREE_FORM_ROWS = 1_000
+FREE_FORM_CELLS = 10_000
+
 
 def run_sql(sql: str) -> bq.QueryResult:
     """Execute query text the app did not write.
@@ -339,9 +354,42 @@ def run_sql(sql: str) -> bq.QueryResult:
     whether this is a query at all, and the same dry run refuses an expensive
     mistake before it is billed rather than after. Deliberately uncached — the
     user pressing Run means run it.
+
+    Capped as well: at most `FREE_FORM_ROWS` rows are fetched, and fewer are
+    kept when that many would not fit in `FREE_FORM_CELLS`. The result still
+    counts every row the query produced, so the page can say what it is not
+    showing rather than passing a part off as the whole.
     """
     bq.assert_read_only(sql)
-    return bq.run(sql, preflight=True)
+    result = bq.run(sql, preflight=True, max_rows=FREE_FORM_ROWS)
+    if not result.rows:
+        return result
+    fits = max(1, FREE_FORM_CELLS // max(1, len(result.rows[0])))
+    return replace(
+        result,
+        rows=result.rows[:fits],
+        # What was fetched is a floor on what the query produced, whatever the
+        # client reported — so trimming here can never make a part read as all.
+        total_rows=max(result.total_rows or 0, len(result.rows)),
+    )
+
+
+def cap_note(result: bq.QueryResult) -> str:
+    """Why a free-form result is not all here, and what to do. "" when it is.
+
+    Two different answers, because the two caps want different fixes: a long
+    result needs a narrower question, a wide one needs fewer columns.
+    """
+    shown = len(result.rows)
+    if not shown or result.total_rows is None or result.total_rows <= shown:
+        return ""
+    if shown < FREE_FORM_ROWS:
+        columns = len(result.rows[0])
+        return (
+            f"Only the first {shown:,} rows are shown, because the result is "
+            f"{columns} columns wide. Select fewer columns to see more of them."
+        )
+    return f"Only the first {shown:,} rows are shown. Filter or aggregate to see the rest."
 
 
 def estimate_sql(sql: str) -> int:

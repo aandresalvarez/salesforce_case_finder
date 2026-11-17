@@ -9,6 +9,9 @@ FR-SQL-5 makes this the one screen where a second prominent button is correct.
 Run is primary; Check cost is a real secondary, because the whole point of a
 free-form query box is that the person typing cannot know what their query will
 scan until they ask.
+
+D39 bounds the other end: how much comes back, and how long Run holds the
+window. `data.run_sql` caps the answer; Run waits for it on a worker thread.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from .. import bq, config, data
 from ..models import show
 from . import errors
 from .components.actions import muted, primary, quiet, secondary
+from .components.loading import in_background, placeholder
 from .components.table import Column, data_table
 from .state import state
 from .theme import CANVAS
@@ -36,6 +40,12 @@ class SqlState:
     result: bq.QueryResult | None = None
     error: str = ""
     estimate: int | None = None
+    # Whether a query is on its way, and which one. Counted as well as
+    # flagged, so an answer that Clear has already thrown away cannot land on
+    # the page after it: each run remembers its number, and only the latest
+    # number may write.
+    running: bool = False
+    run_id: int = 0
 
 
 page = SqlState()
@@ -115,6 +125,10 @@ def cost_line() -> None:
 
 @ui.refreshable
 def body() -> None:
+    if page.running:
+        placeholder("Running the query…")
+        return
+
     if page.error:
         with ui.column().classes("w-full").style("gap:6px; margin-top:16px"):
             ui.label(page.error.splitlines()[0]).classes("cf-h2")
@@ -133,10 +147,13 @@ def body() -> None:
         return
 
     with ui.row().classes("w-full items-center").style("gap:10px; margin:20px 0 4px 0"):
-        muted(f"{len(result.rows):,} row{'s' if len(result.rows) != 1 else ''}")
+        muted(result.rows_note)
         muted("· " + result.cost_note)
         ui.space()
         quiet("Copy as TSV", lambda: _copy_tsv(result), icon="content_copy")
+    note = data.cap_note(result)
+    if note:
+        muted(note).style("margin-bottom:6px")
 
     columns = [
         Column(name, name, lambda row, k=name: show(row.get(k)), sortable=False)
@@ -146,12 +163,35 @@ def body() -> None:
 
 
 def _run() -> None:
+    # One at a time. The query in flight is already billed, and a second would
+    # only race it to the page.
+    if page.running:
+        return
     page.error = ""
     page.result = None
-    try:
-        page.result = data.run_sql(page.text)
-    except Exception as exc:  # noqa: BLE001
-        page.error = f"{errors.friendly(exc)}\n{type(exc).__name__}: {exc}"
+    page.running = True
+    page.run_id += 1
+    run_id, sql = page.run_id, page.text
+    body.refresh()
+
+    def ran(result: bq.QueryResult) -> None:
+        if run_id == page.run_id:
+            page.result = result
+            # Check cost stays usable while a query runs, and a failed estimate
+            # would otherwise outrank this answer when the body is redrawn.
+            page.error = ""
+            _settle()
+
+    def failed(exc: Exception) -> None:
+        if run_id == page.run_id:
+            page.error = f"{errors.friendly(exc)}\n{type(exc).__name__}: {exc}"
+            _settle()
+
+    in_background(lambda: data.run_sql(sql), ran, on_error=failed)
+
+
+def _settle() -> None:
+    page.running = False
     body.refresh()
 
 
@@ -174,6 +214,10 @@ def _clear() -> None:
     page.result = None
     page.error = ""
     page.estimate = None
+    # A query still running is one the reader has just thrown away. BigQuery
+    # finishes it regardless; its answer is simply not shown.
+    page.running = False
+    page.run_id += 1
     ui.navigate.reload()
 
 
@@ -183,10 +227,13 @@ def _copy_tsv(result: bq.QueryResult) -> None:
     A free-form query can select body text, so its output may carry PHI. Writing
     it to disk would break the no-PHI-at-rest rule in spec section 9.3; putting
     it on the clipboard leaves the decision with the person who wrote the query.
+
+    It copies what is on the screen, and says so: a capped result is announced
+    as "First 1,000 of 41,533 rows copied", not as if the rest came with it.
     """
     headers = list(result.rows[0].keys())
     lines = ["\t".join(headers)]
     for row in result.rows:
         lines.append("\t".join(str(row.get(h, "")).replace("\t", " ") for h in headers))
     ui.clipboard.write("\n".join(lines))
-    ui.notify(f"{len(result.rows):,} rows copied", type="positive")
+    ui.notify(f"{result.rows_note} copied", type="positive")

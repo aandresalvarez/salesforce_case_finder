@@ -23,6 +23,16 @@ from casefinder.bq import CostError, QueryResult
 # --------------------------------------------------------------------------
 
 
+class FakeRows(list):
+    """What `job.result()` hands back: the rows fetched, and a count of all of
+    them. The real iterator knows the second from BigQuery's first response,
+    however few rows it was told to fetch."""
+
+    def __init__(self, rows, total_rows):
+        super().__init__(rows)
+        self.total_rows = total_rows
+
+
 class FakeJob:
     def __init__(self, rows, bytes_processed, cache_hit, statement_type="SELECT"):
         self._rows = rows
@@ -32,9 +42,14 @@ class FakeJob:
         # guard reads it, so the fake has to have one or every preflight test
         # would be exercising the "client too old to report a type" fallback.
         self.statement_type = statement_type
+        # What the last `result()` was asked for, so a test can check the cap
+        # was handed to BigQuery rather than applied after everything arrived.
+        self.max_results = "never called"
 
-    def result(self):
-        return list(self._rows)
+    def result(self, max_results=None):
+        self.max_results = max_results
+        fetched = self._rows if max_results is None else self._rows[:max_results]
+        return FakeRows(fetched, total_rows=len(self._rows))
 
 
 class FakeClient:
@@ -44,10 +59,13 @@ class FakeClient:
         self.cache_hit = cache_hit
         self.statement_type = statement_type
         self.calls: list[tuple[str, object]] = []
+        self.jobs: list[FakeJob] = []
 
     def query(self, sql, job_config=None):
         self.calls.append((sql, job_config))
-        return FakeJob(self.rows, self.bytes_processed, self.cache_hit, self.statement_type)
+        job = FakeJob(self.rows, self.bytes_processed, self.cache_hit, self.statement_type)
+        self.jobs.append(job)
+        return job
 
     @property
     def configs(self):
@@ -164,7 +182,7 @@ def test_a_job_stopped_by_the_ceiling_is_explained_rather_than_reported_raw(monk
             self.calls.append((sql, job_config))
 
             class Job:
-                def result(self):
+                def result(self, max_results=None):
                     raise RuntimeError("Job execution was cancelled: Job timed out after 120s")
 
             return Job()
@@ -184,7 +202,7 @@ def test_an_ordinary_failure_is_not_relabelled_as_a_timeout(monkeypatch):
     class Broken(FakeClient):
         def query(self, sql, job_config=None):
             class Job:
-                def result(self):
+                def result(self, max_results=None):
                     raise RuntimeError("Syntax error: Unexpected keyword FROM at [1:8]")
 
             return Job()
@@ -298,6 +316,100 @@ def test_the_price_follows_the_configured_rate():
 
 
 # --------------------------------------------------------------------------
+# The size of an answer — D39
+# --------------------------------------------------------------------------
+
+
+def _rows(count: int, columns: int = 3) -> list[dict]:
+    return [{f"column_{i}": n for i in range(columns)} for n in range(count)]
+
+
+@pytest.fixture
+def planned(monkeypatch):
+    """Answer the preflight dry run without a round trip, so the only job the
+    fake client sees is the one that fetches rows."""
+    monkeypatch.setattr(bq, "plan", lambda sql, params=None: bq.DryRun(1024, "SELECT"))
+
+
+def test_a_capped_fetch_stops_at_the_cap_and_still_counts_the_rest(client):
+    """Handed to BigQuery as `max_results`, so rows past the cap never cross
+    the wire. Applied after everything had arrived, it would bound the screen
+    and not the process. The count still covers the whole answer, which is
+    what lets a page say "first 2 of 5" instead of "2 rows"."""
+    client.rows = _rows(5)
+    result = bq.run("SELECT 1", max_rows=2)
+
+    assert client.jobs[0].max_results == 2
+    assert len(result.rows) == 2
+    assert result.total_rows == 5
+    assert result.rows_note == "First 2 of 5 rows"
+
+
+def test_the_app_s_own_queries_are_not_capped(client):
+    """They already ask for a page at a time, in SQL; this cap is for the
+    queries nobody here wrote."""
+    client.rows = _rows(3)
+    result = bq.run("SELECT 1")
+
+    assert client.jobs[0].max_results is None
+    assert result.rows_note == "3 rows"
+
+
+def test_free_form_sql_fetches_no_more_than_the_row_cap(client, planned):
+    """`SELECT case_number, subject, status` over the whole archive is 41,533
+    rows. The SQL page drew every one — 290,000 elements, 108 MB to 1.4 GB, and
+    a window that went on reloading itself. The query was cheap and quick, so
+    neither the byte cap nor the time limit had anything to say about it."""
+    client.rows = _rows(data.FREE_FORM_ROWS + 500)
+    result = data.run_sql("SELECT 1")
+
+    assert client.jobs[0].max_results == data.FREE_FORM_ROWS
+    assert len(result.rows) == data.FREE_FORM_ROWS
+    assert result.total_rows == data.FREE_FORM_ROWS + 500
+
+
+def test_a_wide_free_form_result_keeps_only_the_rows_that_fit(client, planned):
+    """A result table is one element per cell, so what a screen holds is cells.
+    A thousand rows is fine at three columns and a hang at eighty."""
+    client.rows = _rows(data.FREE_FORM_ROWS, columns=80)
+    result = data.run_sql("SELECT 1")
+
+    assert len(result.rows) == data.FREE_FORM_CELLS // 80
+    assert result.total_rows == data.FREE_FORM_ROWS
+    assert "80 columns wide" in data.cap_note(result)
+
+
+def test_a_free_form_result_that_fits_comes_back_whole(client, planned):
+    client.rows = _rows(12)
+    result = data.run_sql("SELECT 1")
+
+    assert len(result.rows) == 12
+    assert result.rows_note == "12 rows"
+    assert data.cap_note(result) == ""
+
+
+def test_the_note_names_the_cap_that_applied_and_what_to_do_about_it():
+    """The two caps want different fixes, so one sentence for both would be
+    advice half the readers could not use."""
+    long = QueryResult(
+        rows=_rows(data.FREE_FORM_ROWS), bytes_processed=0, cache_hit=False, total_rows=41_533
+    )
+    wide = QueryResult(
+        rows=_rows(125, columns=80), bytes_processed=0, cache_hit=False, total_rows=41_533
+    )
+
+    assert long.rows_note == f"First {data.FREE_FORM_ROWS:,} of 41,533 rows"
+    assert "Filter or aggregate" in data.cap_note(long)
+    assert "Select fewer columns" in data.cap_note(wide)
+    assert "Filter or aggregate" not in data.cap_note(wide)
+
+
+def test_one_row_is_a_row():
+    """The count line used to read "1 rows"."""
+    assert QueryResult(rows=_rows(1), bytes_processed=0, cache_hit=False).rows_note == "1 row"
+
+
+# --------------------------------------------------------------------------
 # The data layer's view of the same thing
 # --------------------------------------------------------------------------
 
@@ -306,7 +418,7 @@ def test_free_form_sql_is_preflighted(monkeypatch):
     """FR-SQL-4: a hand-written query is the one most likely to be expensive."""
     seen: list[bool] = []
 
-    def fake_run(sql, params=None, *, preflight=False):
+    def fake_run(sql, params=None, *, preflight=False, max_rows=None):
         seen.append(preflight)
         return QueryResult(rows=[], bytes_processed=0, cache_hit=False)
 
@@ -319,7 +431,7 @@ def test_free_form_results_are_not_cached(monkeypatch):
     """Pressing Run means run it, and the rows may carry PHI worth not keeping."""
     calls: list[str] = []
 
-    def fake_run(sql, params=None, *, preflight=False):
+    def fake_run(sql, params=None, *, preflight=False, max_rows=None):
         calls.append(sql)
         return QueryResult(rows=[], bytes_processed=0, cache_hit=False)
 

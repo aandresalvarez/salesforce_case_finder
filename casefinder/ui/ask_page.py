@@ -22,6 +22,7 @@ from ..config import ERAS
 from . import errors
 from .components import filters as filter_ui
 from .components.actions import muted, primary, quiet, secondary
+from .components.loading import in_background, placeholder
 from .components.table import Column, data_table
 from .state import state
 
@@ -45,6 +46,11 @@ class AskState:
     error: str = ""
     result = None
     ran_sql: str = ""
+    # A query on its way, and which one — as on the SQL page. A new question
+    # or another era replaces the query, and the answer to the old one must
+    # not arrive underneath the new one.
+    running: bool = False
+    run_id: int = 0
 
 
 page = AskState()
@@ -116,13 +122,21 @@ def _set_era(key: str) -> None:
     # may not even parse here.
     page.sql = ""
     page.result = None
+    _forget_run()
     body.refresh()
+
+
+def _forget_run() -> None:
+    """Discard an answer still on its way; the query it answers has gone."""
+    page.running = False
+    page.run_id += 1
 
 
 def _generate() -> None:
     page.sql = ""
     page.result = None
     page.error = ""
+    _forget_run()
     if not page.question.strip():
         body.refresh()
         return
@@ -160,6 +174,9 @@ def body() -> None:
 
 
 def _results() -> None:
+    if page.running:
+        placeholder("Running the query…")
+        return
     if page.result is None:
         return
     result = page.result
@@ -169,8 +186,11 @@ def _results() -> None:
         return
 
     with ui.row().classes("w-full items-center").style("gap:10px; margin:20px 0 4px 0"):
-        muted(f"{len(rows):,} row{'s' if len(rows) != 1 else ''}")
+        muted(result.rows_note)
         muted("· " + result.cost_note)
+    note = data.cap_note(result)
+    if note:
+        muted(note).style("margin-bottom:6px")
 
     columns = [
         Column(name, name, lambda row, k=name: _cell(row.get(k)), sortable=False)
@@ -188,13 +208,32 @@ def _cell(value) -> str:
 
 
 def _run() -> None:
+    # One at a time, for the same reason as on the SQL page (D39).
+    if page.running:
+        return
     page.error = ""
     page.result = None
-    try:
-        page.result = data.run_sql(page.sql)
-        page.ran_sql = page.sql
-    except Exception as exc:  # noqa: BLE001
-        page.error = errors.friendly(exc) + f"\n\n{type(exc).__name__}: {exc}"
+    page.running = True
+    page.run_id += 1
+    run_id, sql = page.run_id, page.sql
+    body.refresh()
+
+    def ran(result) -> None:
+        if run_id == page.run_id:
+            page.result = result
+            page.ran_sql = sql
+            _settle()
+
+    def failed(exc: Exception) -> None:
+        if run_id == page.run_id:
+            page.error = errors.friendly(exc) + f"\n\n{type(exc).__name__}: {exc}"
+            _settle()
+
+    in_background(lambda: data.run_sql(sql), ran, on_error=failed)
+
+
+def _settle() -> None:
+    page.running = False
     body.refresh()
 
 

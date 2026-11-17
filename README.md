@@ -23,7 +23,7 @@ number and you land on the case; type anything else and you get results.
 | **Lists** | Triage queues with owner, status, PI, department, IRB protocol, description, last activity, and funding. Filter by owner, status, department, PI or IRB; sort, save a view, export the metadata. From a case, the `…` menu opens its owner's queue. |
 | **Case** | The request pinned at the top, the conversation beside the facts about it. A long thread shows its opening and its latest with the middle folded behind a count, and each month marked. The rail carries the case's PI, protocol and funding, and its related cases grouped by how strongly they are related — none of which scrolls away. Bodies submitted through the web intake form are read back as a form rather than as the JSON they are stored as, with the fields the case already shows folded away and the original always one click away. |
 | **Ask** | A plain-English question becomes BigQuery SQL. You read the query before it runs. **Off by default** — set `CASEFINDER_ASK=1` to offer it. |
-| **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. |
+| **SQL** | For when you already know what you want. Read-only, with a cost estimate before you spend anything. Shows the first 1,000 rows of an answer — fewer when it is very wide — and says how many there were in all. |
 
 Two slices of the archive are available, switchable in Settings:
 
@@ -421,7 +421,7 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 834 tests, no credentials needed, ~5 s
+uv run pytest              # 850 tests, no credentials needed, ~5 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -460,6 +460,7 @@ uv run pytest -m warehouse   # 31 tests, ~55 s
 | `test_ui_actions.py` | The lean-UI acceptance tests UX-T1 through UX-T7 |
 | `test_pagination.py` | Paging on lists and search: offsets, tiebreaks, and when the offset resets |
 | `test_visual.py` | Every screen renders, in its populated, empty, and failed states |
+| `test_free_form.py` | SQL and Ask results: capped at what a screen can draw, and waited for without freezing the window |
 | `test_no_corpus_data.py` | No live case data is committed — this repo is public and the corpus is not |
 | `test_packaging.py` | What is true of the wheel but not of a checkout: packaged presets, the console script, the Pythons it runs on, flags that work when the UI cannot import, nothing untracked shipping |
 | `test_update.py` | Finding the newest release and installing it on the right Python — or, on Windows, printing the command — without touching the network |

@@ -154,6 +154,23 @@ class QueryResult:
     rows: list[dict[str, Any]]
     bytes_processed: int
     cache_hit: bool
+    # Every row the query produced. More than `rows` holds when the fetch was
+    # capped — see `max_rows` on `run` — and None where nothing reported it,
+    # which is read as "all of them are here".
+    total_rows: int | None = None
+
+    @property
+    def rows_note(self) -> str:
+        """How many rows these are, and of how many, for the line over a table.
+
+        "First 1,000 of 41,533" rather than "1,000 rows": a capped result that
+        only gave its own length would read as the whole answer.
+        """
+        shown = len(self.rows)
+        total = shown if self.total_rows is None else self.total_rows
+        if total > shown:
+            return f"First {shown:,} of {total:,} rows"
+        return f"{shown:,} row{'' if shown == 1 else 's'}"
 
     @property
     def usd(self) -> float:
@@ -242,6 +259,7 @@ def run(
     params: Sequence[ScalarQueryParameter] | None = None,
     *,
     preflight: bool = False,
+    max_rows: int | None = None,
 ) -> QueryResult:
     """Execute a parameterized query and return plain Python rows.
 
@@ -252,6 +270,12 @@ def run(
     `preflight=True` dry-runs first and raises CostError before spending
     anything. Used for the free-form SQL and natural-language paths, where the
     query text is not one we wrote.
+
+    `max_rows` stops the fetch, not the query. By the time rows are read,
+    BigQuery has run the whole thing and bills for it either way; what the cap
+    bounds is how much of the answer crosses the wire into this process. The
+    result's `total_rows` still counts all of it — BigQuery reports that with
+    the first page, so knowing it costs nothing.
     """
     if preflight:
         # `plan` refuses a non-query before the cost is even considered. Both
@@ -268,7 +292,7 @@ def run(
 
     job = get_client().query(sql, job_config=_job_config(params))
     try:
-        iterator = job.result()
+        iterator = job.result(max_results=max_rows)
     except Exception as exc:
         # BigQuery reports a `job_timeout_ms` expiry as a cancellation, which
         # reads to a user as "something went wrong" rather than "your query was
@@ -287,6 +311,7 @@ def run(
         rows=rows,
         bytes_processed=int(job.total_bytes_processed or 0),
         cache_hit=bool(job.cache_hit),
+        total_rows=iterator.total_rows,
     )
 
 
