@@ -49,11 +49,11 @@ def test_history_previews_and_cancels_without_erasing(render, monkeypatch):
         await asyncio.sleep(0)
         with tree.client:
             tree.of_type("Select")[0].value = ["run-synthetic"]
-        tree.press(next(b for b in tree.buttons() if b.text == "Limpiar datos"))
+        tree.press(next(b for b in tree.buttons() if b.text == "Clean data"))
         await asyncio.sleep(0)
-        assert "Confirmar limpieza de datos" in tree.text
+        assert "Confirm data cleanup" in tree.text
         assert "3 files · 42 bytes" in tree.text
-        tree.press(next(b for b in tree.buttons() if b.text == "Cancelar"))
+        tree.press(next(b for b in tree.buttons() if b.text == "Cancel"))
         await asyncio.sleep(0)
         assert not any(c[0] == "cleanup_data" for c in client.calls)
         assert client.rows
@@ -73,11 +73,11 @@ def test_confirmation_uses_preview_scope_and_reports_partial_cleanup(render, mon
         monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
         with tree.client:
             tree.of_type("Checkbox")[0].value = True
-        tree.press(next(b for b in tree.buttons() if b.text == "Limpiar datos"))
+        tree.press(next(b for b in tree.buttons() if b.text == "Clean data"))
         await asyncio.sleep(0)
         assert client.calls[-1][1] == {
             "run_ids": [], "all_runs": True, "unused_resources": False}
-        tree.press(next(b for b in tree.buttons() if b.text == "Confirmar limpieza"))
+        tree.press(next(b for b in tree.buttons() if b.text == "Confirm cleanup"))
         await asyncio.sleep(0)
         call = next(c for c in client.calls if c[0] == "cleanup_data")
         assert call[1] == {"cleanup_id": "cleanup-synthetic", "plan_sha256": "a" * 64}

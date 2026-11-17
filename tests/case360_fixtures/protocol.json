@@ -261,6 +261,35 @@
         "offset": 0,
         "length": 100
       }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "conversation-1",
+      "run_id": null,
+      "method": "prepare_conversation",
+      "params": {
+        "text": "Return synthetic records.",
+        "previous_run_id": null,
+        "answers": []
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "conversation-1",
+      "run_id": null,
+      "method": "prepare_conversation",
+      "params": {
+        "text": "",
+        "previous_run_id": "run-parent",
+        "answers": [
+          {
+            "question_id": "intake-year",
+            "text": "2024"
+          }
+        ]
+      }
     }
   ],
   "invalid": [
@@ -719,6 +748,23 @@
         "contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "sections": [
           "credentials"
+        ]
+      }
+    },
+    {
+      "protocol": "case360.desktop/1",
+      "kind": "command",
+      "request_id": "conversation-1",
+      "run_id": null,
+      "method": "prepare_conversation",
+      "params": {
+        "text": "",
+        "previous_run_id": "run-parent",
+        "answers": [
+          {
+            "question_id": "intake-year",
+            "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
         ]
       }
     }

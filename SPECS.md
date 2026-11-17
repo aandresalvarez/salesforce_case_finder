@@ -22,7 +22,7 @@ nobody checked.
 
 | | |
 |---|---|
-| Automated tests | **823 passing**, ~4 s, no network access required |
+| Automated tests | **834 passing**, ~4 s, no network access required |
 | Warehouse tests | **31 passing** against live BigQuery on `som-nero-phi-naras-ric`, ~60 s, ~2¢ (opt-in: `pytest -m warehouse`) |
 | Lint | `ruff check .` clean |
 | Live warehouse | All 7 routes return HTTP 200 with no tracebacks, re-run route-by-route against `som-nero-phi-naras-ric` — plus `/case/{case_number}` on a number that does not exist, which is the not-found path rather than a route. Launched through the installed console script, so the run also exercised `cli` and the window spawn. |
@@ -1795,5 +1795,39 @@ Resource settings restore the saved snapshot, imported locations, expected
 account and budget policy after reopening the page.
 
 Synthetic regressions verify exact Unicode reconstruction across pages, complete
-downloads and restored configuration. The committed suite has 823 tests; 31
+downloads and restored configuration. The committed suite has 829 tests; 31
 opt-in warehouse tests remain excluded.
+
+
+### D46 — a conversation before SQL
+
+The Case 360 Beta view opens one free-text request field. Beta settings and local history
+are separate destinations. Starting a request also approves the displayed
+maximum; connection checks and contract binding run automatically. The analyst
+sees observed source activity, relevant evidence, and focused model questions
+before SQL generation. Answers retain their question context in a new immutable
+revision. Prior charges reduce the remaining conversation budget; the controller
+allows only one authorized continuation from each answered revision.
+
+The SQL view opens after generation and independent review. Reopening a saved
+conversation never starts a model call. Paged complete evidence, feedback,
+exports, confirmed cleaning and stable Case Finder remain available. Synthetic
+acceptance covers the question/answer/SQL path; it does not certify live clinical
+quality. The committed frontend suite has 834 tests, excluding 31 warehouse tests.
+
+
+### D47 — keep Case Finder and English UI in the private beta
+
+The private distribution keeps Search as home and the complete Case Finder
+navigation and Settings page. Case 360 Beta is an additional destination, with
+its own local settings route and English controls throughout request, progress,
+clarification and cleanup. The beta can still be configured before cloud access
+is available. Regression coverage checks both navigation and settings boundaries.
+
+
+### D48 — saved requests and actionable admission failures
+
+A package admission failure keeps the request and directs the analyst to repair
+the beta. Only connection failures offer Retry and continue, which explicitly
+rechecks access and continues within the displayed budget. Reopening a saved
+draft restores the literal request without authorizing or starting it.

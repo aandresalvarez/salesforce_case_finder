@@ -2,11 +2,11 @@
 
 from casefinder import config, main
 from casefinder.ui import case360_page
-from casefinder.ui.shell import rail
+from casefinder.ui.shell import connection_screen, rail
 
 
 def test_demo_has_explicit_prepare_confirm_start(render):
-    tree = render(case360_page.render)
+    tree = render(case360_page.render_demo)
     assert "Prepare synthetic request" in tree.button_labels()
     assert "Confirm contract" in tree.button_labels()
     assert "Run synthetic demonstration" in tree.button_labels()
@@ -30,12 +30,16 @@ def test_beta_navigation_is_optional(render, monkeypatch):
     assert "Case 360 Beta" not in render(lambda: rail("search")).text
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     assert "Case 360 Beta" in render(lambda: rail("case360")).text
+    gate = render(connection_screen, "Synthetic offline account")
+    assert any(link.text == "Open Case 360 Beta" and link._props.get("href") == "/case360"
+               for link in gate.of_type("Link"))
 
 
 def test_demo_route_does_not_probe_bigquery(render, monkeypatch):
     monkeypatch.setattr(config, "CASE360_ENABLED", True)
     tree = render(main.case360_route)
-    assert "Offline preview" in tree.text
+    assert "What data do you need?" in tree.text
+    assert "Prepare request" not in tree.button_labels()
 
 
 def test_request_form_preserves_explicit_centers_and_cannot_run_live(render):

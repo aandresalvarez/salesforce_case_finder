@@ -406,7 +406,7 @@ application-default revoke` is the command if you want them gone too.
 
 ```bash
 uv sync --extra ask --extra dev
-uv run pytest              # 823 tests, no credentials needed, ~5 s
+uv run pytest              # 834 tests, no credentials needed, ~5 s
 uv run ruff check .
 uv run casefinder          # the same entry point an installed copy uses
 git config core.hooksPath .githooks   # once, per clone — see below
@@ -420,7 +420,7 @@ for the internal pilot; no general clinical-quality claim is made.
 See [P2 request preparation and authorization](docs/CASE360_P2.md) for explicit runtime contexts
 and versioned resources, scoped approval and launching with the private engine.
 Live mode requires the pilot owner to configure and verify that runtime.
-See [P3 history, recovery and Limpiar datos](docs/CASE360_P3.md) for saved work,
+See [P3 history, recovery and Clean data](docs/CASE360_P3.md) for saved work,
 verified shutdown and confirmed local cleanup.
 
 The default test run touches no network. Fixtures fail loudly if a test reaches
