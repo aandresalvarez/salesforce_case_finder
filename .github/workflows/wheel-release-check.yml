@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       published:
-        description: Verify the public update from version 2.2.0 after publication
+        description: Verify the public update from version 2.2.1 after publication
         type: boolean
         default: false
 permissions:
