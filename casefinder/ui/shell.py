@@ -153,6 +153,8 @@ def connection_screen(reason: str) -> None:
             primary("Retry", retry)
         if config.CASE360_AVAILABLE or config.CASE360_ENABLED:
             ui.link("Open Case 360 Beta", "/case360").style("margin-top:12px")
+        if config.CASE360_AVAILABLE and not config.CASE360_ENABLED:
+            ui.link("Case 360 Beta settings", "/settings/case360").style("margin-top:6px")
         if off_vpn:
             with ui.expansion("Details").classes("cf-muted").style(
                 "margin-top:18px; max-width:520px"

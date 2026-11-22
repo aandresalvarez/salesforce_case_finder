@@ -1,4 +1,5 @@
 """Optional wheel entry and native package updates preserve existing work."""
+import asyncio
 import hashlib
 import json
 import zipfile
@@ -35,51 +36,63 @@ def test_wheel_offers_beta_without_enabling_runtime():
     assert not config.PRIVATE_BETA
 
 
-def test_regular_wheel_beta_route_preserves_navigation_without_cloud_probe(render, monkeypatch):
+def test_beta_launch_without_installation_offers_settings(render, monkeypatch):
     from casefinder import main
 
     monkeypatch.setattr(config, "CASE360_ENABLED", False)
-    monkeypatch.setattr(main, "gated", lambda *_: pytest.fail("Installation must stay local"))
-    monkeypatch.setattr(delivery, "selected", lambda **_: None)
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", True)
+    monkeypatch.setattr(main, "gated", lambda *_: pytest.fail("Opening the beta must stay local"))
+    monkeypatch.setattr(delivery, "open_beta", lambda: False)
     tree = render(main.case360_route)
     assert all(label in tree.text for label in ["Search", "Lists", "SQL", "Settings"])
-    assert tree.button_labels() == ["Install beta"]
-    assert "Maximum authorized budget" not in tree.text
+    assert not tree.button_labels()
+    [settings_link] = tree.of_type("Link")
+    assert not settings_link.visible
+    [launch] = tree.client.connect_handlers
+    asyncio.run(launch())
+    assert settings_link.visible
+    assert settings_link._props["href"] == "/settings/case360"
 
 
-def test_existing_beta_opens_from_primary_action_and_keeps_updates_collapsed(
+def test_sidebar_route_launches_selected_beta_once_without_additional_click(
     tmp_path, render, monkeypatch,
 ):
-    import asyncio
-
-    from nicegui import background_tasks, core
-
-    from casefinder.ui.case360_install import render_install
+    from casefinder import main
 
     monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path / "private"))
+    monkeypatch.setattr(config, "CASE360_ENABLED", False)
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", True)
     monkeypatch.setattr(platforms, "target", lambda: "darwin-arm64")
     installed = delivery.install_archive(download(tmp_path))
+    pointer = tmp_path / "private/active-release.json"
+    selection = pointer.read_bytes()
     launched = []
     monkeypatch.setattr(delivery.subprocess, "Popen", lambda command, **_: launched.append(command))
-    tree = render(render_install)
-    assert "Case 360 Beta is installed" in tree.text
-    [open_button] = tree.with_class("cf-primary")
-    assert open_button.text == "Open beta"
-    [updates] = tree.of_type("Expansion")
-    assert not updates.value
-    [update_button] = [b for b in tree.buttons() if b.text == "Update from private ZIP"]
-    assert tree.is_inside(update_button, "Expansion")
-    async def click():
-        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
-        pending = []
-        monkeypatch.setattr(background_tasks, "create", lambda task, **_: pending.append(task))
-        tree.press(open_button)
-        [task] = pending
-        await task
+    tree = render(main.case360_route)
+    assert not tree.button_labels()
+    assert not launched
 
-    asyncio.run(click())
+    async def connect_and_reconnect():
+        [launch] = tree.client.connect_handlers
+        await asyncio.gather(launch(), launch())
+
+    asyncio.run(connect_and_reconnect())
     assert launched == [platforms.launch_command(installed, "--setup", windowed=True)]
-    assert delivery.selected() == installed
+    assert "is opening in a separate window" in tree.text
+    assert pointer.read_bytes() == selection
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_beta_zip_actions_are_in_settings(render, monkeypatch, installed):
+    from casefinder import main
+
+    monkeypatch.setattr(config, "CASE360_ENABLED", False)
+    monkeypatch.setattr(config, "CASE360_AVAILABLE", True)
+    monkeypatch.setattr(main, "gated", lambda *_: pytest.fail("Package settings must stay local"))
+    monkeypatch.setattr(delivery, "selected", lambda **_: Path("beta") if installed else None)
+    tree = render(main.case360_package_settings_route)
+    expected = "Update from private ZIP" if installed else "Install from private ZIP"
+    assert tree.button_labels() == [expected]
 
 
 def test_install_and_update_leave_existing_requests_and_settings(tmp_path, monkeypatch):

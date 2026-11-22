@@ -1,4 +1,4 @@
-"""Optional companion installation reached from the ordinary Case Finder wheel."""
+"""Open the selected companion from navigation and manage its package in Settings."""
 from __future__ import annotations
 
 import asyncio
@@ -9,31 +9,56 @@ from pathlib import Path
 from nicegui import app, ui
 
 from ..case360 import delivery
-from .components.actions import muted, primary, secondary
+from .components.actions import primary
+
+PACKAGE_SETTINGS = "/settings/case360"
+
+
+def render_launch() -> None:
+    ui.label("Case 360 Beta").classes("cf-h1")
+    status = ui.label("Opening Case 360 Beta…").props('role="status" aria-live="polite"')
+    settings = ui.link("Go to Case 360 Beta settings", PACKAGE_SETTINGS)
+    settings.set_visibility(False)
+    attempted = False
+
+    async def launch() -> None:
+        nonlocal attempted
+        # Reconnecting this page must not launch another companion window.
+        if attempted:
+            return
+        attempted = True
+        try:
+            if await asyncio.to_thread(delivery.open_beta):
+                status.text = "Case 360 Beta is opening in a separate window."
+                return
+            status.text = "Install Case 360 Beta from Settings to get started."
+        except (OSError, ValueError, KeyError):
+            status.text = "Case 360 Beta could not open. Check its installation in Settings."
+        settings.set_visibility(True)
+
+    ui.context.client.on_connect(launch)
 
 
 def render_install() -> None:
-    ui.label("Case 360 Beta").classes("cf-h1")
-    muted("Describe a research request, clarify the scope, and review a SQL draft.")
-    status = ui.label()
-    status.props('role="status" aria-live="polite"')
-    actions = ui.column().classes("w-full items-start")
+    ui.label("Case 360 Beta installation").classes("cf-h1")
+    status = ui.label().props('role="status" aria-live="polite"')
 
-    async def open_installed() -> None:
-        toggle(False)
-        status.text = "Checking the installed beta…"
+    def refresh() -> None:
         try:
-            if not await asyncio.to_thread(delivery.open_beta):
-                render_actions()
-                return
-            status.text = "Opening Case 360 Beta…"
+            installed = delivery.selected(verify_payload=False) is not None
         except (OSError, ValueError, KeyError):
-            render_actions(repair=True)
-        finally:
-            toggle(True)
+            status.text = "Select the current private pilot ZIP to repair the installation."
+            choose.text = "Repair from private ZIP"
+            return
+        if installed:
+            status.text = "Case 360 Beta is installed. Use a new private pilot ZIP to update it."
+            choose.text = "Update from private ZIP"
+        else:
+            status.text = "Choose the private pilot ZIP supplied by the pilot owner."
+            choose.text = "Install from private ZIP"
 
     async def install() -> None:
-        toggle(False)
+        choose.disable()
         try:
             if app.native.main_window is None:
                 status.text = "Use the Case Finder desktop app to select the private pilot ZIP."
@@ -44,38 +69,14 @@ def render_install() -> None:
                 return
             status.text = "Checking and installing the beta. This can take a few minutes…"
             await asyncio.to_thread(delivery.install_archive, Path(files[0]))
-            render_actions()
-            status.text = "Beta installed. Close any older beta window before opening it."
+            refresh()
+            status.text = "Beta installed. Use Case 360 Beta in the menu to open it."
         except (OSError, ValueError, KeyError, RuntimeError, zipfile.BadZipFile, tarfile.TarError):
-            status.text = "Installation could not finish. Check that you selected the original " \
-                "pilot ZIP for this computer. Your saved work has not been removed."
+            status.text = (
+                "Installation could not finish. Select the original pilot ZIP for this computer."
+            )
         finally:
-            toggle(True)
+            choose.enable()
 
-    buttons: list[ui.button] = []
-
-    def render_actions(*, repair: bool = False) -> None:
-        try:
-            installed = not repair and delivery.selected(verify_payload=False) is not None
-        except (OSError, ValueError, KeyError):
-            installed, repair = False, True
-        actions.clear()
-        buttons.clear()
-        with actions:
-            if installed:
-                status.text = "Case 360 Beta is installed on this computer."
-                buttons.append(primary("Open beta", open_installed))
-                with ui.expansion("Manage beta installation").props("dense"):
-                    buttons.append(secondary("Update from private ZIP", install))
-            elif repair:
-                status.text = "Case 360 Beta could not open. Choose the current private pilot ZIP."
-                buttons.append(primary("Repair beta installation", install))
-            else:
-                status.text = "Install the private pilot ZIP to use Case 360 Beta."
-                buttons.append(primary("Install beta", install))
-
-    def toggle(enabled: bool) -> None:
-        for button in buttons:
-            button.set_enabled(enabled)
-
-    render_actions()
+    choose = primary("Install from private ZIP", install)
+    refresh()
