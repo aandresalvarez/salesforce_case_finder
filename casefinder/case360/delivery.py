@@ -5,10 +5,12 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Literal
 
 from . import package, platforms, preferences
 
@@ -84,10 +86,63 @@ def install_archive(archive: Path) -> Path:
         return target
 
 
-def open_beta() -> bool:
+OpenResult = Literal["opened", "focused", "starting", "already_open"]
+
+
+def _focus_mac_window(root: Path) -> OpenResult | None:
+    from AppKit import (
+        NSApplicationActivateAllWindows,
+        NSApplicationActivationPolicyRegular,
+        NSRunningApplication,
+    )
+
+    bundle = (root / "Case360Window.app").resolve()
+    apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(
+        "org.case360.private-beta.window")
+    for app in apps:
+        url = app.bundleURL()
+        if not url or Path(url.path()).resolve() != bundle or app.isTerminated():
+            continue
+        if app.activationPolicy() != NSApplicationActivationPolicyRegular:
+            continue
+        if app.isHidden():
+            app.unhide()
+        if app.activateWithOptions_(NSApplicationActivateAllWindows):
+            return "focused"
+        # macOS can refuse focus. The running window still owns the session.
+        return "already_open"
+    return None
+
+
+def open_beta() -> OpenResult | None:
+    if sys.platform != "darwin":
+        return _launch_selected()
+
+    import fcntl
+
+    # Look up an existing native window before hashing the private runtime.
+    # This also finds windows opened before Case Finder started.
+    root = selected(verify_payload=False)
+    if root is None:
+        return None
+    with (preferences.data_root() / "window-launch.lock").open("ab") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return _focus_mac_window(root) or "starting"
+        focused = _focus_mac_window(root)
+        if focused:
+            return focused
+        # The server inherits the lock through exec. Concurrent clicks (even
+        # from another Case Finder) cannot race a window still starting up.
+        # Closing the last descriptor on exit releases it, including on crash.
+        return _launch_selected(lock.fileno())
+
+
+def _launch_selected(lock_fd: int | None = None) -> OpenResult | None:
     selected_package = _selection()
     if selected_package is None:
-        return False
+        return None
     root, manifest = selected_package
     data_root = preferences.data_root()
     context_path = data_root / "installations" / manifest["release_id"] / "context.json"
@@ -103,11 +158,13 @@ def open_beta() -> bool:
     for name in ("PYTHONHOME", "PYTHONPATH", "NODE_OPTIONS", "CASE360_RUNTIME_CONTEXT"):
         env.pop(name, None)
     with log.open("ab") as output:
-        options = (
-            {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
-            if os.name == "nt" else {"start_new_session": True}
-        )
+        if os.name == "nt":
+            options = {"creationflags": subprocess.DETACHED_PROCESS |
+                       subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            options = {"start_new_session": True,
+                       "pass_fds": (lock_fd,) if lock_fd is not None else ()}
         subprocess.Popen(platforms.launch_command(root, start, windowed=True), env=env,
                          stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
                          **options)
-    return True
+    return "opened"

@@ -159,9 +159,9 @@ def main() -> None:
             return result
 
         run(["uv", "tool", "install", "--python", "3.13",
-             f"{repo}/v2.2.0/casefinder-2.2.0-py3-none-any.whl"])
+             f"{repo}/v2.2.1/casefinder-2.2.1-py3-none-any.whl"])
         entry = root / "bin" / ("casefinder.exe" if os.name == "nt" else "casefinder")
-        assert "2.2.0" in run([str(entry), "--version"]).stdout
+        assert "2.2.1" in run([str(entry), "--version"]).stdout
         if args.published:
             update = subprocess.run([str(entry), "--update"], env=env, cwd=root,
                                     text=True, capture_output=True, timeout=180)
@@ -186,7 +186,7 @@ def main() -> None:
         check_sidebar(python, root, env, marker)
         assert before == {name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
                           for name in saved}
-        args.report.write_text(json.dumps({"version": args.version, "old_version": "2.2.0",
+        args.report.write_text(json.dumps({"version": args.version, "old_version": "2.2.1",
             "platform": os.name, "published_updater": args.published,
             "beta_available": True, "legacy_routes_available": True,
             "sidebar_click_launched_companion_once": True, "zip_management_in_settings": True,

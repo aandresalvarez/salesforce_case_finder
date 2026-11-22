@@ -28,8 +28,14 @@ def render_launch() -> None:
             return
         attempted = True
         try:
-            if await asyncio.to_thread(delivery.open_beta):
-                status.text = "Case 360 Beta is opening in a separate window."
+            result = await asyncio.to_thread(delivery.open_beta)
+            if result:
+                status.text = {
+                    "opened": "Case 360 Beta is opening in a separate window.",
+                    "starting": "Case 360 Beta is starting.",
+                    "focused": "Returned to your open Case 360 Beta window.",
+                    "already_open": "Case 360 Beta is already open. Select it in the Dock.",
+                }[result]
                 return
             status.text = "Install Case 360 Beta from Settings to get started."
         except (OSError, ValueError, KeyError):
