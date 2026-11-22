@@ -2,6 +2,8 @@
 import asyncio
 import hashlib
 import json
+import os
+import sys
 import zipfile
 from pathlib import Path
 
@@ -167,3 +169,37 @@ def test_dependency_alias_survives_relocation(tmp_path):
     platforms.copy_payload(source, target, links)
     assert (target / "engine/node_modules").resolve() == target / "engine/pi_harness/node_modules"
     assert len(list(platforms.payload_files(target))) == 2
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Mac window activation")
+@pytest.mark.parametrize("result", ["focused", "already_open"])
+def test_existing_window_preserves_session_even_if_focus_denied(tmp_path, monkeypatch, result):
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path))
+    monkeypatch.setattr(delivery, "selected", lambda **_: tmp_path)
+    monkeypatch.setattr(delivery, "_focus_mac_window", lambda root: result)
+    monkeypatch.setattr(delivery, "_launch_selected", lambda *_: pytest.fail("Second launch"))
+    assert delivery.open_beta() == result
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Mac startup lock")
+def test_window_startup_lock_survives_launcher_and_releases_after_exit(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path))
+    monkeypatch.setattr(delivery, "selected", lambda **_: tmp_path)
+    monkeypatch.setattr(delivery, "_focus_mac_window", lambda root: None)
+    inherited = []
+
+    def start(fd):
+        inherited.append(os.dup(fd))
+        return "opened"
+
+    monkeypatch.setattr(delivery, "_launch_selected", start)
+    try:
+        assert delivery.open_beta() == "opened"
+        assert delivery.open_beta() == "starting"
+        with monkeypatch.context() as ready:
+            ready.setattr(delivery, "_focus_mac_window", lambda root: "focused")
+            assert delivery.open_beta() == "focused"
+        os.close(inherited.pop())
+        assert delivery.open_beta() == "opened"
+    finally:
+        for fd in inherited:
+            os.close(fd)
