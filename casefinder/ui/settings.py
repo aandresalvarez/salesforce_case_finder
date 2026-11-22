@@ -36,6 +36,9 @@ def render() -> None:
         if config.CASE360_ENABLED:
             _section("Case 360 Beta")
             ui.link("Case 360 Beta settings", "/case360/settings")
+        elif config.CASE360_AVAILABLE:
+            _section("Case 360 Beta")
+            ui.link("Manage beta installation", "/settings/case360")
 
 
 def _section(title: str) -> None:

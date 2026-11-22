@@ -1,15 +1,17 @@
 # Optional Case 360 Beta
 
 Case Finder still ships as a universal Python wheel for Mac and Windows. Its
-ordinary release updater is unchanged. Updating to version 2.2.0 adds a **Case 360 Beta** entry alongside Search,
-Lists and SQL. Installing this wheel does not authorize model calls or replace
+ordinary release updater is unchanged. In version 2.2.1, **Case 360 Beta**
+opens the installed beta directly from the sidebar beside Search, Lists and SQL. Installing this wheel does not authorize model calls or replace
 Case Finder's configuration.
 
 The beta uses a private companion ZIP containing pinned Python, Node, Google
 tools and pilot documentation. Get the ZIP for your computer from the pilot
-owner. In Case Finder select **Case 360 Beta → Install beta or update beta**,
-choose the ZIP, then **Open beta**. A new tester can also use the installer in
-the extracted ZIP without installing Python or Node separately.
+owner. To install or update it, go to **Settings → Manage beta installation**
+in Case Finder and select the private ZIP for your computer. Once installed,
+select **Case 360 Beta** in the sidebar to open it directly.
+A new tester can also use the installer in the extracted ZIP without installing
+Python or Node separately.
 
 In the beta, sign in with your own work account, check access, and select
 **Continue to Case 360**. The pilot has a $500 total limit per tester on this

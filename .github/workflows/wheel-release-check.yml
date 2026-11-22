@@ -2,10 +2,16 @@ name: Public wheel compatibility
 on:
   push:
     branches: [main, alvaro/case360-intake-sources]
+  pull_request:
+    paths:
+      - 'casefinder/**'
+      - 'tests/**'
+      - 'tools/verify_wheel_upgrade.py'
+      - '.github/workflows/wheel-release-check.yml'
   workflow_dispatch:
     inputs:
       published:
-        description: Verify the public update from version 2.1.4 after publication
+        description: Verify the public update from version 2.2.0 after publication
         type: boolean
         default: false
 permissions:
@@ -40,6 +46,8 @@ jobs:
         run: uv run --frozen pytest -q
       - name: Build the public wheel
         run: uv build --wheel
+      - name: Install browser for the sidebar smoke test
+        run: uv run --frozen playwright install chromium
       - name: Verify upgrade and saved work
         shell: pwsh
         run: |

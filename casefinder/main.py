@@ -110,6 +110,19 @@ def settings_route() -> None:
     gated("settings", settings.render)
 
 
+@ui.page("/settings/case360")
+def case360_package_settings_route() -> None:
+    if not config.CASE360_AVAILABLE or config.CASE360_ENABLED:
+        ui.navigate.to("/settings")
+        return
+    from .ui.case360_install import render_install
+    from .ui.shell import layout
+
+    with layout("settings"):
+        ui.link("Back to Settings", "/settings")
+        render_install()
+
+
 @ui.page("/case360/settings")
 def case360_settings_route() -> None:
     if not config.CASE360_ENABLED:
@@ -142,11 +155,14 @@ def case360_welcome_route() -> None:
 @ui.page("/case360")
 def case360_route() -> None:
     if not config.CASE360_ENABLED:
-        from .ui.case360_install import render_install
+        if not config.CASE360_AVAILABLE:
+            ui.navigate.to("/")
+            return
+        from .ui.case360_install import render_launch
         from .ui.shell import layout
 
         with layout("case360"):
-            render_install()
+            render_launch()
         return
     from .ui import case360_page
     from .ui.shell import layout
