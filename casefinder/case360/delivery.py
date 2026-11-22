@@ -13,13 +13,14 @@ from pathlib import Path
 from . import package, platforms, preferences
 
 
-def selected() -> Path | None:
+def selected(*, verify_payload: bool = True) -> Path | None:
     file = preferences.data_root() / "active-release.json"
     if not file.exists():
         return None
     value = json.loads(file.read_text())
     root = Path(value["root"])
-    manifest = package.verify(root, value["manifest_sha256"])
+    read = package.verify if verify_payload else package.read_manifest
+    manifest = read(root, value["manifest_sha256"])
     if manifest.get("platform") != platforms.target():
         raise ValueError("The installed beta is for a different operating system.")
     return root
@@ -78,8 +79,10 @@ def install_archive(archive: Path) -> Path:
         return target
 
 
-def open_beta(root: Path) -> None:
-    package.verify(root)
+def open_beta() -> bool:
+    root = selected()
+    if root is None:
+        return False
     log = preferences.data_root() / "startup.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
@@ -93,3 +96,4 @@ def open_beta(root: Path) -> None:
         subprocess.Popen(platforms.launch_command(root, "--setup", windowed=True), env=env,
                          stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
                          **options)
+    return True

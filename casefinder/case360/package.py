@@ -13,8 +13,7 @@ from . import platforms
 from .preferences import atomic_json, data_root
 
 
-def verify(root: Path, expected: str | None = None) -> dict:
-    root = root.resolve(strict=True)
+def read_manifest(root: Path, expected: str | None = None) -> dict:
     raw = (root / "release.json").read_bytes()
     if expected is not None and hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError("Package manifest does not match the private channel digest.")
@@ -24,6 +23,12 @@ def verify(root: Path, expected: str | None = None) -> dict:
             or manifest.get("protocol") != "case360.desktop/1"
             or not re.fullmatch(r"[a-zA-Z0-9._-]{1,100}", manifest.get("release_id", ""))):
         raise ValueError("Incompatible private beta package.")
+    return manifest
+
+
+def verify(root: Path, expected: str | None = None) -> dict:
+    root = root.resolve(strict=True)
+    manifest = read_manifest(root, expected)
     actual = set()
     links = {}
     for file in platforms.payload_files(root):

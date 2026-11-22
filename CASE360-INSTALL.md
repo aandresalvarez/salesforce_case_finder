@@ -7,9 +7,11 @@ Case Finder's configuration.
 
 The beta uses a private companion ZIP containing pinned Python, Node, Google
 tools and pilot documentation. Get the ZIP for your computer from the pilot
-owner. In Case Finder select **Case 360 Beta → Install beta or update beta**,
-choose the ZIP, then **Open beta**. A new tester can also use the installer in
-the extracted ZIP without installing Python or Node separately.
+owner. In Case Finder select **Case 360 Beta**. Choose **Install beta** the first
+time, or choose **Open beta** if it is already installed. To apply a new pilot
+ZIP, expand **Manage beta installation** and choose **Update from private ZIP**.
+A new tester can also use the installer in the extracted ZIP without installing
+Python or Node separately.
 
 In the beta, sign in with your own work account, check access, and select
 **Continue to Case 360**. The pilot has a $500 total limit per tester on this

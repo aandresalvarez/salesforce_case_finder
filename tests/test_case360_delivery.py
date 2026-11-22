@@ -40,11 +40,46 @@ def test_regular_wheel_beta_route_preserves_navigation_without_cloud_probe(rende
 
     monkeypatch.setattr(config, "CASE360_ENABLED", False)
     monkeypatch.setattr(main, "gated", lambda *_: pytest.fail("Installation must stay local"))
+    monkeypatch.setattr(delivery, "selected", lambda **_: None)
     tree = render(main.case360_route)
     assert all(label in tree.text for label in ["Search", "Lists", "SQL", "Settings"])
-    assert "Install beta or update beta" in tree.button_labels()
-    assert "Open beta" in tree.button_labels()
+    assert tree.button_labels() == ["Install beta"]
     assert "Maximum authorized budget" not in tree.text
+
+
+def test_existing_beta_opens_from_primary_action_and_keeps_updates_collapsed(
+    tmp_path, render, monkeypatch,
+):
+    import asyncio
+
+    from nicegui import background_tasks, core
+
+    from casefinder.ui.case360_install import render_install
+
+    monkeypatch.setenv("CASE360_DATA_ROOT", str(tmp_path / "private"))
+    monkeypatch.setattr(platforms, "target", lambda: "darwin-arm64")
+    installed = delivery.install_archive(download(tmp_path))
+    launched = []
+    monkeypatch.setattr(delivery.subprocess, "Popen", lambda command, **_: launched.append(command))
+    tree = render(render_install)
+    assert "Case 360 Beta is installed" in tree.text
+    [open_button] = tree.with_class("cf-primary")
+    assert open_button.text == "Open beta"
+    [updates] = tree.of_type("Expansion")
+    assert not updates.value
+    [update_button] = [b for b in tree.buttons() if b.text == "Update from private ZIP"]
+    assert tree.is_inside(update_button, "Expansion")
+    async def click():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        pending = []
+        monkeypatch.setattr(background_tasks, "create", lambda task, **_: pending.append(task))
+        tree.press(open_button)
+        [task] = pending
+        await task
+
+    asyncio.run(click())
+    assert launched == [platforms.launch_command(installed, "--setup", windowed=True)]
+    assert delivery.selected() == installed
 
 
 def test_install_and_update_leave_existing_requests_and_settings(tmp_path, monkeypatch):
