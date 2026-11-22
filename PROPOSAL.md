@@ -129,7 +129,7 @@ Once `uv` is installed — one line, from its own site — the same three lines 
 on macOS and Windows:
 
 ```bash
-uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.2.0/casefinder-2.2.0-py3-none-any.whl"
+uv tool install --python 3.13 "https://github.com/aandresalvarez/salesforce_case_finder/releases/download/v2.2.1/casefinder-2.2.1-py3-none-any.whl"
 casefinder --check
 casefinder
 ```

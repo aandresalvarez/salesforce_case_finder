@@ -1,8 +1,8 @@
 # Optional Case 360 Beta
 
 Case Finder still ships as a universal Python wheel for Mac and Windows. Its
-ordinary release updater is unchanged. Updating to version 2.2.0 adds a **Case 360 Beta** entry alongside Search,
-Lists and SQL. Installing this wheel does not authorize model calls or replace
+ordinary release updater is unchanged. In version 2.2.1, **Case 360 Beta**
+opens the installed beta directly from the sidebar beside Search, Lists and SQL. Installing this wheel does not authorize model calls or replace
 Case Finder's configuration.
 
 The beta uses a private companion ZIP containing pinned Python, Node, Google

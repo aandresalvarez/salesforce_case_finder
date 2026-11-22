@@ -11,8 +11,10 @@ from casefinder import config
 from casefinder.case360 import delivery, package, platforms
 
 
-def download(folder, release_id="test-v1", platform="darwin-arm64"):
+def download(folder, release_id="test-v1", platform="darwin-arm64", pilot=False):
     files = {"build.json": b"{}", "python/placeholder": b"synthetic"}
+    if pilot:
+        files["pilot-resources/bootstrap.json"] = b"{}"
     manifest = {"schema": "case360_private_release/1", "channel": "private-beta",
                 "protocol": "case360.desktop/1", "release_id": release_id,
                 "platform": platform, "files": {k: hashlib.sha256(v).hexdigest()
@@ -54,8 +56,11 @@ def test_beta_launch_without_installation_offers_settings(render, monkeypatch):
     assert settings_link._props["href"] == "/settings/case360"
 
 
+@pytest.mark.parametrize("pilot,configured,flag", [
+    (False, False, "--review"), (True, True, "--review"), (True, False, "--setup"),
+])
 def test_sidebar_route_launches_selected_beta_once_without_additional_click(
-    tmp_path, render, monkeypatch,
+    tmp_path, render, monkeypatch, pilot, configured, flag,
 ):
     from casefinder import main
 
@@ -63,7 +68,11 @@ def test_sidebar_route_launches_selected_beta_once_without_additional_click(
     monkeypatch.setattr(config, "CASE360_ENABLED", False)
     monkeypatch.setattr(config, "CASE360_AVAILABLE", True)
     monkeypatch.setattr(platforms, "target", lambda: "darwin-arm64")
-    installed = delivery.install_archive(download(tmp_path))
+    installed = delivery.install_archive(download(tmp_path, pilot=pilot))
+    context = package.context_for(installed, package.verify(installed))
+    value = json.loads(context.read_text())
+    value["authorization_policy"]["live_enabled"] = configured
+    context.write_text(json.dumps(value))
     pointer = tmp_path / "private/active-release.json"
     selection = pointer.read_bytes()
     launched = []
@@ -77,7 +86,7 @@ def test_sidebar_route_launches_selected_beta_once_without_additional_click(
         await asyncio.gather(launch(), launch())
 
     asyncio.run(connect_and_reconnect())
-    assert launched == [platforms.launch_command(installed, "--setup", windowed=True)]
+    assert launched == [platforms.launch_command(installed, flag, windowed=True)]
     assert "is opening in a separate window" in tree.text
     assert pointer.read_bytes() == selection
 
