@@ -198,6 +198,49 @@ def test_failed_save_cannot_start_analysis(render, monkeypatch):
     asyncio.run(check())
 
 
+def test_confirm_only_preserves_saved_answers_and_reopens_at_sql_author(render, monkeypatch):
+    class LocalConfirmation(IntakeClient):
+        capabilities = ("local_scope_confirmation",)
+        confirmed = False
+
+        def view(self):
+            return {**super().view(), "confirmed": self.confirmed}
+
+        async def request(self, method, params=None, **kwargs):
+            if method == "confirm_contract":
+                assert self.prepared and params["contract_sha256"] == self.view()["contract_sha256"]
+                self.confirmed = True
+                self.state["confirmed"] = {"snapshot_sha256": "f" * 64}
+            return await super().request(method, params, **kwargs)
+
+    client = LocalConfirmation(analyzed=True)
+    client.state["questions"][0].update(answer="Use the admission date.", status="answered")
+    tree, restore = setup(render, monkeypatch, client)
+
+    async def check():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        with tree.client:
+            await restore()
+            assert "Saved clarification answers" in tree.text
+            monkeypatch.setattr(
+                flow, "configured_cap", lambda: pytest.fail("Paid policy used for confirmation")
+            )
+            press(tree, "Confirm scope only")
+            await asyncio.sleep(0)
+            await restore()
+            assert "Start SQL author" in tree.button_labels()
+            assert "Confirm scope only" not in tree.button_labels()
+            assert not any(f._props.get("label") == "Your answer" for f in tree.of_type("Textarea"))
+            assert "Scope confirmed and ready for the SQL author." in tree.text
+        assert client.state["questions"][0]["answer"] == "Use the admission date."
+        assert [p["action"] for m, p in client.calls if m == "prepare_intake"] == ["build"]
+        assert sum(m == "confirm_contract" for m, _ in client.calls) == 1
+        assert not any(m in {"probe_run", "authorize_run", "start_run"} or
+                       (m == "intake_update" and p["action"] == "answer") for m, p in client.calls)
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize("verified", [True, False])
 def test_saved_sql_continues_only_from_verified_checkpoint(render, monkeypatch, verified):
     class SavedReviewClient(IntakeClient):

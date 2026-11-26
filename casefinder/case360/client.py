@@ -37,6 +37,7 @@ class Client:
         self._writing = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
         self._ready = False
+        self.capabilities: frozenset[str] = frozenset()
         self._closed = False
         self.quiescing = False
 
@@ -61,6 +62,7 @@ class Client:
                 if (hello.get("protocol") != PROTOCOL or hello.get("schema_sha256") != SCHEMA_HASH
                         or hello.get("max_line_bytes") != MAX_LINE):
                     raise BridgeError("PROTOCOL_INCOMPATIBLE", "Install matching beta components.")
+                self.capabilities = frozenset(hello.get("capabilities", []))
                 self._ready = True
             except BaseException:
                 await self.close()

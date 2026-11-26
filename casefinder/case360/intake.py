@@ -23,13 +23,15 @@ SCOPE_LABELS = {
 }
 
 
-def researcher_text(question: dict) -> str:
+def researcher_text(
+    question: dict, fallback: str = "Please ask the analyst to provide researcher wording."
+) -> str:
     value = question.get("researcher_text", "")
     if not value or re.search(
         r"`|\b\w+_\w+\b|\b(?:SELECT|JOIN|WHERE|INFORMATION_SCHEMA)\b|\b[\w-]+\.[\w-]+\.[\w-]+\b",
         value,
     ):
-        return "Please ask the analyst to provide researcher wording."
+        return fallback
     return value
 
 

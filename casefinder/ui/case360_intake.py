@@ -128,7 +128,11 @@ def render(*, run_id: str | None = None) -> None:
         for control in [analyze, new]:
             control.set_enabled(not value)
         for panel in [attachments, questions, decisions, scope, recovery]:
-            if value or frozen:
+            readonly_summary = (
+                frozen and model["view"].get("confirmed")
+                and panel in (attachments, questions, scope)
+            )
+            if value or (frozen and not readonly_summary):
                 panel.props("inert")
             else:
                 panel.props(remove="inert")
@@ -225,7 +229,7 @@ def render(*, run_id: str | None = None) -> None:
             ui.button("Cancel", on_click=dialog.close).props("flat")
         dialog.open()
 
-    async def preview(source: dict) -> None:
+    async def preview(source: dict, readonly: bool = False) -> None:
         try:
             c = controller()
             page = {"offset": 0, "next": 0}
@@ -267,18 +271,18 @@ def render(*, run_id: str | None = None) -> None:
                     ui.button("Next text page", on_click=lambda: load_page(page["next"])).props(
                         "flat"
                     )
-                transcript = (
-                    ui.textarea(
+                if not readonly:
+                    transcript = ui.textarea(
                         "Corrected transcription (optional; replaces extracted text)",
                         value=source.get("transcription", ""),
-                    )
-                    .props("outlined autogrow maxlength=60000")
-                    .classes("w-full")
-                )
-                ui.label(
-                    "The AI reviews this source during analysis. You can optionally correct "
-                    "the extracted text or exclude the source. Originals remain saved."
-                ).classes("text-sm")
+                    ).props("outlined autogrow maxlength=60000").classes("w-full")
+                    ui.label(
+                        "The AI reviews this source during analysis. You can optionally correct "
+                        "the extracted text or exclude the source. Originals remain saved."
+                    ).classes("text-sm")
+                elif source.get("transcription"):
+                    ui.label("Confirmed transcription").classes("font-medium")
+                    ui.label(source["transcription"]).classes("whitespace-pre-wrap")
 
                 async def reviewed(disposition: str) -> None:
                     if await mutate(
@@ -295,10 +299,11 @@ def render(*, run_id: str | None = None) -> None:
                     ui.download(await c.original(source), source["name"])
 
                 with ui.row():
-                    ui.button("Save text and include", on_click=lambda: reviewed("reviewed"))
-                    ui.button("Exclude from analysis", on_click=lambda: reviewed("excluded")).props(
-                        "flat"
-                    )
+                    if not readonly:
+                        ui.button("Save text and include", on_click=lambda: reviewed("reviewed"))
+                        ui.button(
+                            "Exclude from analysis", on_click=lambda: reviewed("excluded")
+                        ).props("flat")
                     ui.button("Download original", on_click=download).props("flat")
                     ui.button("Close", on_click=dialog.close).props("flat")
                 await load_page(0)
@@ -346,6 +351,8 @@ def render(*, run_id: str | None = None) -> None:
 
     def redraw() -> None:
         state = controller().state
+        ready = bool(model["view"] and model["view"].get("phase") == "PREPARED"
+                     and model["view"].get("confirmed") and state.get("confirmed"))
         for panel in (attachments, questions, decisions, scope):
             panel.clear()
         with attachments:
@@ -358,6 +365,8 @@ def render(*, run_id: str | None = None) -> None:
                             if source["disposition"] == "excluded"
                             else "No readable text — add a transcription or readable copy"
                             if not source.get("transcription") and not source.get("segments")
+                            else "Included in confirmed scope"
+                            if ready
                             else "Included in analysis"
                             if state.get("analysis") and not state.get("analysis_stale")
                             else "Included · AI will review"
@@ -367,18 +376,58 @@ def render(*, run_id: str | None = None) -> None:
                             ui.label(
                                 "Extraction has limitations. View source for details."
                             ).classes("text-xs text-amber-800")
-                    ui.button("View source", on_click=lambda s=source: preview(s)).props(
-                        "flat no-caps"
-                    )
+                    ui.button(
+                        "View source", on_click=lambda s=source: preview(s, readonly=ready)
+                    ).props("flat no-caps")
+        if ready:
+            with scope, ui.expansion("Confirmed research scope").classes("c360-card w-full"):
+                summary = state.get("summary") or {}
+                for key, label in SCOPE_LABELS.items():
+                    ui.label(label).classes("font-medium")
+                    ui.label(summary.get("fields", {}).get(key, "")).classes("whitespace-pre-wrap")
+                if summary.get("implementation_notes"):
+                    ui.label("Checks for the SQL team").classes("font-medium")
+                    for note in summary["implementation_notes"]:
+                        ui.label(note).classes("whitespace-pre-wrap")
+            previous = {}
+            for key in (
+                "clarification_prior_answers", "clarification_source_answers",
+                "membership_answer_history", "questions",
+            ):
+                for q in state.get(key, []):
+                    previous[q["id"]] = q
+            answers = [
+                q for q in previous.values()
+                if q.get("answer") and q.get("status") in ("answered", "not_applicable")
+            ]
+            if answers:
+                with questions, ui.expansion(
+                    f"Saved answers · {len(answers)}"
+                ).classes("c360-card w-full"):
+                    for number, q in enumerate(answers, 1):
+                        title = researcher_text(q, fallback=f"Saved response {number}")
+                        ui.label(title).classes("font-medium")
+                        ui.label(q["answer"]).classes("whitespace-pre-wrap")
+            analyze.text = "Start SQL author"
+            busy(model["busy"])
+            return
         with questions:
             if state.get("questions"):
                 with ui.column().classes("c360-card"):
-                    ui.label("Clarification questions").classes("c360-card-title")
+                    needs_answer = any(q.get("status") == "pending" for q in state["questions"])
+                    heading = (
+                        "Clarification questions" if needs_answer else "Saved clarification answers"
+                    )
+                    ui.label(heading).classes("c360-card-title")
                     if state.get("scope_recovery") and not state.get("analysis_stale"):
+                        next_action = (
+                            "Answer the open questions and review the scope below." if needs_answer
+                            else "Your answers are saved. Review the scope below."
+                        )
                         ui.label(
                             "Your completed questions and scope were recovered "
                             "from the saved response. The document review was reused. "
-                            "Answer the questions and confirm the scope below."
+                            + next_action
                         ).classes("text-sm text-blue-800")
                     elif state.get("suggestion_recovery") and not state.get("analysis_stale"):
                         ui.label(
@@ -598,7 +647,7 @@ def render(*, run_id: str | None = None) -> None:
                     ).classes("c360-detail-note")
                     fields = {
                         key: ui.textarea(label, value=summary["fields"].get(key, ""))
-                        .props("outlined autogrow maxlength=2000")
+                        .props("outlined autogrow")
                         .classes("w-full")
                         for key, label in SCOPE_LABELS.items()
                     }
@@ -616,15 +665,17 @@ def render(*, run_id: str | None = None) -> None:
                         )
 
                     async def save_scope() -> bool:
+                        saved_notes = summary.get("assumptions", [])
+                        note_text = assumptions.value or ""
+                        next_notes = (
+                            saved_notes if note_text == "\n".join(saved_notes)
+                            else [line.strip() for line in note_text.splitlines() if line.strip()]
+                        )
                         return await mutate(
                             "scope",
                             {
                                 "fields": {k: f.value or "" for k, f in fields.items()},
-                                "assumptions": [
-                                    x.strip()
-                                    for x in (assumptions.value or "").splitlines()
-                                    if x.strip()
-                                ],
+                                "assumptions": next_notes,
                             },
                             refresh=False,
                         )
@@ -632,6 +683,30 @@ def render(*, run_id: str | None = None) -> None:
                     async def build() -> None:
                         if await save_scope():
                             await launch("build")
+
+                    async def confirm_only() -> None:
+                        if await save_scope():
+                            await launch("build", confirm_only=True)
+
+                    local_confirmation = "local_scope_confirmation" in getattr(
+                        controller().client, "capabilities", ()
+                    )
+                    if local_confirmation and summary.get("assumptions"):
+                        with ui.expansion("Keep checks for SQL verification").classes("w-full"):
+                            ui.label(
+                                "Select checks that can wait until SQL review because they "
+                                "do not change who belongs in this cohort."
+                            )
+                            followups = [
+                                (note, ui.checkbox(note)) for note in summary["assumptions"]
+                            ]
+
+                            async def defer_selected() -> None:
+                                notes = [note for note, box in followups if box.value]
+                                if notes and await save_scope():
+                                    await mutate("scope", {"defer_notes": notes})
+
+                            ui.button("Keep selected checks for SQL", on_click=defer_selected)
 
                     for field in [*fields.values(), assumptions]:
                         field.props("debounce=500")
@@ -647,6 +722,10 @@ def render(*, run_id: str | None = None) -> None:
 
                     with ui.row():
                         ui.button("Save scope edits", on_click=save_scope).props("flat no-caps")
+                        if local_confirmation:
+                            ui.button("Confirm scope only", on_click=confirm_only).props(
+                                "outline no-caps"
+                            )
                         ui.button("Confirm summary and build SQL", on_click=build).props(
                             "unelevated no-caps"
                         )
@@ -695,6 +774,13 @@ def render(*, run_id: str | None = None) -> None:
             await asyncio.sleep(0.7)
             view = await c.client.request("get_run", run_id=c.run_id)
         model["view"] = view
+        if view.get("phase") == "PREPARED" and view.get("confirmed") and c.state.get("confirmed"):
+            model["result"] = None
+            output.clear()
+            recovery.clear()
+            redraw()
+            status.text = "Scope confirmed and ready for the SQL author."
+            return
         result = await c.client.artifact(c.run_id, view["artifact"])
         model["result"] = result
         await c.load(c.run_id)
@@ -781,7 +867,7 @@ def render(*, run_id: str | None = None) -> None:
         finally:
             busy(False)
 
-    async def launch(action="analyze") -> None:
+    async def launch(action="analyze", *, confirm_only: bool = False) -> None:
         if model["busy"]:
             return
         if not (request.value or "").strip():
@@ -793,14 +879,22 @@ def render(*, run_id: str | None = None) -> None:
         busy(True)
         try:
             c = controller()
-            cap = configured_cap() if model["remaining"] is None else model["remaining"]
+            if not confirm_only:
+                cap = configured_cap() if model["remaining"] is None else model["remaining"]
             prepared = (
                 await c.client.request("get_run", run_id=c.run_id)
                 if pending and pending.get("phase") == "PREPARED"
                 else await c.prepare(action)
             )
             model["view"] = prepared
-            await start_prepared(prepared, cap)
+            if confirm_only:
+                confirmed = await c.client.request(
+                    "confirm_contract", {"contract_sha256": prepared["contract_sha256"]},
+                    run_id=c.run_id,
+                )
+                await inspect(confirmed)
+            else:
+                await start_prepared(prepared, cap)
         except ERRORS as error:
             failure(error)
             redraw()
@@ -815,9 +909,11 @@ def render(*, run_id: str | None = None) -> None:
             )
             await inspect(view)
             return
-        await c.client.request(
-            "confirm_contract", {"contract_sha256": prepared["contract_sha256"]}, run_id=c.run_id
-        )
+        if not prepared.get("confirmed"):
+            await c.client.request(
+                "confirm_contract", {"contract_sha256": prepared["contract_sha256"]},
+                run_id=c.run_id,
+            )
         status.text = "Checking your connection and remaining budget…"
         proof = await c.client.request("probe_run", run_id=c.run_id)
         authorization = await c.client.request(
