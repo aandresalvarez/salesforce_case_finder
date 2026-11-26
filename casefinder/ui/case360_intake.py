@@ -812,6 +812,9 @@ def render(*, run_id: str | None = None) -> None:
                 )
         output.clear()
         with output:
+            if c.state.get("review_scope_handoff") and view.get("phase") != "PREPARED":
+                ui.button("Build from the saved SQL and study decision",
+                          on_click=lambda: launch("build")).props("unelevated no-caps")
             recovered = (
                 result.get("execution_status") == "FAILED"
                 and (c.state.get("suggestion_recovery") or c.state.get("scope_recovery"))
@@ -832,7 +835,9 @@ def render(*, run_id: str | None = None) -> None:
              + "Answer the questions and confirm the scope to continue.")
             if recovered
             else
-            "Review the questions, proposed decisions and scope summary."
+            "Review the study decision below to continue from your saved SQL."
+            if result.get("review_membership_pending")
+            else "Review the questions, proposed decisions and scope summary."
             if result.get("scope_confirmation_required")
             else "Analysis stopped. Saved sources and results remain available."
             if result.get("execution_status") == "FAILED"

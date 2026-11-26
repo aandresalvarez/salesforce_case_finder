@@ -90,3 +90,36 @@ def test_ui_rejects_forged_or_incomplete_passing_check(change):
         item["status"] = "FAILED"
     with pytest.raises(ValueError):
         matching_validation(record, checked)
+
+
+def test_membership_question_requires_a_deliberate_choice_and_saves_its_index(render, monkeypatch):
+    import asyncio
+    from nicegui import core
+    from casefinder.ui.case360_sql_revisions import render_membership_questions
+
+    submitted = []
+
+    async def submit(answers):
+        submitted.append(answers)
+
+    check = {"questions": [{"id": "boundary", "question": "Count a visit on the end date?",
+                            "example": "A participant visits on the last day.",
+                            "options": ["Include the last day.", "Exclude the last day."],
+                            "option": None, "conflict": False}]}
+
+    async def exercise():
+        monkeypatch.setattr(core, "loop", asyncio.get_running_loop())
+        tree = render(render_membership_questions, check, submit)
+        radio, = tree.of_type("Radio")
+        assert radio.value is None
+        button, = tree.buttons()
+        tree.press(button)
+        await asyncio.sleep(0)
+        assert not submitted and "Choose an answer" in tree.text
+        with tree.client:
+            radio.value = 0
+        tree.press(button)
+        await asyncio.sleep(0)
+        assert submitted == [[{"id": "boundary", "option": 0}]]
+
+    asyncio.run(exercise())

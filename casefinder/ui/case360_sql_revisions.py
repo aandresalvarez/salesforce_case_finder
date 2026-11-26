@@ -136,6 +136,44 @@ def render_revision(record: dict, run_id: str | None = None,
                    indent=2), "sql-review-revision.json")).props("flat")
 
 
+def render_membership_decisions(decisions: list[dict]) -> None:
+    for decision in decisions:
+        ui.label(decision["rule"]).classes("font-medium")
+        if decision["basis"] == "app_answer":
+            ui.label("Saved from the answer in this review.").classes("c360-detail-note")
+        for ref in decision.get("citations", []):
+            ui.label(f'{ref.get("name") or ref["source_id"]} · {ref["locator"]} — {ref["quote"]}').classes("c360-detail-note")
+
+
+def render_membership_questions(check: dict, submit) -> None:
+    ui.label("One more decision about who qualifies").classes("cf-h2")
+    fields = {}
+    for question in check["questions"]:
+        if question["option"] is not None:
+            continue
+        ui.label(question["question"]).classes("font-medium")
+        ui.label(question["example"])
+        if question["conflict"]:
+            ui.label("Your study sources give different answers.")
+            for ref in question["citations"]:
+                ui.label(f'{ref.get("name") or ref["source_id"]} · {ref["quote"]}')
+        fields[question["id"]] = ui.radio(dict(enumerate(question["options"])), value=None)
+    status = ui.label("").props("role=status aria-live=polite")
+
+    async def save() -> None:
+        if any(field.value is None for field in fields.values()):
+            status.text = "Choose an answer to each open question."
+            return
+        button.disable()
+        try:
+            await submit([{"id": key, "option": int(field.value)} for key, field in fields.items()])
+        except (RuntimeError, ValueError, OSError, TimeoutError) as error:
+            status.text = str(error)
+            button.enable()
+
+    button = ui.button("Save decision and continue", on_click=save).props("unelevated no-caps")
+
+
 def render_versions(result: dict, run_id: str, reference: dict,
                     original: Callable[[], None]) -> None:
     host = ui.column().classes("w-full")
@@ -150,6 +188,18 @@ def render_versions(result: dict, run_id: str, reference: dict,
                        if ref else [])
             checks_ref = view.get("sql_validations_artifact")
             validations = (await client.artifact(run_id, checks_ref)) if checks_ref else None
+            version = records[-1]["revision"] if records else 0
+            params = {"revision": version, "artifact_sha256": reference["sha256"],
+                      "token": None, "answers": []}
+            check = {"status": "none"}
+            if result.get("packages") and "review_membership" in getattr(client, "capabilities", ()):
+                check = await client.request("review_membership", params, run_id=run_id)
+                if check["status"] == "documented":
+                    check = await client.request("review_membership", {**params, "token": check["token"]},
+                                                 run_id=run_id)
+                if check.get("revision", version) != version:
+                    await load()
+                    return
         except (RuntimeError, ValueError, OSError, TimeoutError) as error:
             with host:
                 ui.label("Could not load SQL versions: " + str(error))
@@ -157,6 +207,18 @@ def render_versions(result: dict, run_id: str, reference: dict,
                 original()
             return
         with host:
+            if check["status"] == "pending":
+                async def submit(answers: list[dict]) -> None:
+                    await client.request("review_membership",
+                                         {**params, "token": check["token"], "answers": answers},
+                                         run_id=run_id)
+                    await load()
+                render_membership_questions(check, submit)
+            elif check["status"] in {"applied", "author_ready"}:
+                ui.label("Saved study decisions").classes("cf-h2")
+                render_membership_decisions(check["decisions"])
+                if check["status"] == "author_ready":
+                    ui.link("Continue with the SQL author", "/case360")
             if not records:
                 original()
                 return
