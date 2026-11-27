@@ -146,7 +146,7 @@ def render_membership_decisions(decisions: list[dict]) -> None:
 
 
 def render_membership_questions(check: dict, submit) -> None:
-    ui.label("One more decision about who qualifies").classes("cf-h2")
+    ui.label("Clarify who qualifies").classes("cf-h2")
     fields = {}
     for question in check["questions"]:
         if question["option"] is not None:
@@ -251,8 +251,8 @@ def render_saved_review() -> None:
     with ui.row():
         ui.link("Request and saved answers", "/case360")
         ui.link("Request history", "/case360/history")
-    ui.label("Opening this page only reads saved work. "
-             "It does not analyze, dry run or execute SQL.")
+    ui.label("This review uses your saved work. If your study materials already answer a "
+             "cohort question, you can see the decision and its source here.")
     panel = ui.column().classes("w-full")
 
     async def load() -> None:
